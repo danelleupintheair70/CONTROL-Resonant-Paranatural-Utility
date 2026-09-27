@@ -1,14 +1,12 @@
 """Job queue controls and guarded output streaming."""
 
 import copy
-import os
 import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .. import delivery as export_delivery
@@ -35,6 +33,7 @@ from ..languages import base_language, normalize
 from ..models import DubJob, Segment, Speaker
 from ..review import load_decisions, merge_decisions, record_decision
 from ..voices import cast_key
+from .media_delivery import allowed_path, ranged_response
 
 
 class JobCreateIn(BaseModel):
@@ -282,79 +281,10 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
 
     def _allowed_path(path_str: str) -> Path | None:
         # Read live: saving an output directory must also update the download guard.
-        try:
-            allowed_roots = [
-                Path(os.path.normcase(str(root.resolve())))
-                for root in (config.output_dir, config.work_dir)
-            ]
-            p = Path(os.path.normcase(str(Path(path_str).resolve())))
-        except OSError:
-            return None
-        for root in allowed_roots:
-            try:
-                p.relative_to(root)
-                return Path(path_str).resolve()
-            except ValueError:
-                continue
-        return None
+        return allowed_path(config, path_str)
 
     def _ranged_response(path: Path, range_header: str | None):
-        """Serve `path`, honoring `Range: bytes=...` for browser video seeking
-        (starlette 0.38's FileResponse does not do ranges)."""
-        media_type = {
-            ".mkv": "video/x-matroska",
-            ".mp4": "video/mp4",
-            ".m4v": "video/mp4",
-            ".wav": "audio/wav",
-        }.get(path.suffix.lower(), "application/octet-stream")
-        size = path.stat().st_size
-        base_headers = {"Accept-Ranges": "bytes"}
-        m = re.fullmatch(r"bytes=(\d*)-(\d*)", (range_header or "").strip())
-        if not range_header:
-            return FileResponse(path, media_type=media_type, headers=base_headers)
-        if not m or (not m.group(1) and not m.group(2)):
-            return JSONResponse(
-                status_code=416,
-                content={"error": "bad range"},
-                headers={"Content-Range": f"bytes */{size}"},
-            )
-        start_s, end_s = m.groups()
-        if not start_s:  # suffix range: last N bytes
-            start = max(0, size - int(end_s))
-            end = size - 1
-        else:
-            start = int(start_s)
-            end = int(end_s) if end_s else size - 1
-        end = min(end, size - 1)
-        if start >= size or start > end:
-            return JSONResponse(
-                status_code=416,
-                content={"error": "range unsatisfiable"},
-                headers={"Content-Range": f"bytes */{size}"},
-            )
-        length = end - start + 1
-
-        def iterfile():
-            with open(path, "rb") as fh:
-                fh.seek(start)
-                remaining = length
-                while remaining > 0:
-                    chunk = fh.read(min(64 * 1024, remaining))
-                    if not chunk:
-                        break
-                    remaining -= len(chunk)
-                    yield chunk
-
-        return StreamingResponse(
-            iterfile(),
-            status_code=206,
-            media_type=media_type,
-            headers={
-                **base_headers,
-                "Content-Range": f"bytes {start}-{end}/{size}",
-                "Content-Length": str(length),
-            },
-        )
+        return ranged_response(path, range_header)
 
     @api.get("/api/jobs")
     def list_jobs():

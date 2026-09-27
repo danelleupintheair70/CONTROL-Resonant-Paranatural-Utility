@@ -98,6 +98,14 @@ class TranslateModel(_Section):
     # the translator, and with summary_terms, name/term candidates for review.
     # Costs provider calls, so off by default (see doblarr.prepass).
     prepass: Literal["off", "summary", "summary_terms"] = "off"
+    # How another localisation may inform the writing (see doblarr.studio).
+    # original_only never sends a reference; reference_suggestions lets the
+    # original decide facts and borrows phrasing only where it keeps them;
+    # follow_edition targets a chosen adaptation and records departures.
+    reference_policy: Literal["original_only", "reference_suggestions",
+                              "follow_edition"] = "original_only"
+    reference_file: str = ""       # studio-built aligned reference for this episode
+    holdout_files: list[str] = []  # evaluation-only text no request may carry
 
 
 class TranscribeModel(_Section):

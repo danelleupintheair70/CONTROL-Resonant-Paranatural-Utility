@@ -70,10 +70,12 @@ class VoiceboxClient(ArrClient):
         return self._get("/health", timeout=timeout)
 
     # -- local LLM (translation, refinement) ------------------------------
-    def llm_generate(self, prompt: str, system: str | None = None) -> str:
+    def llm_generate(self, prompt: str, system: str | None = None, **options) -> str:
         payload: dict = {"prompt": prompt}
         if system:
             payload["system"] = system
+        # model_size / max_tokens / temperature, only when a caller pins them.
+        payload.update({k: v for k, v in options.items() if v is not None})
         data = self._post("/llm/generate", json=payload)
         # Accept a few common shapes.
         return (data.get("text") or data.get("response") or data.get("output") or "").strip()

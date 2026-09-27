@@ -457,3 +457,13 @@ samples, credentials, or local file paths. Translation services and model locati
 remain local. Different models, source cuts and speaker detection can produce different
 results. Expected runtime is optional release information, not automatic verification.
 See [the recipe format and API](docs/dub-recipes.md).
+
+### Episode studio
+
+Open **Studio** on a run (or **Open studio** on an episode) to work on one episode in
+one place: listen to the original, the dub, saved versions and other dubs at the same
+moment, mark problems where you hear them, edit and re-render single lines, audition a
+character's voice, and export the chosen version without generating speech by surprise.
+It also runs controlled writing experiments — does an English dub reference improve the
+Spanish? — with the official Spanish adaptation held out of every request and revealed
+only after the candidates are frozen. See [the studio guide](docs/studio.md).

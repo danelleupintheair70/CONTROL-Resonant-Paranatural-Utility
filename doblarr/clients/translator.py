@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from ..artifacts import digest, read_json
 from ..errors import ArrClientError, ConfigError, DoblarrError
 from ..languages import base_language
 from ..languages import get as get_language
@@ -372,9 +374,22 @@ class ClaudeTranslator(PromptureTranslator):
 class VoiceboxTranslator(PromptureTranslator):
     """Adapt Voicebox's local LLM to Prompture without a second parsing path."""
 
-    def __init__(self, client):
-        super().__init__("voicebox/local")
+    # Sizes the service offers. Unset keeps the service's own default, which is
+    # what every existing configuration has always used.
+    SIZES = ("0.6B", "1.7B", "4B")
+
+    def __init__(self, client, model_size: str | None = None, max_tokens: int | None = None,
+                 temperature: float | None = None):
+        if model_size and model_size not in self.SIZES:
+            raise ConfigError(f"voicebox offers LLM sizes {', '.join(self.SIZES)}")
+        super().__init__(f"voicebox/{model_size}" if model_size else "voicebox/local")
         self.client = client
+        # Only what was asked for is sent, so an experiment records exactly
+        # the model and sampling it ran with.
+        self.llm_options = {k: v for k, v in {"model_size": model_size,
+                                              "max_tokens": max_tokens,
+                                              "temperature": temperature}.items()
+                            if v is not None}
 
     def _get_driver(self):
         if self._driver is None:
@@ -382,22 +397,25 @@ class VoiceboxTranslator(PromptureTranslator):
             from prompture.drivers.base import Driver
 
             client = self.client
+            extra = dict(self.llm_options)
 
             class VoiceboxDriver(Driver):
                 def generate(self, prompt, options):
-                    return {"text": client.llm_generate(prompt), "meta": {}}
+                    return {"text": client.llm_generate(prompt, **extra), "meta": {}}
 
                 def generate_messages(self, messages, options):
                     system = "\n".join(m["content"] for m in messages if m["role"] == "system")
                     user = "\n".join(m["content"] for m in messages if m["role"] != "system")
-                    return {"text": client.llm_generate(user, system=system), "meta": {}}
+                    return {"text": client.llm_generate(user, system=system, **extra),
+                            "meta": {}}
 
             self._driver = VoiceboxDriver()
         return self._driver
 
 
 def _build_translator(
-    provider: str, model: str, voicebox_client=None, endpoint: str | None = None
+    provider: str, model: str, voicebox_client=None, endpoint: str | None = None,
+    llm_options: dict | None = None,
 ) -> Translator:
     provider = (provider or "passthrough").lower()
     if provider == "claude":
@@ -407,7 +425,8 @@ def _build_translator(
     if provider == "voicebox":
         if voicebox_client is None:
             raise ValueError("voicebox translator needs a voicebox client")
-        return VoiceboxTranslator(voicebox_client)
+        size = model if model in VoiceboxTranslator.SIZES else None
+        return VoiceboxTranslator(voicebox_client, model_size=size, **(llm_options or {}))
     if provider == "passthrough":
         return PassthroughTranslator()
     raise ValueError(f"unknown translate provider: {provider}")
@@ -420,6 +439,24 @@ SLANG = ("Regional slang is allowed: where a character's register calls for it, 
          "stereotypes or slang the source line does not imply.")
 
 
+REFERENCE_POLICIES = {
+    # The no-new-jokes rule is about what the model invents. A joke that an
+    # explicitly supplied adaptation already made is not invented, but it is
+    # only admissible when it keeps the original's facts — so the exception is
+    # stated here, as policy, rather than left for the model to infer.
+    "reference_suggestions": (
+        "Some segments carry an adaptation_reference: another localisation's dub line "
+        "for the same moment. The source decides facts, relationships, plot and intent. "
+        "You may borrow the reference's phrasing, idioms or wordplay only where it keeps "
+        "all of those; a joke or fact that contradicts the source is never borrowed. "
+        "Invent nothing that neither the source nor the reference contains."),
+    "follow_edition": (
+        "Some segments carry an adaptation_reference from the edition this dub follows. "
+        "Follow its choices, including its wordplay, while keeping the source's facts; "
+        "where it departs from the source's meaning, keep the source's meaning."),
+}
+
+
 def translation_direction(options: dict, target_lang: str) -> str:
     styles = {
         "natural": "Use idiomatic spoken dialogue while preserving meaning and character intent.",
@@ -429,6 +466,9 @@ def translation_direction(options: dict, target_lang: str) -> str:
         "relationships and plot; invent no new jokes or information.",
     }
     parts = [styles.get(options.get("adaptation", "natural"), styles["natural"])]
+    policy = REFERENCE_POLICIES.get(str(options.get("reference_policy") or ""))
+    if policy and options.get("reference_file"):
+        parts.append(policy)
     if options.get("adapt_region"):
         parts.append("Adapt existing target-language dialogue to the requested region while "
                      "preserving meaning. Keep shared wording; do not force regional slang.")
@@ -450,13 +490,33 @@ def translation_options(translate: dict) -> dict:
 
     A switch that is off leaves the key what it was before the switch existed,
     so adding one never retranslates every saved job.
+
+    An aligned reference is keyed by its *content*, not its path: editing an
+    alignment must retranslate, and moving the file must not. Holdout files
+    are a check on requests, not an input, so they never change the key.
     """
-    return {k: v for k, v in dict(translate).items() if not (k == "slang" and not v)}
+    options = {k: v for k, v in dict(translate).items()
+               if not (k == "slang" and not v)
+               and not (k == "reference_policy" and v in ("", "original_only"))
+               and not (k == "reference_file" and not v)
+               and k != "holdout_files"}
+    if options.get("reference_file"):
+        if options.get("reference_policy") in (None, "original_only"):
+            options.pop("reference_file")
+        else:
+            options["reference_file"] = digest_reference(
+                read_json(Path(options["reference_file"])))
+    return options
+
+
+def digest_reference(payload: dict) -> str:
+    return digest(payload.get("groups") or [])[:24] if payload else "missing"
 
 
 def build_translator(provider: str, model: str, voicebox_client=None,
-                     endpoint: str | None = None, direction: dict | None = None) -> Translator:
-    translator = _build_translator(provider, model, voicebox_client, endpoint)
+                     endpoint: str | None = None, direction: dict | None = None,
+                     llm_options: dict | None = None) -> Translator:
+    translator = _build_translator(provider, model, voicebox_client, endpoint, llm_options)
     if isinstance(translator, PromptureTranslator):
         translator.direction = dict(direction or {})
     return translator
