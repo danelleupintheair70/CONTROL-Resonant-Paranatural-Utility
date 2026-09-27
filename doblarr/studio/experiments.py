@@ -444,7 +444,9 @@ class Writer:
         self.calls = 0
         self.usage: list[dict] = []
         self.temperature: float | None = None
-        self.driver = GuardedDriver(translator._get_driver(), guard, where)
+        # A proxy, not a Driver subclass: it forwards every attribute and scans
+        # each generate* call. Typed loosely so Prompture accepts it as a driver.
+        self.driver: Any = GuardedDriver(translator._get_driver(), guard, where)
 
     def ask(self, system: str, payload: dict, schema: dict, kind: str) -> dict:
         import prompture
