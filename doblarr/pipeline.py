@@ -151,6 +151,17 @@ def run_job(
         endpoint=config["translate"].get("endpoint"),
         direction=direction,
     )
+    # An aligned adaptation reference and the evaluation-only text this job
+    # must never send (see doblarr.studio). The guard wraps the translator's
+    # driver, so translation, retries, the prep pass and every shortening
+    # repair are scanned by the same check before a request leaves.
+    references = _load_references(config["translate"])
+    holdout = _holdout_guard(config["translate"])
+    if holdout is not None:
+        from .studio.holdout import guard_translator
+
+        if not dry_run:
+            guard_translator(translator, holdout, "translation")
     seg_limit = config["dub"].get("segment_limit")
     teaser_s = int(config["dub"].get("teaser_minutes", 10)) * 60 if job.kind == "tease" else None
     # One allowance for every stage that may ask the provider for more audio —
@@ -268,6 +279,7 @@ def run_job(
             memory_db=db,
             synopsis=synopsis,
             flag_reactions=reactions_on,
+            references=references,
         )
         if not dry_run and job.segments:
             # How each line is delivered, where its own words say so; a
@@ -745,4 +757,36 @@ def run_job(
     report.finish()
 
     log.info("=== done -> %s ===", job.output_file)
+    if holdout is not None:
+        job.metrics["holdout_guard"] = holdout.summary()
     return job
+
+
+def _load_references(translate: dict) -> dict | None:
+    """The studio's aligned reference for this job, when its policy uses one."""
+    from .artifacts import read_json
+
+    path = str(translate.get("reference_file") or "")
+    if not path or translate.get("reference_policy") in (None, "", "original_only"):
+        return None
+    payload = read_json(Path(path))
+    if not payload.get("groups"):
+        raise ValueError(f"the aligned reference {Path(path).name} is missing or empty; "
+                         "rebuild it in the studio or set the reference policy to "
+                         "original only")
+    return payload
+
+
+def _holdout_guard(translate: dict):
+    """A guard over every translation request, when evaluation-only text is declared."""
+    files = [str(f) for f in (translate.get("holdout_files") or []) if f]
+    if not files:
+        return None
+    from .studio.holdout import Fingerprints, HoldoutGuard
+    from .studio.sources import read_utterances
+
+    texts: list[str] = []
+    for file in files:
+        rows = read_utterances({"label": Path(file).name, "text": {"artifact": file}})
+        texts.extend(r.get("text", "") for r in rows)
+    return HoldoutGuard({"held-out adaptation": Fingerprints.of(texts)})

@@ -30,6 +30,7 @@ from .routes import library as library_routes
 from .routes import memory as memory_routes
 from .routes import packs as pack_routes
 from .routes import series as series_routes
+from .routes import studio as studio_routes
 from .routes import titles as title_routes
 from .routes import voice_catalog as catalog_routes
 from .scheduler import Scheduler
@@ -155,6 +156,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(job_routes.build_router(config, store, worker, bus))
     api.include_router(title_routes.build_router(config, db, bus, services))
     api.include_router(series_routes.build_router(config, services, store, bus))
+    api.include_router(studio_routes.build_router(config, store, worker, bus))
     api.include_router(catalog_routes.build_router(config, services, db))
     app.include_router(api)
 

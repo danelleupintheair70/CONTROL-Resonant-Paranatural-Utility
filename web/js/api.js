@@ -6,6 +6,8 @@ export function apiUrl(path) {
 
 function errorMessage(data, status) {
   if (typeof data?.error === 'string') return data.error;
+  // A conflict carries the newer state next to its message.
+  if (typeof data?.error?.error === 'string') return data.error.error;
   if (typeof data?.detail === 'string') return data.detail;
   if (Array.isArray(data?.detail))
     return data.detail.map(e => `${e.loc.join('.')}: ${e.msg}`).join('; ');
@@ -40,7 +42,12 @@ export async function api(path, options = {}) {
     }
   }
   const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(errorMessage(data, response.status));
+  if (!response.ok) {
+    const error = new Error(errorMessage(data, response.status));
+    error.status = response.status;
+    error.data = data?.error && typeof data.error === 'object' ? data.error : data;
+    throw error;
+  }
   if (data === null && response.status !== 204) throw new Error('The server returned invalid JSON.');
   return data;
 }

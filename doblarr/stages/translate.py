@@ -23,7 +23,16 @@ def run(
     memory_db=None,
     synopsis=None,
     flag_reactions=False,
+    references=None,
 ):
+    """Translate every pending line.
+
+    `references` is an aligned adaptation reference built by the studio
+    (``{"language", "groups": [{"start", "end", "text", "state"}]}`` on the
+    source timeline). It is attached only to lines inside a *matched* group,
+    and only when the job's reference policy allows one at all; an uncertain
+    or excluded span is never sent.
+    """
     if hasattr(translator, "repair_glossary"):
         translator.repair_glossary = dict(glossary or {})
     if (job.script_is_target and not job.translation_options.get("adapt_region")) or dry_run:
@@ -85,6 +94,7 @@ def run(
                 "speaker": s.speaker,
                 "duration": s.duration,
                 "target_chars": max(1, int(s.duration * chars_per_second)),
+                **_reference_for(s, job, references),
             }
             for s in batch
         ]
@@ -166,3 +176,23 @@ def run(
 
     if dialect.check(job) and checkpoint:
         checkpoint()
+
+
+def _reference_for(seg, job, references) -> dict:
+    """The adaptation reference for one line, or nothing."""
+    policy = job.translation_options.get("reference_policy")
+    if not references or policy not in ("reference_suggestions", "follow_edition"):
+        return {}
+    spans = seg.source.spans
+    start = spans[0].start if spans else (seg.source_start if seg.source_start is not None
+                                         else seg.start)
+    end = spans[-1].end if spans else start + seg.duration
+    middle = (start + end) / 2
+    for group in references.get("groups") or []:
+        if group.get("state") != "matched" or not group.get("text"):
+            continue
+        if float(group["start"]) <= middle < float(group["end"]):
+            return {"adaptation_reference": {
+                "language": references.get("language", ""), "text": group["text"],
+                "alignment_confidence": group.get("confidence")}}
+    return {}

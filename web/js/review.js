@@ -4,13 +4,17 @@ import { openCorrection } from './knowledge-correction.js';
 import { FILTERS, createSceneSection, matchesFilter } from './review-scene.js';
 import { ORDERS, defaultOrder, orderRows } from './review-order.js';
 
-export function createReview({ onQueued }) {
+export function createReview({ onQueued, onSelect }) {
   const $ = id => document.getElementById(id);
   const sceneHost = document.createElement('div');
   sceneHost.id = 'reviewScene';
   const dialog = $('reviewDialog'), list = $('reviewLines'), editor = $('reviewEditor');
   const status = $('reviewStatus'), submit = $('reviewSubmit');
   let data, jobId, selected, voices = [], pending = new Map(), opener, epoch = 0;
+  // Inline: the studio's Dialogue view hosts this same editor instead of the
+  // dialog. The nodes move; there is still exactly one editor and one state.
+  let inline = false;
+  const parts = [...dialog.children];
   const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   const currentRow = () => data?.segments.find(s => s.index === selected);
 
@@ -91,6 +95,7 @@ export function createReview({ onQueued }) {
     scene.load(row);
     wireCorrection(row);
     renderList();
+    onSelect?.(row, data);
   }
 
   // What this line actually is and what it was rendered from. Unknown stays
@@ -252,11 +257,13 @@ export function createReview({ onQueued }) {
         edits, events, use_updated_knowledge: $('reviewUpdatedKnowledge').checked,
         base_revision: data.revision,
       } });
+      const sent = edits.map(e => e.cue).filter(Boolean);
       pending.clear(); data.editable = false; select(selected);
       // Say plainly what was queued: which lines cost new speech, which only
       // re-render, and that everything else is reused.
-      status.textContent = `Queued. ${describeRerun(result.rerun)} Close to follow progress.`;
-      onQueued();
+      status.textContent = `Queued. ${describeRerun(result.rerun)}`
+        + (inline ? '' : ' Close to follow progress.');
+      onQueued(result, sent);
     } catch (error) { status.textContent = error.message; submit.disabled = false; }
   });
 
@@ -309,7 +316,7 @@ export function createReview({ onQueued }) {
     list.innerHTML = ''; editor.innerHTML = '<p>Loading dialogue…</p>';
     status.textContent = ''; submit.disabled = true;
     $('reviewTitle').textContent = 'Review dialogue'; $('reviewSummary').textContent = '';
-    dialog.showModal();
+    if (!inline) dialog.showModal();
     try {
       const result = await api(`jobs/${id}/review`);
       if (version !== epoch) return;
@@ -347,5 +354,26 @@ export function createReview({ onQueued }) {
       }).catch(() => {});
     } catch (error) { editor.textContent = error.message; }
   }
-  return { open };
+  // Move the editor into `host` (the studio) or back into its dialog.
+  function mount(host) {
+    if (dialog.open) dialog.close();
+    host.replaceChildren(...parts);
+    inline = true;
+    $('reviewClose').hidden = true;
+  }
+  function unmount() {
+    if (!inline) return;
+    scene.reset();
+    dialog.replaceChildren(...parts);
+    inline = false;
+    $('reviewClose').hidden = false;
+  }
+  function focusLine(index) {
+    if (!data || !data.segments.some(s => s.index === index)) return false;
+    select(index);
+    list.querySelector(`[data-line="${index}"]`)?.scrollIntoView({ block: 'nearest' });
+    return true;
+  }
+  return { open, mount, unmount, focusLine, get data() { return data; },
+    get jobId() { return jobId; } };
 }

@@ -169,6 +169,7 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
             <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;">
               ${!show ? '<button type="button" class="btn btn-secondary" id="tpTease">Preview a tease</button>' : ""}
               ${!show ? '<button type="button" class="btn btn-secondary" id="tpAudition">Audition voices</button>' : ""}
+              ${!show && item.path ? '<button type="button" class="btn btn-secondary" id="tpStudio">Open studio</button>' : ""}
               <button type="button" class="btn btn-primary" id="tpQueue" style="color:#fff;">${show ? "Choose episodes" : "Queue dub"}</button>
             </div>
           </div>
@@ -191,6 +192,9 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
     document.getElementById("tpQueue").addEventListener("click", e => { if (show) { goTitleTab("episodes"); } else queueDub(item, e.currentTarget, "full"); });
     document.getElementById("tpTease")?.addEventListener("click", e => queueDub(item, e.currentTarget, "tease"));
     document.getElementById("tpAudition")?.addEventListener("click", e => queueDub(item, e.currentTarget, "audition"));
+    document.getElementById("tpStudio")?.addEventListener("click", () => window.dispatchEvent(new CustomEvent(
+      "doblarr-open-studio", { detail: { path: item.path, title: item.title,
+        seriesRef: item.parent?.tvdb_id ? `series:${item.parent.tvdb_id}` : "" } })));
     if (item.parent && !item.path) {
       ['tpQueue', 'tpTease', 'tpAudition'].forEach(id => { const button = document.getElementById(id); if (button) { button.disabled = true; button.title = 'Download this episode in Sonarr first'; } });
     }

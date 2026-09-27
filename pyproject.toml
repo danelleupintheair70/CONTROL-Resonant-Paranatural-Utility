@@ -48,7 +48,8 @@ Homepage = "https://github.com/jhd3197/Doblarr"
 Issues = "https://github.com/jhd3197/Doblarr/issues"
 
 [tool.setuptools]
-packages = ["doblarr", "doblarr.clients", "doblarr.knowledge", "doblarr.stages", "doblarr.routes"]
+packages = ["doblarr", "doblarr.clients", "doblarr.knowledge", "doblarr.stages", "doblarr.routes",
+            "doblarr.studio"]
 
 [tool.setuptools.package-data]
 "doblarr.knowledge" = ["data/*.json"]

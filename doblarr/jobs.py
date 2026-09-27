@@ -64,6 +64,9 @@ class Job:
     translation_id: str | None = None
     version_name: str = ""
     version_file: str | None = None
+    # A studio job (experiment, audition, reference transcription) carries its
+    # task here and is run by doblarr.studio.runner instead of the pipeline.
+    task: dict | None = None
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -273,6 +276,27 @@ class Worker(threading.Thread):
                 continue
             self._process(job)
 
+    def _studio(self, job: Job, config, cancel_evt, on_progress) -> None:
+        """A studio task: same queue, cancellation and events; a different runner."""
+        from .studio import runner
+
+        try:
+            message = runner.run(job, config, db=self.store.db, services=self.services,
+                                 cancel=cancel_evt, on_progress=on_progress)
+            self.store.update(job.id, status="done", stage=job.kind, progress=100,
+                              message=message)
+            self._publish(job, "done", progress=100, message=message)
+        except JobCancelled as exc:
+            self.store.update(job.id, status="cancelled", message=str(exc))
+            self._publish(job, "cancelled", message=str(exc))
+        except Exception as exc:  # noqa: BLE001 - surface any studio failure to the UI
+            log.exception("studio job %s failed", job.id)
+            self.store.update(job.id, status="failed", message=str(exc))
+            self._publish(job, "failed", message=str(exc))
+        finally:
+            self._current_id = None
+            self._cancel_evt = None
+
     def _process(self, job: Job) -> None:
         current: dict[str, Any] = {"i": 0, "total": 1, "stage": "probe"}
 
@@ -302,6 +326,9 @@ class Worker(threading.Thread):
         self._cancel_evt = cancel_evt
         self.store.update(job.id, status="running", stage="probe", progress=0)
         self._publish(job, "started")
+        if job.kind.startswith("studio_"):
+            self._studio(job, config, cancel_evt, on_progress)
+            return
         try:
             target_locale = job.target_locale or resolve_target_locale(
                 config.as_dict(), job.target_lang)

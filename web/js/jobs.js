@@ -49,7 +49,9 @@ export function createJobs({ loadLibrary, goTitle, onTitleJobs, loadConfig }) {
         ? `<button type="button" class="btn btn-ghost job-watch" data-id="${j.id}">Watch</button>` : "";
       const review = j.has_review
         ? `<button type="button" class="btn btn-secondary job-review" data-id="${j.id}">Review${j.review_count ? ` (${j.review_count})` : ''}</button>` : '';
-      const action = (act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "") + watch + review;
+      const studio = j.input_file && !String(j.kind || '').startsWith('studio_')
+        ? `<button type="button" class="btn btn-ghost job-studio" data-id="${j.id}">Studio</button>` : '';
+      const action = (act ? `<button type="button" class="btn btn-ghost job-del" data-id="${j.id}">${act}</button>` : "") + watch + review + studio;
       const st = (j.status === "done" && (j.message || "").startsWith("planned")) ? "planned" : j.status;
       const version = j.version_id ? `<div class="m" style="font-size:11px;color:var(--muted);" title="${escapeHtml(j.version_id)}">${escapeHtml(j.version_name || 'Dub')} · ${escapeHtml(j.version_id.slice(0, 12))}<br>Script ${escapeHtml((j.translation_id || '').slice(0, 12))}</div>` : '';
       return `

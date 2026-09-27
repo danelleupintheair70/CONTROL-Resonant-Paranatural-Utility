@@ -6,6 +6,7 @@ import { createLibrary } from './library.js';
 import { createJobs } from './jobs.js';
 import { createTitle } from './title.js';
 import { createReview } from './review.js';
+import { createStudio } from './studio.js';
 import { parseTitlePath, resolveTitleTab, titlePath } from './title-routing.js';
 import { TABS } from './settings-model.js';
 import { jobsFor } from './identity.js';
@@ -28,7 +29,20 @@ const { loadConfig, saveSettings, renderSettings } = createSettings({
 });
 
 
-const review = createReview({ onQueued: loadJobs });
+const review = createReview({
+  onQueued: (result, cues) => { loadJobs(); studio.repairQueued?.(result, cues); },
+  onSelect: row => { if (state.page === 'Studio') studio.onLine(row); },
+});
+const studio = createStudio({ review, onQueued: loadJobs });
+
+// Open (or reopen) the studio for an episode file; the server keys it by media.
+async function openStudio({ path, title, jobId = '', seriesRef = '' }) {
+  const opened = await api('studio/sessions', { method: 'POST',
+    json: { path, title, job_id: jobId, series_ref: seriesRef } });
+  history.pushState({}, '', `/studio/${encodeURIComponent(opened.session.id)}/${opened.session.view || 'overview'}`);
+  applyRoute();
+}
+window.addEventListener('doblarr-open-studio', e => openStudio(e.detail).catch(error => window.alert(error.message)));
 const { renderKnowledge } = createKnowledge();
 
 // ---- App state + rendering (vanilla, no framework) ----
@@ -43,7 +57,7 @@ function setTheme(theme) {
 
 // ---- History API routing (/library, /settings/<tab>) — the server serves
 // index.html for any extensionless non-api path, so refresh/deep-link works.
-const PAGE_PATHS = { "/": "Overview", "/library": "Library", "/dubs": "Dubs", "/voices": "Voices", "/knowledge": "Knowledge", "/settings": "Settings", "/title": "Title" };
+const PAGE_PATHS = { "/": "Overview", "/library": "Library", "/dubs": "Dubs", "/voices": "Voices", "/knowledge": "Knowledge", "/settings": "Settings", "/title": "Title", "/studio": "Studio" };
 const PAGE_TO_PATH = { Overview: "/", Library: "/library", Dubs: "/dubs", Voices: "/voices", Knowledge: "/knowledge", Settings: "/settings" };
 
 function routeFromPath() {
@@ -140,6 +154,8 @@ function renderTitle() {
 function applyRoute() {
   const { page, tab, titleKey, episodeId, titleTab, invalid } = routeFromPath();
   if(page !== "Title") { episodeRequest++; episodePending = ""; }
+  // Leaving the studio stops its player and hands the editor back.
+  if (page !== "Studio" && studio.sid) studio.close();
   state.page = page;
   document.title = "Doblarr — " + page;
   document.querySelectorAll("[data-view]").forEach(s =>
@@ -161,6 +177,16 @@ function applyRoute() {
     state.episodeId = episodeId;
     if (!state.config) loadConfig();  // inherited plan values come from here
     if (!library.loaded) loadLibrary().then(renderTitle); else renderTitle();
+  }
+  if (page === "Studio") {
+    const parts = location.pathname.split('/').filter(Boolean);
+    let sid = '';
+    try { sid = decodeURIComponent(parts[1] || ''); } catch { sid = ''; }
+    if (!sid) { history.replaceState({}, '', '/dubs'); applyRoute(); return; }
+    document.querySelectorAll("#nav .navitem").forEach(n =>
+      n.setAttribute("aria-current", n.dataset.page === "Dubs" ? "page" : "false"));
+    if (studio.sid === sid) studio.show?.(parts[2] || 'overview', { push: false });
+    else studio.open(sid, parts[2]);
   }
   if (page === "Library" && !library.loaded) loadLibrary();
   if (page === "Knowledge") renderKnowledge();
@@ -247,6 +273,13 @@ document.getElementById("pauseQueue").addEventListener("click", async () => {
 document.getElementById("dubsBody").addEventListener("click", async e => {
   const reviewBtn = e.target.closest('.job-review');
   if (reviewBtn) { review.open(reviewBtn.dataset.id); return; }
+  const studioBtn = e.target.closest('.job-studio');
+  if (studioBtn) {
+    const job = (jobs.lastData?.jobs || []).find(j => j.id === studioBtn.dataset.id);
+    if (job) openStudio({ path: job.input_file, title: job.title, jobId: job.id })
+      .catch(error => window.alert(error.message));
+    return;
+  }
   const watchBtn = e.target.closest(".job-watch");
   if (watchBtn) {
     openWatch(watchBtn.dataset.id, jobs.lastData);

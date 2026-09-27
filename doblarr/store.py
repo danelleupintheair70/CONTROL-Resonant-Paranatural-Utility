@@ -180,6 +180,26 @@ def _v8_title_drafts(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _v9_studio(conn: sqlite3.Connection) -> None:
+    # The episode studio's structured state: sessions, reference assignments,
+    # alignments, experiments, auditions, casting and evaluation. Every write is
+    # a new revision, so a stale edit is a conflict and a frozen record (a
+    # judged version, a finished experiment variant) is never rewritten. Large
+    # media stays in artifact storage; these rows only point at it.
+    conn.executescript("""
+        CREATE TABLE studio_records (
+            kind       TEXT NOT NULL,
+            id         TEXT NOT NULL,
+            revision   INTEGER NOT NULL,
+            scope      TEXT NOT NULL DEFAULT '',
+            document   TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (kind, id, revision)
+        );
+        CREATE INDEX studio_records_scope ON studio_records(kind, scope, id, revision);
+    """)
+
+
 # Ordered migrations; MIGRATIONS[i] brings a db from version i to i+1.
 MIGRATIONS = [
     _v1_initial,
@@ -190,6 +210,7 @@ MIGRATIONS = [
     _v6_packs,
     _v7_memory,
     _v8_title_drafts,
+    _v9_studio,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)
