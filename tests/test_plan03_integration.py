@@ -59,7 +59,7 @@ def build(root, overrides=None, engine=None, scene=benchmarks.SCENE, media_root=
     })
     tone = engine or Engine(root, scene)
     services = Services(config)
-    services._cache["voicebox"] = tone
+    services._cache["speech"] = tone
     job = DubJob(input_file=media, source_lang="ja", target_lang="es",
                  subtitle_file=subtitles)
     job.script_is_target = True
@@ -236,7 +236,7 @@ def test_a_tease_keeps_its_own_namespace_and_still_measures_nothing_it_should_no
         "translate.provider": "passthrough",
     })
     services = Services(config)
-    services._cache["voicebox"] = Engine(tmp_path)
+    services._cache["speech"] = Engine(tmp_path)
     job = DubJob(input_file=media, source_lang="ja", target_lang="es",
                  subtitle_file=subtitles, kind="tease")
     job.script_is_target = True
@@ -260,7 +260,7 @@ def test_two_target_locales_do_not_share_takes_levels_or_evidence(tmp_path):
         })
         services = Services(config)
         engine = Engine(tmp_path)
-        services._cache["voicebox"] = engine
+        services._cache["speech"] = engine
         job = DubJob(input_file=media, source_lang="ja", target_lang="es",
                      target_locale=locale, subtitle_file=subtitles)
         job.script_is_target = True
@@ -340,7 +340,7 @@ def test_an_audition_measures_the_original_not_its_own_montage(tmp_path):
         "translate.provider": "passthrough",
     })
     services = Services(config)
-    services._cache["voicebox"] = Engine(tmp_path)
+    services._cache["speech"] = Engine(tmp_path)
     job = DubJob(input_file=media, source_lang="ja", target_lang="es",
                  subtitle_file=subtitles, kind="audition")
     job.script_is_target = True

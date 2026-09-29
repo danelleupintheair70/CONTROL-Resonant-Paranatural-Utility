@@ -56,7 +56,7 @@ def render(client, tmp_path, overrides=None, engine=None, job_id=None):
     media, subtitles = fixture_media(tmp_path)
     tone = engine or Engine(tmp_path, heard="algo distinto")
     services = Services(config)
-    services._cache["voicebox"] = tone
+    services._cache["speech"] = tone
     job = DubJob(input_file=media, source_lang="ja", target_lang="es",
                  subtitle_file=subtitles)
     job.script_is_target = True

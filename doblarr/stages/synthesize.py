@@ -1,4 +1,4 @@
-"""Stage 6 — synthesize dubbed audio per segment via voicebox.
+"""Stage 6 — synthesize dubbed audio per segment via the speech service.
 
 Each speaker has a separately verified profile and reference. Individual clips
 are resumable and keyed by their effective generation request.
@@ -14,7 +14,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from ..artifacts import digest, matches, read_json, record, stamp
-from ..clients.voicebox import GenerationFailed, VoiceboxClient
+from ..clients.speech import GenerationFailed, SpeechClient
 from ..cues import (
     RAW,
     Artifact,
@@ -271,8 +271,7 @@ def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel, cleanup=
             text = vb.transcribe(ref, language=job.source_lang).get("text", "").strip()
         if not text or _bad_ref_text(text):
             continue
-        pid = vb.create_profile(name=f"{job.input_file.stem}-{key[:16]}", language=job.target_lang)
-        vb.add_sample(pid, ref, text)
+        pid = vb.clone_voice(f"{job.input_file.stem}-{key[:16]}", job.target_lang, ref, text)
         write_json(profile_receipt, {
             "id": pid, "reference": key,
             # The original sample is kept whether or not cleanup ran, so the
@@ -520,7 +519,8 @@ def run(
     if dry_run:
         for seg in job.segments:
             seg.audio_clip = clips_dir / f"line_{seg.index:04d}.wav"
-        return dry(f"would clone a voice + generate {len(job.segments)} clips via voicebox")
+        return dry(f"would clone a voice + generate {len(job.segments)} clips "
+                   "via the speech service")
 
     if not job.segments:
         raise RuntimeError("nothing to synthesize (no segments)")
@@ -588,12 +588,12 @@ def run(
     def render(item):
         position, seg = item
         client = vb
-        if isinstance(vb, VoiceboxClient) and int(concurrency) > 1:
+        if isinstance(vb, SpeechClient) and int(concurrency) > 1:
             if not hasattr(local, "client"):
-                local.client = VoiceboxClient(vb.base_url, timeout=vb.timeout)
+                local.client = vb.fork()
                 clients.append(local.client)
             client = local.client
-        if isinstance(client, VoiceboxClient):
+        if isinstance(client, SpeechClient):
             client.observer = count
         if stop.is_set():
             raise JobCancelled("cancelled before speech generation")

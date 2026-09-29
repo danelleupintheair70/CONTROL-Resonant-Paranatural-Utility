@@ -35,6 +35,10 @@ original. Plex/Jellyfin then just show it as another audio option.
 Doblarr owns the movie-specific pipeline. **[voicebox](https://github.com/jamiepine/voicebox)**
 (MIT) is the voice-cloning + TTS engine, called over HTTP — not vendored — so the
 two stay decoupled and voicebox upgrades come for free.
+[VoiceStudio](https://github.com/debpalash/VoiceStudio) works the same way: set
+`speech.backend: voicestudio` and Doblarr clones and speaks through its local API
+instead (engines such as OmniVoice, VoxCPM2 and IndexTTS2; translation then needs a
+provider other than `voicebox`).
 
 ## What's real today
 

@@ -8,9 +8,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..cache import TTLCache
-from ..clients.voicebox import VoiceboxError
-
-ENGINES = ("kokoro", "qwen_custom_voice")
+from ..clients.speech import SpeechError
 
 
 class Choice(BaseModel):
@@ -38,7 +36,7 @@ def build_router(config, services, db):
         cached = cache.get("voices") if not refresh else None
         if cached is not None:
             return cached
-        vb = services.voicebox
+        vb = services.speech
         voices, warnings = [], []
         try:
             for p in vb.voice_profiles():
@@ -57,9 +55,9 @@ def build_router(config, services, db):
                         "age": "unknown",
                     }
                 )
-        except VoiceboxError as e:
+        except SpeechError as e:
             warnings.append(str(e))
-        for engine in ENGINES:
+        for engine in vb.preset_engines:
             try:
                 for p in vb.preset_voices(engine):
                     voices.append(
@@ -75,7 +73,7 @@ def build_router(config, services, db):
                             "age": "unknown",
                         }
                     )
-            except VoiceboxError as e:
+            except SpeechError as e:
                 warnings.append(f"{engine}: {e}")
         result = {"voices": voices, "warnings": warnings}
         cache.set("voices", result)
@@ -88,7 +86,7 @@ def build_router(config, services, db):
         with lock:
             pid = voice.get("profile_id")
             if not pid:
-                pid = services.voicebox.register_preset(
+                pid = services.speech.register_preset(
                     {
                         "voice_id": voice["preset_id"],
                         "name": voice["name"],
@@ -129,10 +127,10 @@ def build_router(config, services, db):
         chosen = next((v for v in catalog()["voices"] if v["key"] == body.key), None)
         if chosen and chosen["engine"] == "kokoro" and chosen["language"] != body.language:
             raise HTTPException(422, "Choose a preset in the requested language")
-        if body.direction and chosen and chosen["engine"] not in {"qwen", "qwen_custom_voice"}:
-            raise HTTPException(422, "Delivery direction requires a Qwen voice")
+        if body.direction and chosen and not services.speech.supports_direction(chosen["engine"]):
+            raise HTTPException(422, "This voice's engine does not accept a delivery direction")
         voice = select(body.key)
-        gid = services.voicebox.generate(
+        gid = services.speech.generate(
             voice["profile_id"],
             body.text,
             body.language,
@@ -146,14 +144,13 @@ def build_router(config, services, db):
     def preview_status(generation_id: str):
         if not previews.get(generation_id):
             raise HTTPException(404, "Preview expired")
-        data = services.voicebox._get(f"/history/{generation_id}")
-        return {"status": data.get("status"), "error": data.get("error")}
+        return services.speech.generation_status(generation_id)
 
     @api.get("/api/voice-catalog/preview/{generation_id}/audio")
     def preview_audio(generation_id: str):
         if not previews.get(generation_id):
             raise HTTPException(404, "Preview expired")
-        response = services.voicebox._request("GET", f"/audio/{generation_id}")
-        return Response(content=response.content, media_type="audio/wav")
+        return Response(content=services.speech.fetch_audio(generation_id),
+                        media_type="audio/wav")
 
     return api

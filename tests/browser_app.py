@@ -21,4 +21,4 @@ app.state.services._cache["radarr"] = SimpleNamespace(list_movies=lambda: [{
     "movieFile": {"path": str(_root / "film.mkv"),
                   "mediaInfo": {"audioLanguages": "kor"}},
 }])
-app.state.services._cache["voicebox"] = SimpleNamespace(list_voices=lambda: [])
+app.state.services._cache["speech"] = SimpleNamespace(list_voices=lambda: [])

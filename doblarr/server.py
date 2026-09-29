@@ -15,9 +15,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .auth import build_api_key_dependency
-from .clients.voicebox import VoiceboxError
+from .clients.speech import SpeechError
 from .config import Config
-from .errors import DoblarrError, NotFoundError
+from .errors import ConfigError, DoblarrError, NotFoundError
 from .events import EventBus
 from .jobs import JobStore, Worker, import_legacy_json
 from .library_service import LibraryService
@@ -107,7 +107,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @api.get("/api/health/ready")
     def ready():
-        """Readiness: voicebox reachable and at least one *arr source configured."""
+        """Readiness: speech service reachable and at least one *arr source configured."""
         problems: list[str] = []
         conn = config.get("connect", {})
         if not ((conn.get("radarr_url") and conn.get("radarr_api_key"))
@@ -115,9 +115,13 @@ def create_app(config: Config | None = None) -> FastAPI:
             problems.append("no library source configured "
                             "(connect.radarr_* / connect.sonarr_*)")
         try:
-            services.voicebox.health(timeout=4)
-        except VoiceboxError as exc:
-            problems.append(f"voicebox: {exc}")
+            speech = services.speech
+            try:
+                speech.health(timeout=4)
+            except SpeechError as exc:
+                problems.append(f"{speech.service}: {exc}")
+        except ConfigError as exc:
+            problems.append(str(exc))
         if problems:
             return JSONResponse(status_code=503,
                                 content={"ready": False, "problems": problems})

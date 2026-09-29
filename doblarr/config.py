@@ -24,7 +24,7 @@ DEFAULTS: dict[str, Any] = ConfigModel().model_dump()
 # from a redacted round-trip.
 SECRET_KEYS = {
     "connect.radarr_api_key", "connect.sonarr_api_key", "connect.plex_token",
-    "web.api_key", "notify.discord_webhook",
+    "web.api_key", "notify.discord_webhook", "voicestudio.api_key",
 }
 SECRET_SENTINEL = "••••••"
 
@@ -34,6 +34,7 @@ ENV_OVERRIDES = {
     "DOBLARR_RADARR_API_KEY": ("connect", "radarr_api_key"),
     "DOBLARR_SONARR_API_KEY": ("connect", "sonarr_api_key"),
     "DOBLARR_PLEX_TOKEN": ("connect", "plex_token"),
+    "DOBLARR_VOICESTUDIO_API_KEY": ("voicestudio", "api_key"),
 }
 
 

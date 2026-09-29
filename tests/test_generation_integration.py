@@ -74,7 +74,7 @@ def test_pipeline_resume_edit_and_audition_with_real_audio(tmp_path, monkeypatch
                     )
                 )
 
-    services = SimpleNamespace(voicebox=Voicebox())
+    services = SimpleNamespace(speech=Voicebox())
     config = Config.load(tmp_path / "config.yaml").with_overrides(
         {
             "paths.work_dir": str(tmp_path / "work"),

@@ -13,7 +13,7 @@ import logging
 from .clients.plex import PlexClient
 from .clients.radarr import RadarrClient
 from .clients.sonarr import SonarrClient
-from .clients.voicebox import VoiceboxClient
+from .clients.speech import SpeechClient, build_speech_client
 from .config import Config
 from .errors import ConfigError
 
@@ -58,9 +58,8 @@ class Services:
         return self._cache["plex"]
 
     @property
-    def voicebox(self) -> VoiceboxClient:
-        if "voicebox" not in self._cache:
-            vb = self.config["voicebox"]
-            self._cache["voicebox"] = VoiceboxClient(vb["base_url"],
-                                                     timeout=vb["timeout_seconds"])
-        return self._cache["voicebox"]
+    def speech(self) -> SpeechClient:
+        """The configured speech service (voicebox or VoiceStudio)."""
+        if "speech" not in self._cache:
+            self._cache["speech"] = build_speech_client(self.config)
+        return self._cache["speech"]

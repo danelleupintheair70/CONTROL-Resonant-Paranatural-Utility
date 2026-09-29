@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 def fake_voicebox(client):
     calls = []
-    client.app.state.services._cache["voicebox"] = SimpleNamespace(
+    client.app.state.services._cache["speech"] = SimpleNamespace(
         voice_profiles=lambda: [
             {"id": "saved", "name": "Original", "language": "es", "default_engine": "qwen"}
         ],
@@ -12,8 +12,10 @@ def fake_voicebox(client):
         ],
         register_preset=lambda voice, engine: calls.append(engine) or "registered",
         generate=lambda *a, **kw: calls.append(kw) or "preview-id",
-        _get=lambda path: {"status": "completed"},
-        _request=lambda *a: SimpleNamespace(content=b"audio"),
+        preset_engines=("kokoro", "qwen_custom_voice"),
+        supports_direction=lambda engine: engine in {"qwen", "qwen_custom_voice"},
+        generation_status=lambda gid: {"status": "completed", "error": None},
+        fetch_audio=lambda gid: b"audio",
     )
     return calls
 

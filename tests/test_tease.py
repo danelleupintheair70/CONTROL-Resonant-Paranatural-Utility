@@ -110,7 +110,7 @@ def test_synthesize_uses_cast_voice_instead_of_cloning(tmp_path):
     job.speakers = {"NARRATOR": Speaker("NARRATOR")}
 
     class FakeVb:
-        def create_profile(self, **kw):
+        def clone_voice(self, *a, **kw):
             raise AssertionError("must not clone when the cast assigns a voice")
 
         def synthesize_to_file(self, profile_id, text, lang, dest, **kw):

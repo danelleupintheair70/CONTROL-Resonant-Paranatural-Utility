@@ -32,11 +32,10 @@ class Voicebox:
     def transcribe(self, path, language=None):
         return {"text": "una referencia limpia"}
 
-    def create_profile(self, name, language, description=""):
-        return f"profile-{len(self.samples)}"
-
-    def add_sample(self, profile_id, sample, reference_text):
+    def clone_voice(self, name, language, sample, reference_text, description=""):
+        profile_id = f"profile-{len(self.samples)}"
         self.samples.append((profile_id, sample, reference_text))
+        return profile_id
 
 
 def _job(tmp_path, lines):

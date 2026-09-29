@@ -44,7 +44,12 @@ filtering:
 plex:
   auto_refresh: true            # refresh the item so the new track shows up
 
-# voicebox service (the TTS + voice-cloning engine Doblarr calls)
+# Speech service: clones the voices and generates the dubbed lines.
+speech:
+  backend: voicebox             # voicebox | voicestudio
+
+# voicebox service. The engine, model size, seed and concurrency below also
+# apply when speech.backend is voicestudio (engine ids differ per service).
 voicebox:
   # Installed/native app default: 17493.  Docker maps host 17600 -> 17493.
   base_url: http://127.0.0.1:17493
@@ -55,6 +60,15 @@ voicebox:
   model_size: null
   seed: null
   preview_engine: kokoro
+
+# VoiceStudio service (speech.backend: voicestudio). Engine ids: omnivoice,
+# voxcpm2, cosyvoice, indextts2, ... (GET /engines/tts on the service).
+voicestudio:
+  base_url: http://127.0.0.1:3900
+  api_key: null                 # only for a non-loopback VoiceStudio; or env
+                                # DOBLARR_VOICESTUDIO_API_KEY
+  timeout_seconds: 1800
+  directable_engines: []        # engines you've heard follow a delivery direction
 
 # Translation
 translate:

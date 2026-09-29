@@ -425,6 +425,10 @@ def _build_translator(
     if provider == "voicebox":
         if voicebox_client is None:
             raise ValueError("voicebox translator needs a voicebox client")
+        service = getattr(voicebox_client, "service", "voicebox")
+        if service != "voicebox":
+            raise ConfigError(f"translate.provider voicebox needs speech.backend voicebox; "
+                              f"{service} has no language model")
         size = model if model in VoiceboxTranslator.SIZES else None
         return VoiceboxTranslator(voicebox_client, model_size=size, **(llm_options or {}))
     if provider == "passthrough":

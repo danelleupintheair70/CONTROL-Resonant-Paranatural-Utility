@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..artifacts import read_json
+from ..clients.speech import build_speech_client
 from ..config import Config
 from ..errors import NotFoundError
 from ..events import EventBus
@@ -729,7 +730,8 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
                                          [c.model_dump() for c in body.candidates])
         document = {**body.model_dump(), "plan": plan, "status": "planned", "takes": {},
                     "candidates": [c.model_dump() for c in body.candidates],
-                    "capabilities": {c.engine or "(default)": auditions.capabilities(c.engine)
+                    "capabilities": {c.engine or "(default)": auditions.capabilities(
+                         c.engine, build_speech_client(config), presets_lookup=False)
                                      for c in body.candidates}}
         existing = records.get(db, "audition", aid)
         saved = existing or records.put(db, "audition", aid, document, scope=sid)
