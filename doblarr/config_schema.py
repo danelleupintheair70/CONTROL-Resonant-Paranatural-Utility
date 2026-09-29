@@ -68,6 +68,21 @@ class PlexModel(_Section):
     auto_refresh: bool = True
 
 
+class SpeechModel(_Section):
+    # Which speech service clones voices and generates lines. The engine,
+    # model size, seed and concurrency in `voicebox` apply to either.
+    backend: Literal["voicebox", "voicestudio"] = "voicebox"
+
+
+class VoiceStudioModel(_Section):
+    base_url: str = "http://127.0.0.1:3900"
+    api_key: str | None = None   # only for a non-loopback VoiceStudio
+    timeout_seconds: int = 1800
+    # Engines heard following a free-text delivery direction. VoiceStudio
+    # does not declare this, so nothing is directable until listed.
+    directable_engines: list[str] = []
+
+
 class VoiceboxModel(_Section):
     base_url: str = "http://127.0.0.1:17493"
     timeout_seconds: int = 1800  # first CPU generation includes the model load
@@ -379,7 +394,9 @@ class ConfigModel(_Section):
     discovery: DiscoveryModel = DiscoveryModel()
     filtering: FilteringModel = FilteringModel()
     plex: PlexModel = PlexModel()
+    speech: SpeechModel = SpeechModel()
     voicebox: VoiceboxModel = VoiceboxModel()
+    voicestudio: VoiceStudioModel = VoiceStudioModel()
     translate: TranslateModel = TranslateModel()
     transcribe: TranscribeModel = TranscribeModel()
     separate: SeparateModel = SeparateModel()

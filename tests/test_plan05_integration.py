@@ -41,7 +41,7 @@ def build(root, overrides=None, engine=None, media_root=None,
     })
     tone = engine or benchmarks.ToneEngine(root, scene)
     services = Services(config)
-    services._cache["voicebox"] = tone
+    services._cache["speech"] = tone
     job = DubJob(input_file=media, source_lang="ja", target_lang="es",
                  subtitle_file=subtitles)
     job.script_is_target = True

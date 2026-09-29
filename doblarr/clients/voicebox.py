@@ -1,16 +1,15 @@
-"""HTTP client for the voicebox service (TTS + voice cloning).
+"""voicebox adapter for the speech contract (TTS + voice cloning + local LLM).
 
 Endpoints wired against voicebox's OpenAPI spec:
     GET  /health
+    POST /llm/generate                     (json: prompt, system, ...)
     POST /transcribe                       (multipart: file, language)
+    GET  /profiles, /profiles/presets/{engine}
     POST /profiles                         (json: name, description, language)
     POST /profiles/{profile_id}/samples    (multipart: file, reference_text)
     POST /generate                         (json: profile_id, text, language, seed, model_size)
-    GET  /generate/{generation_id}/status
+    GET  /history/{generation_id}          (the generation's status)
     GET  /audio/{generation_id}            (returns the rendered audio)
-
-Doblarr never imports a TTS model directly — it drives voicebox over HTTP so the
-two projects stay decoupled and voicebox upgrades come for free.
 """
 
 from __future__ import annotations
@@ -20,17 +19,15 @@ import time
 from pathlib import Path
 
 from ..artifacts import read_json
-from ..errors import ArrClientError, JobCancelled
+from ..errors import JobCancelled
 from ..telemetry import write_json
-from .base import ArrClient
+from .speech import GenerationFailed, SpeechClient, SpeechError
+
+__all__ = ["GenerationFailed", "VoiceboxClient", "VoiceboxError"]
 
 
-class VoiceboxError(ArrClientError, RuntimeError):
+class VoiceboxError(SpeechError):
     pass
-
-
-class GenerationFailed(VoiceboxError):
-    """A confirmed terminal failure; safe to submit a new generation."""
 
 
 # Engines whose /generate accepts an `instruct` delivery direction. This is
@@ -39,13 +36,16 @@ class GenerationFailed(VoiceboxError):
 # anything else, and `doblarr.performance` asks here before claiming an
 # instruction was applied.
 DIRECTABLE_ENGINES = frozenset({"qwen", "qwen_custom_voice"})
+# Engines that clone from a reference sample.
+CLONE_ENGINES = frozenset({"chatterbox", "chatterbox_turbo", "qwen"})
 # Aliases the service accepts for the same engine.
 ENGINE_ALIASES = {"chatterbox-multilingual": "chatterbox", "qwen3-tts": "qwen"}
 
 
-class VoiceboxClient(ArrClient):
+class VoiceboxClient(SpeechClient):
     service = "voicebox"
     error_cls = VoiceboxError
+    preset_engines = ("kokoro", "qwen_custom_voice")
 
     @staticmethod
     def canonical_engine(engine: str) -> str:
@@ -56,13 +56,13 @@ class VoiceboxClient(ArrClient):
         """Whether `engine` can be given a delivery instruction at all."""
         return cls.canonical_engine(engine) in DIRECTABLE_ENGINES
 
-    def __init__(self, base_url: str, timeout: int = 600):
-        super().__init__(base_url, timeout=timeout)
-        self.observer = None
+    @classmethod
+    def supports_cloning(cls, engine: str) -> bool:
+        canonical = cls.canonical_engine(engine)
+        return canonical in CLONE_ENGINES or not canonical
 
-    def observe(self, name, value=1):
-        if self.observer:
-            self.observer(name, value)
+    def fork(self) -> VoiceboxClient:
+        return VoiceboxClient(self.base_url, timeout=self.timeout)
 
     # -- health -----------------------------------------------------------
     def health(self, timeout: int = 15) -> dict:
@@ -88,14 +88,6 @@ class VoiceboxClient(ArrClient):
             return self._post("/transcribe", files=files, data=data)
 
     # -- voice profiles (cloning) -----------------------------------------
-    def list_voices(self) -> list[dict]:
-        """Available voices (voicebox profiles) as [{id, name}]."""
-        data = self._get("/profiles")
-        profiles = data if isinstance(data, list) else data.get("profiles", [])
-        return [
-            {"id": p.get("id") or p.get("profile_id"), "name": p.get("name", "?")} for p in profiles
-        ]
-
     def create_profile(self, name: str, language: str, description: str = "") -> str:
         payload = {"name": name, "language": language, "description": description}
         data = self._post("/profiles", json=payload)
@@ -104,7 +96,7 @@ class VoiceboxClient(ArrClient):
             raise VoiceboxError(f"no profile id in response: {data}")
         return profile_id
 
-    def voice_profiles(self):
+    def voice_profiles(self) -> list[dict]:
         data = self._get("/profiles")
         return data if isinstance(data, list) else data.get("profiles", [])
 
@@ -136,6 +128,12 @@ class VoiceboxClient(ArrClient):
             files = {"file": (sample.name, fh)}
             data = {"reference_text": reference_text}
             return self._post(f"/profiles/{profile_id}/samples", files=files, data=data)
+
+    def clone_voice(self, name: str, language: str, sample: Path, reference_text: str,
+                    description: str = "") -> str:
+        profile_id = self.create_profile(name, language, description=description)
+        self.add_sample(profile_id, sample, reference_text)
+        return profile_id
 
     # -- speech generation ------------------------------------------------
     def generate(
@@ -202,11 +200,18 @@ class VoiceboxClient(ArrClient):
         with contextlib.suppress(Exception):
             self._post(f"/generate/{generation_id}/cancel", json={})
 
+    def generation_status(self, generation_id: str) -> dict:
+        data = self._get(f"/history/{generation_id}", timeout=30)
+        return {"status": data.get("status"), "error": data.get("error")}
+
+    def fetch_audio(self, generation_id: str) -> bytes:
+        return self._request("GET", f"/audio/{generation_id}").content
+
     def download_audio(self, generation_id: str, dest: Path) -> Path:
-        resp = self._request("GET", f"/audio/{generation_id}")
+        audio = self.fetch_audio(generation_id)
         dest.parent.mkdir(parents=True, exist_ok=True)
         temp = dest.with_suffix(dest.suffix + ".partial")
-        temp.write_bytes(resp.content)
+        temp.write_bytes(audio)
         temp.replace(dest)
         return dest
 

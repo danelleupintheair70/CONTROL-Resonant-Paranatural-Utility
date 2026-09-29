@@ -87,7 +87,7 @@ class ComparisonError(RuntimeError):
 
 
 class RefusesToGenerate:
-    """A voicebox stand-in that makes a TTS request a crash rather than a cost.
+    """A speech-service stand-in that makes a TTS request a crash rather than a cost.
 
     This is the enforcement behind "same-take processing comparison". If a
     variant reaches for the engine, something in the import is wrong — the
@@ -104,11 +104,9 @@ class RefusesToGenerate:
     def list_voices(self) -> list[dict]:
         return [{"id": v, "name": v} for v in self.voices]
 
-    def create_profile(self, name: str, language: str) -> str:  # pragma: no cover
-        raise ComparisonError("a comparison must not create a voice profile")
-
-    def add_sample(self, profile_id, path, text) -> None:  # pragma: no cover
-        raise ComparisonError("a comparison must not add a clone sample")
+    def clone_voice(self, name, language, sample, reference_text,
+                    description="") -> str:  # pragma: no cover
+        raise ComparisonError("a comparison must not clone a voice")
 
     def transcribe(self, path, language: str = "") -> dict:
         # Recognition is a read, not a generation. It is still refused here:
@@ -650,7 +648,7 @@ def render_variant(config: Config, prepared: dict, scene: Scene, name: str,
                  target_lang=target_lang, target_locale=target_locale)
     engine = RefusesToGenerate(speakers)
     services = Services(config)
-    services._cache["voicebox"] = engine   # the documented injection point
+    services._cache["speech"] = engine   # the documented injection point
     started = time.perf_counter()
     run_job(job, config, services=services, cancel_event=cancel)
     elapsed = round(time.perf_counter() - started, 2)
@@ -1014,7 +1012,7 @@ def run(config: Config, *, comparison_id: str, source: Path, script: Path,
     if check_content:
         # Best effort. A comparison must still build with nothing listening.
         try:
-            recognizer = Services(config).voicebox
+            recognizer = Services(config).speech
         except Exception as exc:  # noqa: BLE001 - unconfigured is not an error here
             log.info("comparison: no recognizer available (%s); the imported takes "
                      "will not be checked", exc)

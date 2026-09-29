@@ -29,11 +29,8 @@ class Engine:
     def list_voices(self):
         return [{"id": "voice-1", "name": "Voice"}]
 
-    def create_profile(self, name, language):
+    def clone_voice(self, name, language, sample, reference_text, description=""):
         return "voice-1"
-
-    def add_sample(self, profile_id, path, text):
-        return None
 
     def transcribe(self, path, language=""):
         return {"text": ""}

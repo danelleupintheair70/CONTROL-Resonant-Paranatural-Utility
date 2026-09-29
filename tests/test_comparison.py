@@ -42,7 +42,7 @@ def completed_run(root, scene=benchmarks.TREATMENT_SCENE):
     })
     engine = benchmarks.ToneEngine(root, scene)
     services = benchmarks.Services(config)
-    services._cache["voicebox"] = engine
+    services._cache["speech"] = engine
     from doblarr.models import DubJob
     from doblarr.pipeline import run_job
 

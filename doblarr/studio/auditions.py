@@ -35,7 +35,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..artifacts import digest, read_json
 from ..budget import RequestBudget
-from ..clients.voicebox import VoiceboxClient, VoiceboxError
+from ..clients.speech import SpeechError
+from ..clients.voicebox import VoiceboxClient
 from ..errors import DoblarrError, JobCancelled
 from ..telemetry import write_json
 from . import records
@@ -47,7 +48,6 @@ CATEGORIES = ("calm", "quiet", "intense", "contextual")
 ALL_CATEGORIES: list[Literal["calm", "quiet", "intense", "contextual"]] = [
     "calm", "quiet", "intense", "contextual"]
 KINDS = ("current", "preset", "directed", "clone_character", "clone_line")
-CLONE_ENGINES = frozenset({"chatterbox", "chatterbox_turbo", "qwen"})
 REFERENCE_SECONDS = (4.0, 12.0)
 LINE_REFERENCE_MIN = 2.0      # voicebox refuses a clone sample shorter than this
 QUIET_DB, INTENSE_DB = -3.5, 3.5
@@ -94,18 +94,23 @@ class AuditionIn(BaseModel):
         return value
 
 
-def capabilities(engine: str, vb=None) -> dict:
-    """What an engine can be asked for, from the adapter's own declarations."""
-    canonical = VoiceboxClient.canonical_engine(engine)
+def capabilities(engine: str, vb=None, *, presets_lookup: bool = True) -> dict:
+    """What an engine can be asked for, from the adapter's own declarations.
+
+    `vb` is the configured speech client; without one, voicebox's fixed
+    declarations answer. `presets_lookup=False` skips the network read.
+    """
+    adapter = vb if vb is not None and hasattr(vb, "supports_cloning") else VoiceboxClient
+    canonical = adapter.canonical_engine(engine)
     presets: bool | None = None
-    if vb is not None and canonical:
+    if vb is not None and canonical and presets_lookup:
         try:
             presets = bool(vb.preset_voices(canonical))
         except Exception:  # noqa: BLE001 - an engine without presets just says so
             presets = None
     return {"engine": canonical or "(service default)",
-            "direction": VoiceboxClient.supports_direction(canonical),
-            "clone": canonical in CLONE_ENGINES or not canonical,
+            "direction": adapter.supports_direction(canonical),
+            "clone": adapter.supports_cloning(canonical) if canonical else True,
             "presets": presets,
             "note": ("Direction is only sent to engines that accept an instruction. "
                      "Cloning needs a clean sample of at least 2 s.")}
@@ -255,8 +260,8 @@ def _profile(vb, state: dict, name: str, reference: Path, text: str, language: s
         existing = set()
     if known and known.get("id") in existing and known.get("sha") == sha:
         return known["id"]
-    profile = vb.create_profile(name, language, description="Doblarr studio audition")
-    vb.add_sample(profile, reference, text or "-")
+    profile = vb.clone_voice(name, language, reference, text or "-",
+                             description="Doblarr studio audition")
     state["profiles"][name] = {"id": profile, "sha": sha}
     return profile
 
@@ -418,7 +423,7 @@ def _take(vb, work: Path, audition: dict, candidate: dict, excerpt: dict, profil
             vb.synthesize_to_file(profile, text, language, path, cancel_event=cancel,
                                   seed=None if seed is None else seed + attempt * 101,
                                   **options)
-        except VoiceboxError as exc:
+        except SpeechError as exc:
             attempts.append({"attempt": attempt, "error": str(exc)[:300]})
             continue
         judged = _judge(vb, path, excerpt["text"], language) if audition.get(

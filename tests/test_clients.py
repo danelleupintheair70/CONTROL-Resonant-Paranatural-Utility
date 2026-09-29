@@ -131,7 +131,7 @@ def test_services_container():
     first = svc.radarr
     assert svc.radarr is first            # cached
     assert first.base_url == "http://r"
-    assert svc.voicebox.base_url == "http://v"
-    assert svc.voicebox.timeout == 5
+    assert svc.speech.base_url == "http://v"
+    assert svc.speech.timeout == 5
     svc.invalidate()
     assert svc.radarr is not first        # rebuilt after invalidate

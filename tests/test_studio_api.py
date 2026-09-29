@@ -41,13 +41,11 @@ class FakeVoicebox:
     def voice_profiles(self):
         return self.profiles
 
-    def create_profile(self, name, language, description=""):
+    def clone_voice(self, name, language, sample, reference_text, description=""):
+        assert Path(sample).is_file()
         pid = f"p-{len(self.profiles) + 1}"
         self.profiles.append({"id": pid, "name": name})
         return pid
-
-    def add_sample(self, profile, path, text):
-        assert Path(path).is_file()
 
     def transcribe(self, path, language=""):
         return {"text": "hola"}
@@ -250,7 +248,7 @@ def test_audition_is_bounded_resumable_and_honest_about_engines(client_factory, 
     client = client_factory()
     queued, job = review_client(client, tmp_path)
     vb = FakeVoicebox()
-    client.app.state.services._cache["voicebox"] = vb
+    client.app.state.services._cache["speech"] = vb
     sid = studio(client, tmp_path, job)["id"]
     made = client.post(f"/api/studio/sessions/{sid}/auditions", json={
         "character": "B", "job_id": queued.id, "per_category": 2,

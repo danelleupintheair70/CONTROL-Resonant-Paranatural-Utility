@@ -42,7 +42,7 @@ def translator_for(experiment: dict, services):
     from ..clients.translator import build_translator
 
     provider = experiment.get("provider") or "voicebox"
-    client = services.voicebox if provider == "voicebox" else None
+    client = services.speech if provider == "voicebox" else None
     options = ({"max_tokens": 2048, "temperature": experiment.get("temperature")}
                if provider == "voicebox" else {})
     return build_translator(provider, experiment.get("model") or "", voicebox_client=client,
@@ -95,7 +95,7 @@ def _audition(db, root, config, services, task, cancel, progress) -> str:
         raise DoblarrError("that audition no longer exists")
     store = JobStore(db)
     snapshot = snapshot_for(store.get(audition["job_id"]))
-    result = auditions.run(db, root, audition, snapshot, services.voicebox, cancel=cancel,
+    result = auditions.run(db, root, audition, snapshot, services.speech, cancel=cancel,
                            progress=progress,
                            pronunciations=dict(config["dub"].get("pronunciations") or {}))
     return f"audition {result.get('status')}"
@@ -143,7 +143,7 @@ def _transcribe(db, root, config, services, task, cancel, progress) -> str:
 
 
 def _recognize(clip: Path, language: str, config, services, engine: str) -> list[dict]:
-    """Timed pieces of one window: faster-whisper when present, else voicebox."""
+    """Timed pieces of one window: faster-whisper when present, else the speech service."""
     if engine == "whisper":
         import importlib.util
 
@@ -160,7 +160,7 @@ def _recognize(clip: Path, language: str, config, services, engine: str) -> list
                                                vad_filter=True)
             return [{"start": s.start, "end": s.end, "text": s.text.strip()}
                     for s in segments if s.text.strip() and s.end > s.start]
-    heard = services.voicebox.transcribe(clip, language=language) or {}
+    heard = services.speech.transcribe(clip, language=language) or {}
     text = str(heard.get("text") or "").strip()
     if not text:
         return []

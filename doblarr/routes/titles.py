@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from ..clients.voicebox import VoiceboxError
+from ..clients.speech import SpeechError
 from ..config import Config
 from ..errors import ConfigError
 from ..events import EventBus
@@ -137,10 +137,11 @@ def build_router(config: Config, db: Database, bus: EventBus, services: Services
     # -- voice casting ------------------------------------------------------
     @api.get("/api/voices")
     def list_voices():
-        """Voice list: voicebox profiles when reachable, else config presets."""
+        """Voice list: speech-service profiles when reachable, else config presets."""
         try:
-            return {"source": "voicebox", "voices": services.voicebox.list_voices()}
-        except VoiceboxError as exc:
+            backend = config.get("speech", {}).get("backend", "voicebox")
+            return {"source": backend, "voices": services.speech.list_voices()}
+        except SpeechError as exc:
             presets = config.get("dub", {}).get("preset_voices") or []
             return {
                 "source": "config",
@@ -202,8 +203,8 @@ def build_router(config: Config, db: Database, bus: EventBus, services: Services
         cast = (db.load_cast(key) or {}).get("cast", [])
         # A saved profile is a reference only. Never include samples or profile payloads.
         try:
-            names = {v["id"]: v["name"] for v in services.voicebox.list_voices()}
-        except VoiceboxError:
+            names = {v["id"]: v["name"] for v in services.speech.list_voices()}
+        except SpeechError:
             names = {}
         warnings = []
 
@@ -373,8 +374,8 @@ def build_router(config: Config, db: Database, bus: EventBus, services: Services
                     )
             warnings += knowledge_info["missing_packs"] + knowledge_info["engine_mismatches"]
         try:
-            voices = services.voicebox.list_voices()
-        except VoiceboxError:
+            voices = services.speech.list_voices()
+        except SpeechError:
             voices = []
             warnings.append(
                 "Voice service unavailable. Only local source-audio casting is available."

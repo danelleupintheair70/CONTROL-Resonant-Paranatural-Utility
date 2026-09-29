@@ -256,7 +256,7 @@ def _srt_time(seconds: float) -> str:
 
 
 class ToneEngine:
-    """An offline stand-in for voicebox that renders each line as a tone.
+    """An offline stand-in for the speech service that renders each line as a tone.
 
     It counts requests, so a baseline can state plainly how many generations a
     run cost and a later plan can prove a processing-only change costs none.
@@ -272,11 +272,9 @@ class ToneEngine:
     def list_voices(self) -> list[dict]:
         return [{"id": "tone-voice", "name": "Tone"}]
 
-    def create_profile(self, name: str, language: str) -> str:
+    def clone_voice(self, name: str, language: str, sample: Path, reference_text: str,
+                    description: str = "") -> str:
         return "tone-voice"
-
-    def add_sample(self, profile_id: str, path: Path, text: str) -> None:
-        return None
 
     def transcribe(self, path: Path, language: str = "") -> dict:
         return {"text": ""}
@@ -448,7 +446,7 @@ def baseline(root: Path, scene=SCENE, overrides: dict | None = None,
     })
     engine = ToneEngine(root, scene)
     services = Services(config)
-    services._cache["voicebox"] = engine  # the documented injection point
+    services._cache["speech"] = engine  # the documented injection point
 
     job = DubJob(input_file=media, source_lang="ja", target_lang="es",
                  subtitle_file=subtitles)

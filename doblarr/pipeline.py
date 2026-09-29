@@ -121,7 +121,7 @@ def run_job(
         effective_work = work
     character_group = config["dub"].get("cast_group", "")
     character_map = config["dub"].get("character_map", {})
-    vb = (services or Services(config)).voicebox
+    vb = (services or Services(config)).speech
     # Frozen knowledge for this run: pinned to the job's snapshot revisions, so
     # edits made after queueing never change a resumed job. Without a db (CLI)
     # the legacy pronunciation map alone applies, exactly as before.

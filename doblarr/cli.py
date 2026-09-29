@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .clients.voicebox import VoiceboxClient, VoiceboxError
+from .clients.speech import SpeechError, build_speech_client
 from .config import Config
 from .logging_setup import setup_logging
 from .models import DubJob
@@ -19,13 +19,13 @@ from .pipeline import run_job
 
 
 def _cmd_check(args: argparse.Namespace, config: Config) -> int:
-    vb = VoiceboxClient(config["voicebox"]["base_url"])
+    speech = build_speech_client(config)
     try:
-        health = vb.health()
-    except VoiceboxError as exc:
-        print(f"voicebox NOT reachable: {exc}")
+        health = speech.health()
+    except SpeechError as exc:
+        print(f"{speech.service} NOT reachable: {exc}")
         return 1
-    print(f"voicebox OK at {vb.base_url}: {health}")
+    print(f"{speech.service} OK at {speech.base_url}: {health}")
     return 0
 
 
@@ -83,7 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-c", "--config", default=None, help="path to config.yaml")
     sub = p.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("check", help="check the voicebox service is reachable")
+    sub.add_parser("check", help="check the speech service is reachable")
 
     s = sub.add_parser("serve", help="run the web UI + API server")
     s.add_argument("--host", default=None)
