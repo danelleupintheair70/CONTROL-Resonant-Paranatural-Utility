@@ -174,6 +174,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(adaptive_routes.build_router(config, store, bus))
     app.include_router(api)
 
+    # The UI has no build step, so its files keep their names across updates.
+    # Without this a browser reuses imported modules from its heuristic cache
+    # and runs an older page against a newer server; "no-cache" still answers
+    # unchanged files with a 304 from their ETag.
+    REVALIDATE = {"Cache-Control": "no-cache"}
+
     # SPA fallback (History API routing): any GET that isn't /api/* and doesn't
     # name a real file gets index.html. Registered before the catch-all mount;
     # /api/* misses fall through here and 404 as JSON, not HTML.
@@ -186,12 +192,12 @@ def create_app(config: Config | None = None) -> FastAPI:
             try:
                 if candidate.is_file() and candidate.resolve().is_relative_to(
                         WEB_DIR.resolve()):
-                    return FileResponse(candidate)  # real asset (favicon, logo…)
+                    return FileResponse(candidate, headers=REVALIDATE)  # a real asset
             except OSError:
                 pass
             if "." in full_path.rsplit("/", 1)[-1]:
                 raise NotFoundError(f"no such file: /{full_path}")
-        return FileResponse(WEB_DIR / "index.html")
+        return FileResponse(WEB_DIR / "index.html", headers=REVALIDATE)
 
     # Static mount last (HEAD requests, anything the fallback didn't take).
     if WEB_DIR.exists():
