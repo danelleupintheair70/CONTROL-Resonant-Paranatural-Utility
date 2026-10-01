@@ -184,7 +184,7 @@ def test_a_model_that_cannot_be_fetched_falls_back_to_the_default(tmp_path, monk
     tried = []
 
     def assign(j, audio, sidecar=None, device="cpu", threshold=None, models=None,
-               models_dir=None, tracks=None):
+               models_dir=None, tracks=None, track_evidence=None):
         tried.append([m.id for m in models])
         if len(models) > 1:
             raise OSError("offline")
@@ -259,14 +259,16 @@ def test_a_line_filed_under_the_wrong_voice_can_be_given_to_someone_else(client_
     # The grouping put a guard's line under Doran; nobody named the guard yet.
     moved = client.put("/api/analysis/line", json={"path": path, "cue": "c0",
                                                     "character": "Harbor guard"}).json()
-    assert moved == {"speaker": "SPEAKER_03", "character": "Harbor guard", "new_voice": True}
+    assert {k: moved[k] for k in ("speaker", "character", "new_voice")} == {
+        "speaker": "SPEAKER_03", "character": "Harbor guard", "new_voice": True}
     data = client.get("/api/analysis", params={"path": path}).json()
     assert data["lines"][0]["character"] == "Harbor guard" and data["lines"][0]["moved"]
     assert data["names"]["SPEAKER_03"] == "Harbor guard"
     # To a character the episode already has: their group, no new voice.
     again = client.put("/api/analysis/line", json={"path": path, "cue": "c2",
                                                     "character": "ren"}).json()
-    assert again == {"speaker": "SPEAKER_01", "character": "Ren", "new_voice": False}
+    assert {k: again[k] for k in ("speaker", "character", "new_voice")} == {
+        "speaker": "SPEAKER_01", "character": "Ren", "new_voice": False}
     assert client.put("/api/analysis/line", json={"path": path, "cue": "nope",
                                                   "character": "x"}).status_code == 404
     # Regrouping puts every line back in a group, then moved lines follow their person.

@@ -454,6 +454,7 @@ def write_review(job, root, settings=None, priorities=None):
             "nonverbal": [e.as_dict() for e in job.nonverbal],
             "timing_edits": job.timing_edits,
             "treatment_edits": job.treatment_edits,
+            "envelope_edits": job.envelope_edits,
             # What the exported file was measured to be. Kept beside the run
             # rather than inside a cue: it is a fact about one delivered
             # container, not about any single line in it.

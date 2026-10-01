@@ -105,3 +105,107 @@ def run(job, work_dir: Path, *, whisper_model: str = "large-v3", device=None,
         "original_text": original is not None, "lines": lines}, ensure_ascii=False),
         encoding="utf-8")
     return path
+
+
+# --------------------------------------------------------------------------
+# Line features (doblarr.features) and the analysis snapshot (doblarr.snapshots)
+# --------------------------------------------------------------------------
+
+def _overlaps(job) -> list[list[str]]:
+    """Per line, the known problems that make its curve less trustworthy."""
+    from .levels import overlapping
+
+    flags = []
+    for seg in job.segments:
+        found = []
+        if overlapping(job.segments, seg):
+            found.append("overlap")
+        if seg.measurement.contaminated:
+            found.append("contaminated")
+        flags.append(found)
+    return flags
+
+
+def features_request(job, audio: Path) -> dict:
+    from . import features
+    from .artifacts import stamp
+
+    return {"contract": features.describe(), "audio": stamp(Path(audio)),
+            "bed": stamp(Path(job.background)) if job.background else None,
+            "spans": [[seg.cue_id, round(seg.start, 3), round(seg.end, 3)]
+                      for seg in job.segments], "flags": _overlaps(job)}
+
+
+def run_features(job, work_dir: Path, cancel=None, progress=None,
+                 force: bool = False) -> tuple[Path, bool]:
+    """Energy curves, pauses and peaks of every line, beside the script.
+
+    Returns the path and whether the saved result was reused: an unchanged
+    request (same audio, spans, contract) is never measured twice.
+    """
+    from . import features
+    from .artifacts import digest, read_json
+    from .stages.common import work_stem
+
+    audio = job.vocals if job.vocals and Path(job.vocals).is_file() else job.source_audio
+    path = Path(work_dir) / f"{work_stem(job)}.features.json"
+    request = features_request(job, Path(audio))
+    key = digest(request)[:16]
+    saved = read_json(path)
+    if not force and saved.get("request") == key and saved.get("lines"):
+        return path, True
+    bed = job.background if job.background and job.background != job.source_audio else None
+    measured, stats = features.measure_lines(
+        Path(audio), [(seg.start, seg.end) for seg in job.segments], flags=request["flags"],
+        bed=Path(bed) if bed else None, cancel=cancel, progress=progress)
+    lines = [{"cue": seg.cue_id, "speaker": seg.speaker, **found}
+             for seg, found in zip(job.segments, measured, strict=True)]
+    payload = {"request": key, "contract": features.describe(), "stats": stats,
+               "source": "separated-vocals" if audio == job.vocals else "source-stream",
+               "lines": lines}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(".partial.json")
+    temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    temp.replace(path)
+    log.info("analysis: features for %d line(s) (%s decoded)", len(lines),
+             stats.get("decoded_seconds"))
+    return path, False
+
+
+def stage_inputs(job, stage: str):
+    """What one analysis stage was produced from, for staleness checks."""
+    from .artifacts import stamp
+
+    spans = [[seg.cue_id, round(seg.start, 3), round(seg.end, 3)] for seg in job.segments]
+    labels = [[seg.cue_id, seg.speaker] for seg in job.segments]
+    return {
+        "probe": lambda: [stamp(job.source_audio)],
+        "separate": lambda: [stamp(job.vocals), stamp(job.background)],
+        # Spans carry the cue ids (which already encode the source document);
+        # `script_ref` itself is filled in later on a fresh run than on a
+        # restored one, so including it made identical lines look changed.
+        "transcribe": lambda: spans,
+        "diarize": lambda: labels,
+        "measure": lambda: [[seg.cue_id, seg.measurement.inputs] for seg in job.segments],
+        "baselines": lambda: [job.dialogue_baseline, labels],
+        "analyze": lambda: [DETECTOR, spans],
+        "features": lambda: features_request(job, Path(job.vocals or job.source_audio
+                                                         or "")),
+    }[stage]()
+
+
+def record(db, job, stage: str, state: str = "done", *, outputs: dict | None = None,
+           version: str = "", metrics: dict | None = None, error: str = "") -> None:
+    """Note one stage of this run in the source revision's snapshot."""
+    ident = job.metrics.get("identity") or {}
+    if db is None or not ident.get("revision_id"):
+        return
+    from . import snapshots
+
+    try:
+        inputs = stage_inputs(job, stage) if state == "done" else None
+    except (OSError, ValueError, KeyError, TypeError):
+        inputs = None
+    snapshots.record_stage(db, ident["revision_id"], job.source_lang or "", stage, state,
+                           inputs=inputs, outputs=outputs, version=version, metrics=metrics,
+                           error=error, identity=ident)

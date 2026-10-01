@@ -52,3 +52,23 @@
   & .line-menu-hint { margin: 0; font-size: 12px; }
   & .line-menu-new { align-self: flex-start; color: inherit; }
 }
+
+/* What has been analysed, and the optional evidence beyond the lines. */
+.analysis-coverage, .analysis-visual { margin:10px 0 4px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; }
+.analysis-coverage summary, .analysis-visual summary { cursor:pointer; font-size:13.5px; font-weight:600; }
+.analysis-stage-group { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:8px 0; font-size:13px; }
+.analysis-stage-group strong { min-width:84px; }
+.analysis-stage { padding:2px 8px; border-radius:6px; font-size:12px; border:1px solid var(--line); }
+.analysis-stage-done { background:color-mix(in srgb, var(--color-text) 5%, transparent); }
+.analysis-stage-stale, .analysis-stage-failed { border-color:var(--color-accent); color:var(--color-accent-700); }
+.analysis-stage-unsupported, .analysis-stage-missing, .analysis-stage-skipped { color:var(--muted); border-style:dashed; }
+.analysis-lock { margin-left:6px; border:1px solid var(--line-strong); background:transparent; border-radius:999px;
+  padding:1px 8px; font-size:11.5px; color:var(--muted); cursor:pointer; }
+.analysis-lock:hover, .analysis-lock:focus-visible { border-color:var(--color-accent); color:var(--color-text); }
+.analysis-screen { display:block; font-size:11.5px; }
+.analysis-selection { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 0; }
+.analysis-faces { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; margin-top:10px; }
+.analysis-face { margin:0; display:flex; flex-direction:column; gap:4px; font-size:12px; }
+.analysis-face img { width:72px; height:72px; object-fit:cover; border-radius:6px; background:var(--color-neutral-200); }
+.analysis-face figcaption { display:flex; flex-direction:column; gap:3px; }
+.analysis-face .cp, .analysis-selection .cp { flex:none; }

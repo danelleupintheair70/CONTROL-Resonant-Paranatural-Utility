@@ -133,6 +133,7 @@ def preserve_version(job, config, cast=None) -> dict:
                 "dialogue_baseline": job.dialogue_baseline,
                 "manual_gains": job.manual_gains,
                 "treatment_edits": job.treatment_edits,
+                "envelope_edits": job.envelope_edits,
                 # What the exported track was measured to be. Outside the
                 # identity digest on purpose: it is evidence *about* this
                 # version, produced after the bytes that define it, and

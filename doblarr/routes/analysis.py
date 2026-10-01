@@ -2,11 +2,23 @@
 
 The analysis itself is a queued run (`kind="analyze"`, see doblarr.analysis);
 these routes read what it left beside the script, let a person hear any line
-and name the voices it found. Names are kept per episode file: a voice group
-(SPEAKER_03) is only an identity within the episode it was found in. Naming
-also tags the voice for the whole show (doblarr.voice_tags), so unnamed
-groups here and in later episodes are offered the nearest names, and an
-episode can be grouped again with other voice models (doblarr.voice_models).
+and say who speaks.
+
+Who speaks is kept against the episode's *content*, not its file name
+(doblarr.identity): a voice group (SPEAKER_03) is an identity only within one
+source revision, and naming it links the group to a character of the series.
+A copy of the same file elsewhere finds the same names; a different file that
+happens to share the name does not. Naming also teaches the series what the
+character sounds like (doblarr.voice_tags), so unnamed groups here and in later
+episodes are offered the nearest characters, with the margin to the next one.
+
+Regrouping with other voice models keeps every decision a person made: a named
+group's character follows most of its speaking time, a line moved by hand is
+moved again, and the speaker baselines that relative levels depend on are
+recomputed for the new groups (doblarr.speaker_memory).
+
+Older names, kept under the file name, are still read when nothing newer
+exists; ``/api/analysis/migration`` previews and applies their move.
 """
 
 from __future__ import annotations
@@ -21,7 +33,18 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from .. import speakers, speaking, voice_models, voice_tags
+from .. import (
+    identity,
+    identity_migration,
+    snapshots,
+    speaker_memory,
+    speakers,
+    speaking,
+    track_alignment,
+    voice_models,
+    voice_tags,
+)
+from ..studio import records
 
 MAX_CLIP = 30.0
 CLIP_CACHE = 400          # watched clips kept on disk, newest first
@@ -40,6 +63,19 @@ class LineIn(BaseModel):
     character: str = Field(default="", max_length=80)
 
 
+class LinesIn(BaseModel):
+    """Several lines to one character: splitting a group a person heard as two."""
+
+    path: str = Field(min_length=1, max_length=2000)
+    cues: list[str] = Field(min_length=1, max_length=2000)
+    character: str = Field(default="", max_length=80)
+
+
+class UnlockIn(BaseModel):
+    path: str = Field(min_length=1, max_length=2000)
+    cue: str = Field(min_length=1, max_length=200)
+
+
 class RegroupIn(BaseModel):
     path: str = Field(min_length=1, max_length=2000)
     models: list[str] = Field(default_factory=list, max_length=4)
@@ -47,8 +83,35 @@ class RegroupIn(BaseModel):
     tracks: list[int] | None = Field(default=None, max_length=8)   # None: the setting
 
 
+class RerunIn(BaseModel):
+    path: str = Field(min_length=1, max_length=2000)
+    stages: list[str] = Field(default_factory=list, max_length=20)
+    visual: bool | None = None
+    target_lang: str = Field(default="es", max_length=16)
+
+
+class TracksIn(BaseModel):
+    path: str = Field(min_length=1, max_length=2000)
+    base_revision: int | None = Field(default=None, ge=0)
+    assign: dict[str, str] = Field(default_factory=dict)   # track -> character name ("" unknown)
+    split: dict[str, float] = Field(default_factory=dict)  # track -> time to split at
+    merge: list[tuple[str, str]] = Field(default_factory=list, max_length=100)
+
+
+class ScenesIn(BaseModel):
+    path: str = Field(min_length=1, max_length=2000)
+    base_revision: int | None = Field(default=None, ge=0)
+    add: list[float] = Field(default_factory=list, max_length=200)
+    remove: list[float] = Field(default_factory=list, max_length=200)
+
+
+class MigrationIn(BaseModel):
+    fingerprint: str = Field(min_length=8, max_length=64)
+    keys: list[str] | None = Field(default=None, max_length=5000)
+
+
 def names_key(path: str) -> str:
-    """Names follow the episode file wherever a run read it from."""
+    """Where older releases kept an episode's names: under its file name."""
     return "speaker-names:" + Path(str(path).replace("\\", "/")).name.casefold()
 
 
@@ -56,15 +119,45 @@ def load_plan(db, path: str) -> dict:
     return ((db.load_plan(names_key(path)) or {}).get("plan") or {})
 
 
-def load_names(db, path: str) -> dict[str, str]:
-    return load_plan(db, path).get("names") or {}
+def identify(db, path: str, cache_dir: Path | None = None) -> dict | None:
+    """The canonical identity of an episode path, or None when it cannot be told.
+
+    A reachable file is identified by its content. A file that is not
+    reachable here (a NAS offline, a moved copy) is identified only through a
+    location an earlier identification recorded.
+    """
+    file = Path(str(path))
+    try:
+        if file.is_file():
+            return identity.resolve(db, file, cache_dir=cache_dir)
+    except OSError:
+        pass
+    media = identity.find_media_by_path(db, path)
+    if media is None:
+        return None
+    wanted = identity.norm_path(path)
+    for revision_id, revision in (media.get("revisions") or {}).items():
+        if wanted in [identity.norm_path(p) for p in revision.get("locations") or []]:
+            return {"series_id": media.get("series_id"), "media_id": media["id"],
+                    "revision_id": revision_id, "content_key": revision.get("content_key"),
+                    "kind": media.get("kind"), "season": media.get("season"),
+                    "episode": media.get("episode"), "edition": revision.get("edition", ""),
+                    "duration": revision.get("duration"), "how": "known-location"}
+    return None
 
 
-def save_names(db, path: str, names: dict[str, str], lines: dict[str, str] | None = None):
-    """Names per voice group, and the lines a person moved by hand (by cue, so
-    they can be moved again after the lines are regrouped)."""
-    kept = (load_plan(db, path).get("lines") or {}) if lines is None else lines
-    db.save_plan(names_key(path), Path(path).name, {"names": names, "lines": kept})
+def load_names(db, path: str, ident: dict | None = None) -> dict[str, str]:
+    """Voice group -> character name for an episode.
+
+    Character links of its source revision win; the older per-file names are
+    read only when the revision has none yet.
+    """
+    ident = ident if ident is not None else identify(db, path)
+    if ident:
+        linked = identity.cluster_characters(db, ident["revision_id"])
+        if linked or identity.associations(db, ident["revision_id"], "cluster"):
+            return {label: character["name"] for label, character in linked.items()}
+    return dict(load_plan(db, path).get("names") or {})
 
 
 def label_for(names: dict[str, str], labels: set[str], character: str) -> tuple[str, bool]:
@@ -87,21 +180,108 @@ def sidecar(script: Path, suffix: str) -> Path | None:
     return None
 
 
+def _read(path: Path | None) -> dict:
+    if path is None:
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def build_router(config, store) -> APIRouter:
     api = APIRouter()
     db = store.db
+    cache_dir = Path(config.work_dir) / "cache"
 
-    def locate(path: str) -> Path:
-        script = speaking.find_script(config.work_dir, path)
+    def who(path: str) -> dict | None:
+        return identify(db, path, cache_dir)
+
+    def find(path: str, ident: dict | None) -> tuple[Path | None, str]:
+        """The analysis script for a path: the one its revision's snapshot
+        names, else one made from exactly this path, else a same-name match."""
+        if ident:
+            for snap in records.list_latest(db, "snapshot", scope=ident["revision_id"]):
+                script = ((snap.get("stages") or {}).get("transcribe") or {}).get(
+                    "outputs", {}).get("script")
+                if script and Path(script).is_file():
+                    return Path(script), "snapshot"
+        return speaking.locate_script(config.work_dir, path)
+
+    def locate(path: str, ident: dict | None = None) -> Path:
+        script, _how = find(path, ident if ident is not None else who(path))
         if script is None:
             raise HTTPException(404, "This episode has not been analysed yet")
         return script
+
+    def language_of(script: Path) -> str:
+        data = _read(script)
+        return str((data.get("identity") or {}).get("source_lang")
+                   or _read(sidecar(script, "analysis.json")).get("source_lang") or "")
 
     def running(path: str) -> dict | None:
         return next((j for j in store.list() if j.get("kind") == "analyze"
                      and j.get("status") in ("queued", "running")
                      and Path(str(j.get("input_file") or "")).name.casefold()
                      == Path(path.replace("\\", "/")).name.casefold()), None)
+
+    def require_identity(path: str) -> dict:
+        ident = who(path)
+        if ident is None:
+            raise HTTPException(409, "This episode's file cannot be read here, so who speaks "
+                                "cannot be tied to it; make the file reachable and retry")
+        return ident
+
+    def character_names(series_id: str) -> dict[str, str]:
+        return {c["id"]: c["name"] for c in identity.characters(db, series_id,
+                                                                include_retired=True)}
+
+    def cast_rows(series_id: str | None, names: dict[str, str]) -> list[dict]:
+        """Every character of the series, most heard first (for the picker)."""
+        if not series_id:
+            return voice_tags.cast(db, "", names)
+        heard: dict[str, dict[str, int]] = {}
+        doc = (db.load_plan(voice_tags.series_key(series_id)) or {}).get("plan") or {}
+        for part in (doc.get("partitions") or {}).values():
+            for revision, taught in part.items():
+                for character, entry in taught.items():
+                    per = heard.setdefault(character, {})
+                    per[revision] = max(per.get(revision, 0), int(entry.get("n", 0)))
+        rows = []
+        for character in identity.characters(db, series_id):
+            per = heard.get(character["id"], {})
+            rows.append({"name": character["name"], "character_id": character["id"],
+                         "aliases": character.get("aliases") or [],
+                         "lines": sum(per.values()), "episodes": len(per)})
+        known = {r["name"].casefold() for r in rows}
+        rows += [{"name": n, "character_id": None, "aliases": [], "lines": 0, "episodes": 0}
+                 for n in sorted(set(names.values())) if n.casefold() not in known]
+        return sorted(rows, key=lambda r: (-r["lines"], r["name"].casefold()))
+
+    def teach(ident: dict, script: Path) -> dict[str, int]:
+        return speaker_memory.teach(db, ident, sidecar(script, "speakers.json"),
+                                    language_of(script))
+
+    def membership_changed(ident: dict, script: Path, reason: str) -> dict:
+        """Who is in each group changed: baselines, memory and snapshot follow."""
+        refreshed = speaker_memory.refresh_baselines(script)
+        language = language_of(script)
+        data = _read(script)
+        labels = [[(s.get("cue") or {}).get("cue_id"), s.get("speaker")]
+                  for s in data.get("segments") or []]
+        snapshots.record_stage(db, ident["revision_id"], language, "diarize", "done",
+                               inputs=labels, version=speakers.DETECTOR,
+                               metrics={"reason": reason}, identity=ident)
+        snapshots.record_stage(db, ident["revision_id"], language, "baselines", "done",
+                               inputs=[refreshed["baseline"], labels],
+                               metrics={"changed": refreshed["changed"],
+                                        "overlap_changes": refreshed["overlaps"]},
+                               identity=ident)
+        taught = teach(ident, script)
+        snapshots.record_stage(db, ident["revision_id"], language, "speaker_memory", "done",
+                               inputs=[labels, sorted(taught.items())], identity=ident)
+        return {**refreshed, "taught": taught}
 
     @api.get("/api/voice-models")
     def list_voice_models():
@@ -111,98 +291,247 @@ def build_router(config, store) -> APIRouter:
     @api.get("/api/analysis")
     def get_analysis(path: str):
         active = running(path)
-        script = speaking.find_script(config.work_dir, path)
+        ident = who(path)
+        script, how = find(path, ident)
         if script is None:
             return {"analysed": False, "job": active and {k: active.get(k) for k in (
                 "id", "status", "stage", "progress")}}
-        data = json.loads(script.read_text(encoding="utf-8"))
-        extra_path = sidecar(script, "analysis.json")
-        extra = json.loads(extra_path.read_text(encoding="utf-8")) if extra_path else {}
+        data = _read(script)
+        extra = _read(sidecar(script, "analysis.json"))
+        feats = _read(sidecar(script, "features.json"))
         by_cue = {row["cue"]: row for row in extra.get("lines") or []}
-        names = load_names(db, path)
-        moved_lines = load_plan(db, path).get("lines") or {}
+        feature_rows = {row.get("cue"): row for row in feats.get("lines") or []}
+        grouped = voice_tags.read_sidecar(sidecar(script, "speakers.json")) or {}
+        why = {line.get("cue"): line.get("why") for line in grouped.get("lines") or []}
+        names = load_names(db, path, ident)
+        source = "identity" if ident and identity.associations(
+            db, ident["revision_id"], "cluster") else ("legacy" if names else "none")
+        locks = speaker_memory.line_locks(db, ident["revision_id"]) if ident else {}
+        legacy_moved = load_plan(db, path).get("lines") or {}
         lines = []
         for seg in data.get("segments") or []:
             cue = (seg.get("cue") or {})
-            row = by_cue.get(cue.get("cue_id"), {})
+            cue_id = cue.get("cue_id")
+            row = by_cue.get(cue_id, {})
             level = (cue.get("measurement") or {}).get("relative_db")
+            feature = feature_rows.get(cue_id) or {}
             lines.append({
                 "index": seg.get("index"), "start": seg.get("start"), "end": seg.get("end"),
-                "cue": cue.get("cue_id"),
-                "moved": str(cue.get("cue_id")) in moved_lines,
+                "cue": cue_id,
+                "moved": str(cue_id) in locks or (not ident and str(cue_id) in legacy_moved),
+                "locked": str(cue_id) in locks,
                 "speaker": seg.get("speaker"),
                 "character": names.get(seg.get("speaker") or "", ""),
                 "text": seg.get("text_src") or "", "original_text": row.get("original_text"),
                 "relative_db": level, "band": speaking.band(level),
+                "measurement": (cue.get("measurement") or {}).get("state"),
                 "pitch_hz": row.get("pitch_hz"), "movement_st": row.get("movement_st"),
                 "uncertain": "speaker_uncertain" in (seg.get("issues") or []),
+                "why": why.get(cue_id),
+                "features": {k: feature.get(k) for k in (
+                    "quality", "active_seconds", "range_db", "mean_db", "reasons")}
+                if feature else None,
             })
         summary = speaking.talk_share([{"id": 0, "label": "", "segments": [
             {**s, "speaker": names.get(s.get("speaker") or "", "") or s.get("speaker")}
             for s in data.get("segments") or []]}])
-        grouped = voice_tags.read_sidecar(sidecar(script, "speakers.json"))
-        return {"analysed": True, "lines": lines, "names": names,
-                "model": (grouped or {}).get("model"),
-                "grouped_tracks": (grouped or {}).get("tracks") or [],
-                "cast": voice_tags.cast(db, path, names),
-                "suggestions": voice_tags.suggest(db, path, grouped, names),
+        language = language_of(script)
+        suggestions: dict = {}
+        if ident and ident.get("series_id"):
+            labels_named = set(names)
+            by_id = character_names(ident["series_id"])
+            for label, picks in voice_tags.suggest_series(
+                    db, ident["series_id"], ident["revision_id"], grouped, labels_named,
+                    language, exclude=speaker_memory.held_out_revisions(db)).items():
+                suggestions[label] = [{**p, "name": by_id.get(p["character_id"],
+                                                              p["character_id"])}
+                                      for p in picks if p["character_id"] in by_id]
+        else:
+            suggestions = voice_tags.suggest(db, path, grouped, names)
+        snapshot = None
+        if ident:
+            snapshot = snapshots.get(db, ident["revision_id"], language)
+        from ..vision import capability as vision_capability
+
+        unsupported = vision_capability.unsupported_stages(config)
+        return {"analysed": True, "lines": lines, "names": names, "names_from": source,
+                "identity": ident, "script_match": how,
+                "model": grouped.get("model"),
+                "grouped_tracks": grouped.get("tracks") or [],
+                "track_evidence": grouped.get("track_evidence") or [],
+                "grouping": grouped.get("diagnostics") or {},
+                "cast": cast_rows(ident.get("series_id") if ident else None, names),
+                "suggestions": suggestions,
                 "speakers": summary["speakers"], "total_seconds": summary["total_seconds"],
                 "languages": {"text": data.get("script_lang"),
                               "original": extra.get("source_lang"),
                               "original_text": bool(extra.get("original_text"))},
-                "measured": bool(extra), "job": active and {k: active.get(k) for k in (
+                "measured": bool(extra), "features": bool(feats),
+                "coverage": snapshots.coverage(snapshot, unsupported),
+                "rerunnable": snapshots.rerunnable(snapshot),
+                "baseline": data.get("dialogue_baseline") or {},
+                "job": active and {k: active.get(k) for k in (
                     "id", "status", "stage", "progress")}}
 
     @api.put("/api/analysis/names")
     def put_names(body: NamesIn):
         clean = {k: v.strip()[:80] for k, v in body.names.items()
                  if k.startswith("SPEAKER_") and v.strip()}
-        save_names(db, body.path, clean)
-        script = speaking.find_script(config.work_dir, body.path)
-        tagged = voice_tags.remember(
-            db, body.path, voice_tags.read_sidecar(script and sidecar(script, "speakers.json")),
-            clean)
-        return {"names": clean, "tagged": tagged}
+        ident = who(body.path)
+        script = find(body.path, ident)[0]
+        if ident is None or not ident.get("series_id"):
+            # Nothing to tie names to: kept the old way, under the file name.
+            kept = load_plan(db, body.path).get("lines") or {}
+            db.save_plan(names_key(body.path), Path(body.path).name,
+                         {"names": clean, "lines": kept})
+            legacy = voice_tags.remember(
+                db, body.path, voice_tags.read_sidecar(script and sidecar(script,
+                                                                          "speakers.json")),
+                clean)
+            return {"names": clean, "tagged": legacy, "identity": None}
+        current = {r["ref"]: r for r in identity.associations(db, ident["revision_id"],
+                                                              "cluster")}
+        labels = set(clean) | set(current)
+        if script is not None:
+            labels |= {str(s.get("speaker")) for s in _read(script).get("segments") or []}
+        for label in sorted(labels):
+            if not label.startswith("SPEAKER_"):
+                continue
+            name = clean.get(label)
+            row = current.get(label)
+            if name:
+                character = identity.ensure_character(db, ident["series_id"], name)
+                if row and row.get("character_id") == character["id"] and \
+                        row.get("state") == "manual":
+                    continue
+                identity.associate(db, ident["revision_id"], "cluster", label, character["id"],
+                                   state="manual", evidence=[{"kind": "named"}],
+                                   base_revision=row["revision"] if row else 0)
+            elif row and row.get("character_id"):
+                identity.associate(db, ident["revision_id"], "cluster", label, None,
+                                   state="manual", evidence=[{"kind": "cleared"}],
+                                   base_revision=row["revision"])
+        tagged: dict[str, int] = {}
+        if script is not None:
+            by_id = character_names(ident["series_id"])
+            tagged = {by_id.get(k, k): v for k, v in teach(ident, script).items()}
+            language = language_of(script)
+            snapshots.record_stage(db, ident["revision_id"], language, "speaker_memory", "done",
+                                   inputs=[sorted(clean.items())], identity=ident)
+        return {"names": clean, "tagged": tagged, "identity": ident}
+
+    def move(path: str, cues: list[str], character: str) -> dict:
+        if running(path):
+            raise HTTPException(409, "This episode is being analysed; wait for it to finish")
+        ident = who(path)
+        script = locate(path, ident)
+        data = _read(script)
+        known_cues = {str((seg.get("cue") or {}).get("cue_id")) for seg in data.get("segments")
+                      or []}
+        missing = [c for c in cues if c not in known_cues]
+        if missing:
+            raise HTTPException(404, "no such line in this episode")
+        names = load_names(db, path, ident)
+        # "mina" is Mina: the cast's spelling, never a second character.
+        series_id = ident.get("series_id") if ident else None
+        cast_names = [c["name"] for c in cast_rows(series_id, names)] if series_id else \
+            [c["name"] for c in voice_tags.cast(db, path)]
+        known = {n.casefold(): n for n in [*names.values(), *cast_names]}
+        character = " ".join(character.split())
+        character = known.get(character.casefold(), character)
+        labels = {str(seg.get("speaker")) for seg in data.get("segments") or []}
+        label, new = label_for(names, labels, character)
+        speakers.move_lines(script, sidecar(script, "speakers.json"),
+                            {cue: label for cue in cues})
+        if ident is None:
+            if new and character:
+                names[label] = character
+            lines = dict(load_plan(db, path).get("lines") or {})
+            for cue in cues:
+                if character:
+                    lines[cue] = character
+                else:
+                    lines.pop(cue, None)
+            db.save_plan(names_key(path), Path(path).name, {"names": names, "lines": lines})
+            voice_tags.remember(db, path, voice_tags.read_sidecar(
+                sidecar(script, "speakers.json")), names)
+            return {"speaker": label, "character": character, "new_voice": new,
+                    "identity": None}
+        found = identity.ensure_character(db, ident["series_id"], character) \
+            if character else None
+        if new and found is not None:
+            identity.associate(db, ident["revision_id"], "cluster", label, found["id"],
+                               state="manual", evidence=[{"kind": "new-voice-from-line"}])
+        for cue in cues:
+            current = next((r for r in identity.associations(db, ident["revision_id"], "line")
+                            if r["ref"] == cue), None)
+            identity.associate(db, ident["revision_id"], "line", cue,
+                               found["id"] if found else None, state="manual",
+                               evidence=[{"kind": "moved", "to": label}],
+                               base_revision=current["revision"] if current else 0)
+        changed = membership_changed(ident, script, "lines moved by hand")
+        return {"speaker": label, "character": character, "new_voice": new,
+                "baseline_changes": changed["changed"], "identity": ident}
 
     @api.put("/api/analysis/line")
     def move_line(body: LineIn):
         """One line, said by someone the grouping got wrong: a side character
         it filed under a main character, or a voice it never found."""
-        if running(body.path):
-            raise HTTPException(409, "This episode is being analysed; wait for it to finish")
-        script = locate(body.path)
-        data = json.loads(script.read_text(encoding="utf-8"))
-        cues = {str((seg.get("cue") or {}).get("cue_id")) for seg in data.get("segments") or []}
-        if body.cue not in cues:
-            raise HTTPException(404, "no such line in this episode")
-        names = load_names(db, body.path)
-        # "mina" is Mina: the cast's spelling, never a second character.
-        known = {n.casefold(): n for n in [*names.values(),
-                                            *(c["name"] for c in voice_tags.cast(db, body.path))]}
-        character = " ".join(body.character.split())
-        character = known.get(character.casefold(), character)
-        labels = {str(seg.get("speaker")) for seg in data.get("segments") or []}
-        label, new = label_for(names, labels, character)
-        if new and character:
-            names[label] = character
-        speakers.move_lines(script, sidecar(script, "speakers.json"), {body.cue: label})
-        lines = dict(load_plan(db, body.path).get("lines") or {})
-        if character:
-            lines[body.cue] = character
-        else:
-            lines.pop(body.cue, None)
-        save_names(db, body.path, names, lines)
-        voice_tags.remember(db, body.path,
-                            voice_tags.read_sidecar(sidecar(script, "speakers.json")), names)
-        return {"speaker": label, "character": character, "new_voice": new}
+        return move(body.path, [body.cue], body.character)
+
+    @api.put("/api/analysis/lines")
+    def move_many(body: LinesIn):
+        """Several lines at once: split a group into the two people it holds."""
+        return move(body.path, list(dict.fromkeys(body.cues)), body.character)
+
+    @api.post("/api/analysis/line/unlock")
+    def unlock_line(body: UnlockIn):
+        """Let the grouping decide a line again (the next regroup will)."""
+        ident = require_identity(body.path)
+        current = next((r for r in identity.associations(db, ident["revision_id"], "line")
+                        if r["ref"] == body.cue), None)
+        if current is None or current.get("state") != "manual":
+            raise HTTPException(404, "that line was not assigned by hand")
+        identity.associate(db, ident["revision_id"], "line", body.cue,
+                           current.get("character_id"), state="rejected", locked=False,
+                           evidence=[{"kind": "unlocked"}], base_revision=current["revision"])
+        return {"unlocked": body.cue}
+
+    def regroup_tracks(script: Path, vocals: Path, wanted, ident: dict | None):
+        identity_data = _read(script).get("identity") or {}
+        source = Path(str(identity_data.get("input") or ""))
+        try:
+            found = speakers.other_tracks(
+                source, str(identity_data.get("source_lang") or ""), vocals.parent,
+                script.name.removesuffix(".script.json"),
+                [str(t) for t in wanted] if isinstance(wanted, list) else wanted)
+        except OSError:
+            return [], []        # the video moved: the separated dialogue is enough
+        if not found:
+            return [], []
+        checks = dict(config.get("analysis", {}) or {})
+        described = {t["stream"]: t for t in speakers.audio_tracks(source)} \
+            if source.is_file() else {}
+        reference = sidecar(script, "source.wav") or vocals
+        evidence = track_alignment.check_tracks(
+            reference, [{"stream": s, "path": p, "lang": described.get(s, {}).get("lang", ""),
+                         "title": described.get(s, {}).get("title", "")} for s, p in found],
+            evaluation_streams=speaker_memory.evaluation_streams(db, source),
+            max_offset=float(checks.get("max_track_offset", 2.0)),
+            min_correlation=float(checks.get("min_track_correlation", 0.45)),
+            verify=bool(checks.get("verify_tracks", True)))
+        allowed = track_alignment.usable(evidence)
+        return [(s, p) for s, p in found if s in allowed], evidence
 
     @api.post("/api/analysis/regroup")
     def regroup(body: RegroupIn):
         """Sort the lines into voices again with other models, in seconds:
-        the separated dialogue is already on disk. Names follow their lines."""
+        the separated dialogue is already on disk. Characters follow their
+        lines, hand-moved lines stay moved, and baselines are recomputed."""
         if running(body.path):
             raise HTTPException(409, "This episode is being analysed; wait for it to finish")
-        script = locate(body.path)
+        ident = who(body.path)
+        script = locate(body.path, ident)
         vocals = sidecar(script, "vocals.wav")
         if vocals is None:
             raise HTTPException(404, "the separated dialogue is no longer on disk; analyse again")
@@ -212,37 +541,269 @@ def build_router(config, store) -> APIRouter:
             models = voice_models.resolve(body.models or voice_models.chosen(config), config)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
-        identity = json.loads(script.read_text(encoding="utf-8")).get("identity") or {}
         wanted = body.tracks if body.tracks is not None else (
             config.get("speakers") or {}).get("tracks", "all")
-        try:
-            tracks = speakers.other_tracks(
-                Path(str(identity.get("input") or "")), str(identity.get("source_lang") or ""),
-                vocals.parent, script.name.removesuffix(".script.json"),
-                [str(t) for t in wanted] if isinstance(wanted, list) else wanted)
-        except OSError:
-            tracks = []          # the video moved: the separated dialogue is enough
+        tracks, evidence = regroup_tracks(script, vocals, wanted, ident)
         try:
             before, after, seconds = speakers.regroup(
                 script, vocals, grouped, models, voice_models.folder(config),
                 body.threshold if body.threshold is not None
-                else (config.get("speakers") or {}).get("threshold"), tracks=tracks)
+                else (config.get("speakers") or {}).get("threshold"), tracks=tracks,
+                track_evidence=evidence)
         except (OSError, RuntimeError, ImportError) as exc:
             raise HTTPException(502, f"could not group with {voice_models.combined_id(models)}: "
                                 f"{exc}") from exc
-        names = voice_tags.carry_names(before, after, seconds, load_names(db, body.path))
-        # Lines a person moved stay with the character they were given to.
-        moves = {}
-        for cue, character in (load_plan(db, body.path).get("lines") or {}).items():
-            label, new = label_for(names, set(after) | set(moves.values()), character)
-            if new and character:
-                names[label] = character
-            moves[cue] = label
-        speakers.move_lines(script, grouped, moves)
-        save_names(db, body.path, names)
-        voice_tags.remember(db, body.path, voice_tags.read_sidecar(grouped), names)
+        if ident is None:
+            names = voice_tags.carry_names(before, after, seconds,
+                                           dict(load_plan(db, body.path).get("names") or {}))
+            moves: dict[str, str] = {}
+            for cue, character in (load_plan(db, body.path).get("lines") or {}).items():
+                label, new = label_for(names, set(after) | set(moves.values()), character)
+                if new and character:
+                    names[label] = character
+                moves[cue] = label
+            speakers.move_lines(script, grouped, moves)
+            db.save_plan(names_key(body.path), Path(body.path).name,
+                         {"names": names, "lines": load_plan(db, body.path).get("lines") or {}})
+            voice_tags.remember(db, body.path, voice_tags.read_sidecar(grouped), names)
+            return {"model": voice_models.combined_id(models), "voices": len(set(after)),
+                    "names": names, "tracks": [stream for stream, _ in tracks],
+                    "track_evidence": evidence, "identity": None}
+        cues = [str((seg.get("cue") or {}).get("cue_id"))
+                for seg in _read(script).get("segments") or []]
+        speaker_memory.carry_identities(db, ident, before, after, seconds, cues)
+        relocked = speaker_memory.reapply_line_locks(db, ident, script, grouped)
+        changed = membership_changed(ident, script, "regrouped")
+        names = load_names(db, body.path, ident)
         return {"model": voice_models.combined_id(models), "voices": len(set(after)),
-                "names": names, "tracks": [stream for stream, _ in tracks]}
+                "names": names, "tracks": [stream for stream, _ in tracks],
+                "track_evidence": evidence, "relocked": relocked,
+                "baseline_changes": changed["changed"], "identity": ident}
+
+    @api.get("/api/analysis/coverage")
+    def coverage(path: str):
+        """Which analysis stages are done, stale, failed, missing or unsupported."""
+        ident = who(path)
+        script, _how = find(path, ident)
+        from ..vision import capability as vision_capability
+
+        snapshot = snapshots.get(db, ident["revision_id"], language_of(script)) \
+            if ident and script else None
+        return {"identity": ident,
+                "coverage": snapshots.coverage(snapshot,
+                                               vision_capability.unsupported_stages(config)),
+                "rerunnable": snapshots.rerunnable(snapshot)}
+
+    def earlier_run(path: str, ident: dict | None) -> tuple[str, str]:
+        """The input path and language an earlier analysis of this content used,
+        so a rerun reuses its separation and lines instead of starting over
+        (work folders are keyed by the input path and the source language)."""
+        script, _how = find(path, ident)
+        recorded = (_read(script).get("identity") or {}) if script else {}
+        source = str(recorded.get("input") or "")
+        if source and Path(source).is_file():
+            return source, str(recorded.get("source_lang") or "auto")
+        return path, str(recorded.get("source_lang") or "auto")
+
+    def target_of(target: str) -> str:
+        from ..languages import base_language
+
+        return base_language(target) or "es"
+
+    @api.post("/api/analysis/rerun")
+    def rerun(body: RerunIn):
+        """Queue an analysis that runs only the asked-for stages (earlier ones
+        are reused from their checkpoints). Never translates or generates."""
+        unknown = [s for s in body.stages if s not in snapshots.STAGES]
+        if unknown:
+            raise HTTPException(422, f"unknown stage(s): {', '.join(unknown)}")
+        if running(body.path):
+            raise HTTPException(409, "This episode is already being analysed")
+        if not Path(body.path).is_file():
+            raise HTTPException(404, "the episode's file is not reachable from here")
+        ident = who(body.path)
+        overrides: dict = {"analysis.stages": body.stages}
+        if body.visual is not None:
+            overrides["analysis.visual"] = body.visual
+        input_file, source_lang = earlier_run(body.path, ident)
+
+        job = store.add(title=f"Analysis · {Path(body.path).name}", source="analysis",
+                        source_lang=source_lang, target_lang=target_of(body.target_lang),
+                        input_file=input_file, kind="analyze", overrides=overrides,
+                        show_ref=(f"series:{ident['series_id'].rsplit(':', 1)[-1]}"
+                                  if ident and str(ident.get("series_id", "")).startswith(
+                                      "show:tvdb:") else ""))
+        return {"job_id": job.id, "stages": body.stages}
+
+    # ------------------------------------------------------------- visual
+    def visual_job(path: str, script: Path, ident: dict | None):
+        """Enough of an analysis job to re-fuse visual evidence (no media decoded)."""
+        from types import SimpleNamespace
+
+        from ..models import Segment
+
+        data = _read(script)
+        segments = []
+        for seg in data.get("segments") or []:
+            row = Segment(int(seg.get("index") or 0), float(seg["start"]), float(seg["end"]),
+                          seg.get("text_src") or "", speaker=seg.get("speaker") or "")
+            row.cue_id = str((seg.get("cue") or {}).get("cue_id") or "")
+            segments.append(row)
+        vocals = sidecar(script, "vocals.wav")
+        identity_input = (data.get("identity") or {}).get("input") or path
+        return SimpleNamespace(segments=segments, metrics={"identity": ident or {}},
+                               vocals=vocals, input_file=Path(identity_input))
+
+    def visual_file(script: Path) -> Path | None:
+        return sidecar(script, "visual.json")
+
+    @api.get("/api/analysis/visual")
+    def get_visual(path: str):
+        """Shots, visible tracks, scenes and who-speaks evidence, if analysed."""
+        from ..vision import capability as vision_capability
+
+        ident = who(path)
+        script = locate(path, ident)
+        found = visual_file(script)
+        status = vision_capability.status(config)
+        if found is None:
+            return {"analysed": False, "capability": status}
+        data = _read(found)
+        names = character_names(ident["series_id"]) if ident and ident.get("series_id") \
+            else {}
+        tracks_out = []
+        for track in data.get("tracks") or []:
+            matches = [{**m, "name": names.get(m["character_id"], m["character_id"])}
+                       for m in track.get("matches") or []]
+            tracks_out.append({k: track.get(k) for k in (
+                "id", "shot", "start", "end", "detector", "domain", "frames", "thumbnail",
+                "assigned", "split_from", "merged")} | {
+                "character": track.get("character"),
+                "character_name": names.get(track.get("character") or ""),
+                "matches": matches})
+        associations = []
+        for row in data.get("associations") or []:
+            decision = dict(row.get("decision") or {})
+            decision["name"] = names.get(decision.get("character_id") or "")
+            associations.append({**row, "decision": decision, "candidates": [
+                {**c, "name": names.get(c["character_id"], c["character_id"])}
+                for c in row.get("candidates") or []]})
+        faces_data = data.get("faces") or {}
+        return {"analysed": True, "capability": status, "identity": ident,
+                "shots": len((data.get("shots") or {}).get("shots") or []),
+                "shot_method": (data.get("shots") or {}).get("method"),
+                "frames": faces_data.get("sampled"), "backend": faces_data.get("backend"),
+                "tracks": tracks_out, "scenes": data.get("scenes") or [],
+                "associations": associations, "timings": data.get("timings") or {}}
+
+    @api.get("/api/analysis/visual/thumb")
+    def visual_thumb(path: str, name: str):
+        """One face crop. Only files inside this analysis' crop folder are served."""
+        if "/" in name or "\\" in name or not name.endswith(".jpg"):
+            raise HTTPException(422, "not a thumbnail name")
+        script = locate(path)
+        found = visual_file(script)
+        crops = Path(str((_read(found).get("faces") or {}).get("crops") or "")) if found \
+            else None
+        if crops is None or not (crops / name).is_file():
+            raise HTTPException(404, "no such thumbnail")
+        try:
+            (crops / name).resolve().relative_to(Path(config.work_dir).resolve())
+        except ValueError as exc:
+            raise HTTPException(403, "outside the work folder") from exc
+        return FileResponse(crops / name, media_type="image/jpeg",
+                            headers={"Cache-Control": "private, max-age=86400"})
+
+    @api.post("/api/analysis/visual/tracks")
+    def correct_tracks(body: TracksIn):
+        """Assign (or mark unknown), split or merge visible tracks. Assigning a
+        character keeps that face as an approved reference for the series."""
+        from ..vision import pipeline as vision_pipeline
+        from ..vision import references as vision_refs
+        from ..vision import tracks as vision_tracks
+
+        ident = require_identity(body.path)
+        script = locate(body.path, ident)
+        found = visual_file(script)
+        if found is None:
+            raise HTTPException(404, "this episode has no visual analysis yet")
+        data = _read(found)
+        current = {t["id"]: t for t in data.get("tracks") or []}
+        unknown = [t for t in [*body.assign, *body.split, *[x for p in body.merge for x in p]]
+                   if t not in current]
+        if unknown:
+            raise HTTPException(404, f"no such track: {unknown[0]}")
+        assign: dict[str, str | None] = {}
+        for track_id, name in body.assign.items():
+            if not name:
+                assign[track_id] = None
+                continue
+            character = identity.ensure_character(db, ident["series_id"], name)
+            assign[track_id] = character["id"]
+            vision_refs.add_from_track(db, ident["series_id"], current[track_id],
+                                       character["id"], revision_id=ident["revision_id"])
+        try:
+            vision_tracks.correct(db, ident["revision_id"], base_revision=body.base_revision,
+                                  assign=assign, split=body.split,
+                                  merge=[list(p) for p in body.merge],
+                                  tracks=list(current.values()))
+        except records.StudioConflict as exc:
+            raise HTTPException(409, {"error": str(exc), "current": exc.current}) from exc
+        refreshed = vision_pipeline.refresh(db, visual_job(body.path, script, ident), found,
+                                            config)
+        return {"tracks": len(refreshed.get("tracks") or []),
+                "corrections": vision_tracks.corrections(db, ident["revision_id"])}
+
+    @api.post("/api/analysis/visual/scenes")
+    def correct_scenes(body: ScenesIn):
+        from ..vision import pipeline as vision_pipeline
+        from ..vision import scenes as vision_scenes
+
+        ident = require_identity(body.path)
+        script = locate(body.path, ident)
+        found = visual_file(script)
+        if found is None:
+            raise HTTPException(404, "this episode has no visual analysis yet")
+        try:
+            vision_scenes.correct(db, ident["revision_id"], add=body.add, remove=body.remove,
+                                  base_revision=body.base_revision)
+        except records.StudioConflict as exc:
+            raise HTTPException(409, {"error": str(exc), "current": exc.current}) from exc
+        refreshed = vision_pipeline.refresh(db, visual_job(body.path, script, ident), found,
+                                            config)
+        return {"scenes": refreshed.get("scenes") or []}
+
+    @api.get("/api/vision/status")
+    def vision_status():
+        from ..vision import capability as vision_capability
+
+        return vision_capability.status(config)
+
+    @api.post("/api/vision/models/{model_id}/download")
+    def vision_download(model_id: str):
+        """Fetch one visual model file (explicit; checked against its checksum)."""
+        from ..vision import capability as vision_capability
+
+        if model_id not in vision_capability.MODELS:
+            raise HTTPException(404, "no such visual model")
+        try:
+            path = vision_capability.download(model_id, config)
+        except OSError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        return {"model": model_id, "path": str(path)}
+
+    @api.get("/api/analysis/migration")
+    def migration_preview():
+        """What moving older name-keyed memory onto identities would do."""
+        return identity_migration.preview(db, config.work_dir, cache_dir=cache_dir)
+
+    @api.post("/api/analysis/migration")
+    def migration_apply(body: MigrationIn):
+        try:
+            return identity_migration.apply(db, config.work_dir, body.fingerprint,
+                                            cache_dir=cache_dir, keys=body.keys)
+        except identity_migration.StalePreview as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     def source_video(script: Path) -> Path:
         """The video the analysis ran on, from the script; never a client path."""

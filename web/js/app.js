@@ -203,7 +203,10 @@ function applyRoute() {
     else studio.open(sid, parts[2]);
   }
   if (page === "Library" && !library.loaded) loadLibrary();
-  if (page === "Knowledge") renderKnowledge();
+  if (page === "Knowledge") {
+    // Title knowledge picks a show or film from the library.
+    if (!library.loaded) loadLibrary().catch(() => {}).finally(renderKnowledge); else renderKnowledge();
+  }
   if (page === "Voices") {
     if (!library.loaded) loadLibrary();   // the show list a voice can be tied to
     renderVoices(voiceKey);

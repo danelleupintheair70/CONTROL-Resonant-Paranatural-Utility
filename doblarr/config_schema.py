@@ -418,6 +418,64 @@ class DecisionsModel(_Section):
     review_order: bool = True       # the lines most likely wrong come first in review
 
 
+class AnalysisModel(_Section):
+    """What an episode analysis measures beyond its lines (docs/media-knowledge.md).
+
+    Nothing here translates, clones or generates speech. Visual analysis is
+    optional and off by default: it needs extra libraries and model files, and
+    audio analysis never waits for it or fails because of it.
+    """
+
+    features: bool = True             # energy curves, pauses and peaks per line
+    visual: bool = False              # shots, faces, tracks and active speaker
+    stages: list[str] = []            # rerun only these stages; [] runs everything enabled
+    # Narrative extraction reads the script with a language model (provider
+    # calls, charged to the request budget). Off unless asked for; the model
+    # is a Prompture model string such as ollama/qwen3:8b.
+    knowledge: bool = False
+    knowledge_model: str = ""
+    knowledge_endpoint: str | None = None
+    # A dub track only helps tell voices apart when it is the same cut: its
+    # speech has to line up with the original before it is used as evidence.
+    verify_tracks: bool = True
+    min_track_correlation: float = 0.45
+    max_track_offset: float = 2.0     # seconds; a larger offset is another edit
+
+
+class VisionModel(_Section):
+    """Shots, faces and visible tracks (doblarr.vision). Optional dependencies."""
+
+    backend: Literal["auto", "opencv", "off"] = "auto"
+    domain: Literal["auto", "anime", "live_action"] = "auto"
+    frame_height: int = 360
+    frames_per_shot: int = 3
+    max_frames: int = 4000            # bound on frames sampled from one title
+    asd_fps: float = 8.0              # frames per second read inside a line for mouth motion
+    models_dir: str = ""              # blank: <work_dir>/models/vision
+    match_threshold: float = 0.55     # face-to-reference similarity to propose a name
+
+
+class AdaptiveModel(_Section):
+    """Voice envelopes, background policies, retrieval and the judge (docs/adaptive-audio.md).
+
+    `mode: off` renders exactly what earlier releases rendered. `suggest`
+    computes recommendations for review without changing audio; `apply` renders
+    the selected envelope through the one post-fit level owner.
+    """
+
+    mode: Literal["off", "suggest", "apply"] = "off"
+    # off | retrieval | kev/<model> | laya/<model> | llm:<prompture model>
+    judge: str = "retrieval"
+    judge_endpoint: str | None = None
+    judge_budget: int = 400           # model calls per run; then the retrieval fallback
+    candidates: int = 4               # template candidates per line (preserve is extra)
+    envelope_strength: float = 1.0    # global scale on every selected envelope
+    max_envelope_db: float = 6.0      # no envelope moves a line further than this
+    background_policy: str = ""       # a background template id; "" keeps sidechain ducking
+    max_bed_attenuation_db: float = 18.0
+    lines: dict[str, dict] = {}       # per-cue manual selection {template, strength, locked}
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -444,6 +502,9 @@ class ConfigModel(_Section):
     treatments: TreatmentsModel = TreatmentsModel()
     delivery: DeliveryModel = DeliveryModel()
     decisions: DecisionsModel = DecisionsModel()
+    analysis: AnalysisModel = AnalysisModel()
+    vision: VisionModel = VisionModel()
+    adaptive: AdaptiveModel = AdaptiveModel()
 
 
 def validate_config(data: dict) -> None:

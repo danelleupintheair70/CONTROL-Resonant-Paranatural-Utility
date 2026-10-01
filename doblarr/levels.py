@@ -31,6 +31,7 @@ import statistics
 import wave
 from pathlib import Path
 
+from . import envelopes
 from .artifacts import digest, matches, record, stamp
 from .cues import (
     LEVELED,
@@ -92,7 +93,50 @@ def settings(options: dict | None) -> dict:
         "measure_source": bool(values.get("measure_source", False))
         or mode == "follow_source",
         "gains": {str(k): float(v) for k, v in (values.get("gains") or {}).items()},
+        # Adaptive audio (doblarr.envelopes): rendered only when asked for.
+        "envelopes": bool(values.get("envelopes", False)),
+        "envelope_templates": dict(values.get("envelope_templates") or {}),
+        "envelope_strength": max(0.0, min(1.5, float(values.get("envelope_strength", 1.0)))),
+        "max_envelope_db": max(0.0, min(12.0, float(values.get("max_envelope_db", 6.0)))),
     }
+
+
+def _fit_envelope(seg, source: Path, upstream, config: dict) -> dict | None:
+    """Fit this cue's chosen envelope to its fitted take (doblarr.envelopes).
+
+    The template definition comes from the run's pinned catalogue
+    (`config["envelope_templates"]`, keyed by id@version). A missing pin, an
+    unmeasurable take or a fit that rounds to nothing leaves the prior path.
+    """
+    from . import features
+
+    pin = seg.envelope.template
+    template = config["envelope_templates"].get(f"{pin.get('id')}@{pin.get('version')}")
+    if template is None:
+        seg.envelope.outcome = "unavailable"
+        seg.envelope.reason = f"template {pin.get('id')} v{pin.get('version')} is not loaded"
+        return None
+    try:
+        take = features.measure_file(source)
+    except (OSError, ValueError) as exc:
+        seg.envelope.outcome = "unavailable"
+        seg.envelope.reason = f"the fitted take could not be measured: {exc}"
+        return None
+    fitted = envelopes.fit(template, seg.envelope.params, take,
+                           upstream.duration or take["duration"],
+                           global_strength=config["envelope_strength"],
+                           max_db=config["max_envelope_db"])
+    seg.envelope.applied = fitted["applied"]
+    seg.envelope.preserved = fitted["preserved"]
+    seg.envelope.range_db = fitted["range_db"]
+    seg.envelope.max_step_db = fitted["max_step_db"]
+    seg.envelope.outcome = fitted["outcome"]
+    seg.envelope.reason = fitted["reason"]
+    if fitted["outcome"] != "applied":
+        return None
+    return {"curve": fitted["curve"],
+            "key": digest([pin, seg.envelope.params, config["envelope_strength"],
+                           config["max_envelope_db"], fitted["curve"]])[:16]}
 
 
 def owns_processing(options: dict | None) -> bool:
@@ -490,6 +534,14 @@ def process(job, options: dict | None = None, cancel=None, dry_run: bool = False
         return
     if config["mode"] in ("legacy", "off"):
         for seg in job.segments:
+            if seg.envelope.active and config["envelopes"]:
+                # Envelopes render inside the one post-fit level owner. With no
+                # owner there is nowhere to put them without adding a second
+                # level stage, so they are reported, not stacked elsewhere.
+                seg.envelope.outcome = "unsupported"
+                seg.envelope.reason = (f"levels.mode {config['mode']} has no post-fit level "
+                                       "owner; choose consistent, follow_source or manual "
+                                       "to render envelopes")
             seg.level = LevelDecision(mode=config["mode"], outcome="bypassed",
                                       reason="the pre-fit loudness pass owns this run"
                                       if config["mode"] == "legacy"
@@ -523,17 +575,49 @@ def process(job, options: dict | None = None, cancel=None, dry_run: bool = False
             "processor": PROCESSOR})
         seg.level = decision
         channels, rate = layout(source)
-        request = {"source": stamp(source), "gain": total, "processor": PROCESSOR,
-                   "channels": channels, "rate": rate, "version": 1}
-        dest = source.parent / "levels" / f"{source.stem}.{digest(request)[:12]}.wav"
-        if not matches([dest], request):
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            temp = dest.with_suffix(".partial.wav")
-            run_ffmpeg(["-y", "-i", str(source), "-af", f"volume={total:.3f}dB",
-                        "-ar", str(rate), "-ac", str(channels),
-                        "-c:a", "pcm_s16le", str(temp)], cancel=cancel)
-            temp.replace(dest)
-            record([dest], request)
+        envelope = (_fit_envelope(seg, source, upstream, config)
+                    if seg.envelope.active and config["envelopes"] else None)
+        if envelope is None:
+            if seg.envelope.active and not config["envelopes"]:
+                seg.envelope.outcome = "bypassed"
+                seg.envelope.reason = "adaptive.mode is not apply; the envelope is a suggestion"
+            request = {"source": stamp(source), "gain": total, "processor": PROCESSOR,
+                       "channels": channels, "rate": rate, "version": 1}
+            dest = source.parent / "levels" / f"{source.stem}.{digest(request)[:12]}.wav"
+            if not matches([dest], request):
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                temp = dest.with_suffix(".partial.wav")
+                run_ffmpeg(["-y", "-i", str(source), "-af", f"volume={total:.3f}dB",
+                            "-ar", str(rate), "-ac", str(channels),
+                            "-c:a", "pcm_s16le", str(temp)], cancel=cancel)
+                temp.replace(dest)
+                record([dest], request)
+        else:
+            # The same pass: static gain (baseline + performance) and the
+            # within-line envelope together, so nothing downstream re-levels.
+            request = {"source": stamp(source), "gain": total, "processor": PROCESSOR,
+                       "envelope": envelope["key"], "ceiling": config["peak_ceiling"],
+                       "version": 2}
+            dest = source.parent / "levels" / f"{source.stem}.{digest(request)[:12]}.wav"
+            if not matches([dest], request):
+                if cancel is not None and cancel.is_set():
+                    raise JobCancelled("cancelled during level processing")
+                rendered = envelopes.render(source, dest, total, envelope["curve"],
+                                            peak_ceiling=config["peak_ceiling"])
+                record([dest], request)
+            else:
+                rendered = {"peak": decision.peak, "held_db": 0.0}
+            seg.envelope.peak = rendered.get("peak")
+            seg.envelope.inputs = processing_fingerprint({"input": upstream.fingerprint,
+                                                          "envelope": envelope["key"],
+                                                          "gain": total})
+            if rendered.get("held_db"):
+                decision.peak_limited = True
+                decision.reason = (f"{decision.reason}; held {rendered['held_db']:.1f} dB "
+                                   "back so the envelope stays under the peak ceiling")
+            decision.inputs = processing_fingerprint({
+                "input": upstream.fingerprint, "gain": total, "mode": config["mode"],
+                "processor": PROCESSOR, "envelope": envelope["key"]})
         seg.audio.put_render(Artifact(
             role=LEVELED, path=str(dest), fingerprint=decision.inputs,
             derived_from=upstream.role, duration=upstream.duration,

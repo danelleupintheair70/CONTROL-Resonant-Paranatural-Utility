@@ -59,7 +59,14 @@ from .stages import (
 from .stages.common import load_script, save_script
 from .telemetry import RunReport
 from .versions import preserve_version
-from .voices import cast_key, character_cast, ensure_cast, merge_cast, save_characters
+from .voices import (
+    assigned_cast,
+    cast_key,
+    character_cast,
+    ensure_cast,
+    merge_cast,
+    save_characters,
+)
 
 log = logging.getLogger("doblarr.pipeline")
 
@@ -221,9 +228,24 @@ def run_job(
     def _ensure_cast():
         if db is None or dry_run:
             return None
-        cast_holder["cast"] = merge_cast(
-            ensure_cast(job, db, events=events),
-            character_cast(job, db, character_group, character_map))
+        inherited = character_cast(job, db, character_group, character_map)
+        ident = _identity_for_cast()
+        if ident:
+            # Characters an analysis identified bring their series casting
+            # choice for this locale; an explicit title cast entry still wins.
+            inherited = merge_cast(assigned_cast(job, db, ident.get("revision_id"),
+                                                 ident.get("series_id")), inherited)
+        cast_holder["cast"] = merge_cast(ensure_cast(job, db, events=events), inherited)
+
+    def _identity_for_cast():
+        from . import identity
+
+        try:
+            if job.input_file and Path(job.input_file).is_file():
+                return identity.resolve(db, job.input_file, cache_dir=config.work_dir / "cache")
+        except OSError:
+            return None
+        return None
 
     def _report(stage_name: str):
         if on_progress is None:
@@ -234,9 +256,19 @@ def run_job(
 
     def _voices():
         picked = voice_models.resolve(voice_models.chosen(config), config)
+        checks = dict(config.get("analysis", {}) or {})
+        evaluation = set()
+        if db is not None:
+            from . import speaker_memory
+
+            evaluation = speaker_memory.evaluation_streams(db, job.input_file)
         return {"models": picked, "models_dir": voice_models.folder(config),
                 "threshold": (config.get("speakers") or {}).get("threshold"),
-                "tracks": (config.get("speakers") or {}).get("tracks", "all")}
+                "tracks": (config.get("speakers") or {}).get("tracks", "all"),
+                "verify": checks.get("verify_tracks", True),
+                "min_correlation": checks.get("min_track_correlation", 0.45),
+                "max_offset": checks.get("max_track_offset", 2.0),
+                "evaluation_streams": evaluation}
 
     def _diarize():
         with gpu_stage("diarize", job, compute, retain=keep_models):
@@ -291,6 +323,7 @@ def run_job(
                 work_dir=work, budget=budget, cancel=cancel_event,
                 corrections=config["transcribe"].get("source") == "whisper",
                 title=job.input_file.stem), glossary)
+        knowledge_rows = _narrative().get("context") or None
         translate.run(
             job,
             translator,
@@ -305,6 +338,7 @@ def run_job(
             synopsis=synopsis,
             flag_reactions=reactions_on,
             references=references,
+            knowledge=knowledge_rows,
         )
         if not dry_run and job.segments:
             # How each line is delivered, where its own words say so; a
@@ -355,6 +389,50 @@ def run_job(
         locale_direction = f"speak in {display_name(job.target_locale)}"
     character_notes = dict(config["translate"].get("character_notes", {}) or {})
     candidate_requests = dict(config["dub"].get("candidates", {}) or {})
+    narrative_state: dict = {}
+
+    def _narrative() -> dict:
+        """Accepted title knowledge for this run, from its frozen revision.
+
+        Computed once. Translation gets the bounded claim list; acting gets each
+        identified character's profile direction and accepted behaviour claims
+        as their character layer, where the config does not already set one.
+        """
+        if narrative_state or db is None or dry_run or job.kind == "analyze":
+            return narrative_state
+        narrative_state["claims"] = []
+        from . import identity, profiles, speaker_memory
+        from .knowledge import narrative
+
+        ident = None
+        try:
+            if job.input_file and Path(job.input_file).is_file():
+                ident = identity.resolve(db, job.input_file, cache_dir=config.work_dir / "cache")
+        except OSError:
+            ident = None
+        if ident is None:
+            return narrative_state
+        held = speaker_memory.held_out_revisions(db)
+        claims = narrative.select(db, job.narrative_snapshot, media_id=ident["media_id"],
+                                  held_out=held)
+        narrative_state["claims"] = claims
+        narrative_state["context"] = narrative.context(claims, db)
+        labels = speaker_memory.characters_for_labels(db, ident["revision_id"], job.segments)
+        layered = {}
+        for label, character in labels.items():
+            if character_notes.get(label):
+                continue        # an explicit config note wins
+            parts = [profiles.get(db, character["id"])["delivery"].get("direction") or "",
+                     narrative.character_direction(claims, character["id"])]
+            note = " ".join(p for p in parts if p).strip()
+            if note:
+                character_notes[label] = note[:500]
+                layered[label] = character["name"]
+        job.metrics["narrative"] = {
+            "pin": job.narrative_snapshot or {}, "claims": len(claims),
+            "context_rows": len(narrative_state["context"]),
+            "characters_identified": len(labels), "direction_layers": layered}
+        return narrative_state
 
     def _narrator_speakers():
         return {
@@ -455,12 +533,148 @@ def run_job(
         analysis.run(job, work, whisper_model=config["transcribe"].get(
             "whisper_model", "large-v3"), device=compute_device)
 
+    analysis_options = dict(config.get("analysis", {}) or {})
+
+    def _identify():
+        # What this file *is* (series, media, source revision), so everything
+        # the analysis learns is keyed by content and not by a file name.
+        if db is None or job.kind != "analyze":
+            return
+        from . import identity
+
+        try:
+            job.metrics["identity"] = identity.resolve(
+                db, job.input_file, cache_dir=config.work_dir / "cache",
+                hints={"tvdb_id": int(job.show_ref[7:])}
+                if job.show_ref.startswith("series:") and job.show_ref[7:].isdigit() else None)
+        except OSError as exc:
+            log.warning("analysis: could not identify %s (%s); results stay keyed by the "
+                        "script only", job.input_file.name, exc)
+
+    force_features: dict[str, bool] = {"on": False}
+
+    def _features():
+        if not analysis_options.get("features", True) or not job.segments:
+            analysis.record(db, job, "features", "skipped")
+            return
+        path, reused = analysis.run_features(job, work, cancel=cancel_event,
+                                             progress=_report("features"),
+                                             force=force or force_features["on"])
+        job.metrics["features"] = {"path": str(path), "reused": reused}
+
+    def _visual():
+        wanted_visual = analysis_options.get("visual") or force_features.get("visual")
+        if not wanted_visual or not job.segments:
+            return
+        from .vision import pipeline as vision_pipeline
+
+        vision_pipeline.run(job, work, config, db=db, cancel=cancel_event,
+                            progress=_report("visual"))
+
+    def _knowledge():
+        """Narrative extraction into a reviewable draft (never active knowledge)."""
+        ident = job.metrics.get("identity") or {}
+        model = str(analysis_options.get("knowledge_model") or "")
+        if db is None or not ident.get("revision_id") or not job.segments:
+            return
+        if not model:
+            analysis.record(db, job, "knowledge", "unsupported",
+                            error="no knowledge extraction model is configured "
+                                  "(analysis.knowledge_model)")
+            return
+        from . import llm
+        from .knowledge import narrative
+        from .stages.common import script_path
+
+        client = llm.Client(model, endpoint=analysis_options.get("knowledge_endpoint"),
+                            budget=budget, budget_kind="knowledge", guard=holdout)
+        try:
+            result = narrative.extract(db, ident, script_path(job, work), client,
+                                       cancel=cancel_event, progress=_report("knowledge"))
+        except (llm.ModelUnavailable, ValueError) as exc:
+            analysis.record(db, job, "knowledge", "failed", error=str(exc))
+            return
+        job.metrics["knowledge"] = result
+        analysis.record(db, job, "knowledge", "done" if result["state"] == "complete"
+                        else "failed", version=narrative.EXTRACTOR,
+                        metrics={k: result[k] for k in ("candidates", "windows", "reused",
+                                                        "conflicts")},
+                        outputs={"draft": result["draft_id"],
+                                 "draft_revision": result["revision"]},
+                        error="; ".join(result["failures"])[:400])
+
+    def _speaker_memory():
+        # Teach the series what this revision's identified voices sound like
+        # and note the speaker baselines this grouping produced.
+        if db is None:
+            return
+        from . import speaker_memory
+
+        speaker_memory.after_analysis(db, job, work)
+
+    adaptive_options = dict(config.get("adaptive", {}) or {})
+
+    def _adaptive():
+        """Envelope recommendations and selections (doblarr.adaptive): after
+        timing, before the level owner. Reprocessing only, never speech."""
+        if dry_run or not job.segments:
+            return
+        manual = bool(job.envelope_edits) or bool(adaptive_options.get("lines"))
+        if adaptive_options.get("mode", "off") == "off" and not manual:
+            return
+        from . import adaptive, feedback, identity, speaker_memory
+
+        ident = None
+        if db is not None:
+            try:
+                if job.input_file and Path(job.input_file).is_file():
+                    ident = identity.resolve(db, job.input_file,
+                                             cache_dir=config.work_dir / "cache")
+            except OSError:
+                ident = None
+        characters, visual, examples = {}, {}, []
+        if ident:
+            job.metrics.setdefault("identity", ident)
+            characters = speaker_memory.characters_for_labels(db, ident["revision_id"],
+                                                              job.segments)
+            visual = _visual_by_cue(ident["revision_id"])
+            examples = feedback.examples(db, ident["series_id"])
+            job.metrics["held_out"] = sorted(feedback.held_out(db))
+        job.metrics["adaptive"] = adaptive.recommend(
+            job, config, db=db, work=work, cancel=cancel_event, progress=_report("adaptive"),
+            budget=budget, guard=holdout, claims=_narrative().get("claims") or [],
+            characters=characters, visual=visual, examples=examples)
+        save_script(job, effective_work)
+
+    def _visual_by_cue(revision_id: str) -> dict:
+        """Who-speaks evidence an analysis left for this revision, by cue."""
+        from .artifacts import read_json
+        from .studio import records as studio_records
+
+        for snap in studio_records.list_latest(db, "snapshot", scope=revision_id):
+            found = ((snap.get("stages") or {}).get("association") or {}).get(
+                "outputs", {}).get("visual")
+            if found and Path(found).is_file():
+                return {row["cue"]: row for row in read_json(Path(found)).get(
+                    "associations") or []}
+        return {}
+
     def _levels():
         # A reviewer's per-line gain is merged over the configured map here, so
         # the level owner sees one set of gains and a manual decision made in
         # review survives a resume without becoming a config edit.
         options = {**level_options,
                    "gains": {**dict(level_options.get("gains") or {}), **job.manual_gains}}
+        if any(seg.envelope.active for seg in job.segments):
+            from . import adaptive
+
+            # Envelopes render inside this same pass, from the pinned catalogue.
+            options.update(
+                envelopes=adaptive_options.get("mode") == "apply"
+                or bool(job.envelope_edits) or bool(adaptive_options.get("lines")),
+                envelope_templates=adaptive.template_map(db, job),
+                envelope_strength=adaptive_options.get("envelope_strength", 1.0),
+                max_envelope_db=adaptive_options.get("max_envelope_db", 6.0))
         levels.process(job, options, cancel=cancel_event, dry_run=dry_run)
         if not dry_run and job.segments:
             save_script(job, effective_work)
@@ -582,6 +796,16 @@ def run_job(
 
     program = {"seconds": None}
 
+    def _bed_policy():
+        """The rendered bed when a background policy is applied (else None:
+        the legacy sidechain ducking runs exactly as before)."""
+        policy = adaptive_options.get("background_policy")
+        if dry_run or not policy or adaptive_options.get("mode") != "apply":
+            return None
+        from . import adaptive
+
+        return adaptive.background(job, config, db=db, work=work, cancel=cancel_event)
+
     def _program_seconds():
         """How long the delivered programme is, so a tail can be told it ran past it."""
         if program["seconds"] is None:
@@ -653,6 +877,7 @@ def run_job(
         ("quality", _quality),
         ("phrases", _phrases),
         ("fit", _fit),
+        ("adaptive", _adaptive),
         ("levels", _levels),
         ("verify", _reverify),
         (
@@ -682,6 +907,7 @@ def run_job(
                 dry_run=dry_run,
                 cancel=cancel_event,
                 force=force,
+                bed_policy=_bed_policy(),
             ),
         ),
         (
@@ -707,10 +933,35 @@ def run_job(
         ("validate", _validate),
     ]
     if job.kind == "analyze":
-        # The first half of a dub and no more: who says what, and how.
+        # The first half of a dub and no more: who says what, and how. Each
+        # stage is noted in the source revision's snapshot, so a page can show
+        # what is done, stale, failed or unsupported, and a rerun can ask for
+        # only the stages that need it (the earlier ones are checkpointed).
         keep = ("probe", "separate", "transcribe", "diarize")
-        steps = [step for step in steps if step[0] in keep] + [
-            ("measure", _measure_all), ("analyze", _analyze)]
+        optional = [("analyze", _analyze), ("features", _features),
+                    ("speaker_memory", _speaker_memory)]
+        if analysis_options.get("visual"):
+            optional.append(("visual", _visual))
+        if analysis_options.get("knowledge"):
+            optional.append(("knowledge", _knowledge))
+        chosen = [str(x) for x in analysis_options.get("stages") or []]
+        if chosen:
+            # A targeted rerun: the earlier stages run from their checkpoints
+            # (cheap), and only the asked-for optional stages run at all.
+            visual = {"shots", "faces", "tracks", "active_speaker", "association", "scenes",
+                      "visual"}
+            wanted = {("visual" if c in visual else c) for c in chosen}
+            available = {"analyze": _analyze, "features": _features,
+                         "speaker_memory": _speaker_memory, "visual": _visual,
+                         "knowledge": _knowledge}
+            optional = [(name, available[name]) for name in available if name in wanted]
+            if "features" in wanted:
+                force_features["on"] = True
+            if "visual" in wanted:
+                force_features["visual"] = True
+        steps = ([step for step in steps if step[0] in keep] + [("measure", _measure_all)]
+                 + optional)
+        steps.insert(0, ("identify", _identify))
     if job.kind == "audition":
         separation = next(step for step in steps if step[0] == "separate")
         steps = [step for step in steps if step[0] != "separate"]
@@ -737,6 +988,23 @@ def run_job(
                 raise JobCancelled(f"cancelled before stage {name}")
             if on_stage:
                 on_stage(name, i, total)
+            if job.kind == "analyze" and name in _SNAPSHOT_STAGES:
+                try:
+                    with report.stage(name):
+                        fn()
+                except JobCancelled:
+                    raise
+                except Exception as exc:
+                    analysis.record(db, job, _SNAPSHOT_STAGES[name][0], "failed",
+                                    error=str(exc))
+                    raise
+                for stage_name in _SNAPSHOT_STAGES[name]:
+                    if stage_name == "features" and not analysis_options.get("features",
+                                                                             True):
+                        continue
+                    analysis.record(db, job, stage_name, metrics=_stage_metrics(job, name),
+                                    outputs=_stage_outputs(job, stage_name, effective_work))
+                continue
             with report.stage(name):
                 fn()
         if not dry_run and job.kind != "analyze" and config["dub"].get(
@@ -798,6 +1066,11 @@ def run_job(
                 },
                 "delivery": delivery.describe(delivery.settings(delivery_options)),
                 "review_order": decisions.enabled(decision_options, "review_order"),
+                # Adaptive audio, frozen the same way: which mode, judge and
+                # bed policy produced this run's envelopes.
+                "adaptive": {k: adaptive_options.get(k, default) for k, default in (
+                    ("mode", "off"), ("judge", "retrieval"), ("background_policy", ""),
+                    ("envelope_strength", 1.0), ("max_envelope_db", 6.0))},
             })
     report.finish()
 
@@ -805,6 +1078,46 @@ def run_job(
     if holdout is not None:
         job.metrics["holdout_guard"] = holdout.summary()
     return job
+
+
+# Analysis steps and the snapshot stages each one completes (doblarr.snapshots).
+# The visual step records its own stages, one by one, as it goes.
+_SNAPSHOT_STAGES: dict[str, tuple[str, ...]] = {
+    "probe": ("probe",), "separate": ("separate",), "transcribe": ("transcribe",),
+    "diarize": ("diarize",), "measure": ("measure", "baselines"), "analyze": ("analyze",),
+    "features": ("features",), "speaker_memory": ("speaker_memory",),
+}
+
+
+def _stage_metrics(job: DubJob, step: str) -> dict:
+    if step == "transcribe":
+        return {"lines": len(job.segments)}
+    if step == "diarize":
+        return {"voices": len(job.speakers), **(job.metrics.get("diarize") or {})}
+    if step == "measure":
+        baseline = job.dialogue_baseline or {}
+        return {"measured": sum(1 for s in job.segments if s.measurement.state == "measured"),
+                "baseline": baseline.get("scope")}
+    if step == "features":
+        return dict(job.metrics.get("features") or {})
+    return {}
+
+
+def _stage_outputs(job: DubJob, stage: str, work: Path) -> dict:
+    """Where a stage's result lives, so a reader finds it by revision, not by name."""
+    from .stages.common import script_path, work_stem
+
+    if stage == "transcribe":
+        return {"script": str(script_path(job, work))}
+    if stage == "separate":
+        return {"vocals": str(job.vocals or ""), "background": str(job.background or "")}
+    if stage == "diarize" and job.vocals:
+        return {"speakers": str(Path(job.vocals).parent / f"{work_stem(job)}.speakers.json")}
+    if stage == "analyze":
+        return {"analysis": str(work / f"{work_stem(job)}.analysis.json")}
+    if stage == "features":
+        return {"features": str((job.metrics.get("features") or {}).get("path") or "")}
+    return {}
 
 
 def _load_references(translate: dict) -> dict | None:

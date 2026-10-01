@@ -520,6 +520,7 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             },
             "treatment_summary": (data.get("metrics") or {}).get("treatments") or {},
             "treatment_edits": dict(data.get("treatment_edits") or {}),
+            "envelope_edits": dict(data.get("envelope_edits") or {}),
             "delivery": _redact_delivery(data.get("delivery") or {}),
         }
         return merge_decisions(payload, load_decisions(config.work_dir, job_id))
@@ -563,6 +564,9 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
         rebuilt.treatment_edits = {str(k): dict(v) for k, v
                                    in (data.get("treatment_edits") or {}).items()
                                    if isinstance(v, dict)}
+        rebuilt.envelope_edits = {str(k): dict(v) for k, v
+                                  in (data.get("envelope_edits") or {}).items()
+                                  if isinstance(v, dict)}
         work = _allowed_path(media["work"]) if media.get("work") else None
         rebuilt.artifacts_dir = work or config.work_dir / "previews"
         segments = []

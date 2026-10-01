@@ -49,3 +49,9 @@
 .scene-finding .review-options { margin-top:8px; gap:10px; }
 .scene-finding .scene-note { flex:1 1 220px; }
 @media (max-width:650px) { .review-layout { grid-template-columns:1fr; } .review-lines { max-height:22vh; border-right:0; border-bottom:1px solid var(--line); } .review-editor { max-height:42vh; } .review-footer { flex-wrap:wrap; } }
+
+/* One line's voice envelope in review. */
+.envelope-panel { margin:12px 0; padding:10px 12px; border:1px solid var(--line); border-radius:8px; }
+.envelope-panel summary { cursor:pointer; font-size:13.5px; }
+.envelope-listen, .envelope-choose, .envelope-verdict { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin:8px 0; }
+.envelope-candidates td { vertical-align:top; }

@@ -161,6 +161,216 @@ def suggest(db, path: str, sidecar: dict | None, names: dict[str, str],
     return out
 
 
+# --------------------------------------------------------------------------
+# Series-keyed prints (canonical identities, doblarr.identity)
+# --------------------------------------------------------------------------
+#
+# The functions above key a show by its folder name and a character by the
+# name typed for it; they stay for older callers and for the migration. The
+# ones below key a show by its series id and a character by its id, and keep
+# vectors apart by partition: a model's vectors are only comparable with the
+# same model's, and a voice heard in Japanese is a different performer from the
+# same character in a Spanish dub, so the source language is part of the key.
+# A legacy print whose language was never recorded sits in its own partition
+# ("unknown") and is never averaged with a known-language one.
+
+SERIES_KEY = "voice-prints:"
+PRINTS_VERSION = 2
+PROTOTYPE_MIN_LINES = 8     # a character heard this often may get several prototypes
+PROTOTYPE_MIN_SHARE = 3     # a prototype needs at least this many lines of its own
+QUALITY_CAP = 4.0           # seconds; longer lines count no more than this
+
+
+def series_key(series_id: str) -> str:
+    return SERIES_KEY + series_id
+
+
+def partition(model: str, language: str) -> str:
+    return f"{model}|{(language or '').split('-')[0].lower() or 'unknown'}"
+
+
+def _weighted(lines: list[dict]):
+    import numpy as np
+
+    vectors = np.asarray([line["vector"] for line in lines], dtype=np.float64)
+    weights = np.asarray([min(QUALITY_CAP, float(line["end"]) - float(line["start"]))
+                          for line in lines], dtype=np.float64)
+    return vectors, weights
+
+
+def prototypes(lines: list[dict]) -> list[dict]:
+    """One to three duration-weighted prototypes of one character's lines.
+
+    One person shouting and the same person calm can sit far apart; averaging
+    them gives a print that matches neither. With enough lines the anchors are
+    split by a small deterministic spherical k-means (farthest-point start), and
+    a split is kept only when each part has lines enough to stand on.
+    """
+    import numpy as np
+
+    vectors, weights = _weighted(lines)
+    total = {"sum": [round(float(x), 5) for x in (vectors * weights[:, None]).sum(axis=0)],
+             "n": len(lines), "weight": round(float(weights.sum()), 3)}
+    if len(lines) < PROTOTYPE_MIN_LINES:
+        return [total]
+    centres = [vectors[int(np.argmax(weights))]]
+    for _ in range(2):
+        distance = 1 - np.max(vectors @ np.asarray(centres).T, axis=1)
+        centres.append(vectors[int(np.argmax(distance))])
+    best = [total]
+    for k in (2, 3):
+        chosen = np.asarray(centres[:k])
+        for _ in range(8):
+            assigned = np.argmax(vectors @ chosen.T, axis=1)
+            new = []
+            for g in range(k):
+                members = vectors[assigned == g]
+                if not len(members):
+                    new.append(chosen[g])
+                    continue
+                mean = (members * weights[assigned == g][:, None]).sum(axis=0)
+                new.append(mean / (np.linalg.norm(mean) or 1.0))
+            chosen = np.asarray(new)
+        sizes = [int((assigned == g).sum()) for g in range(k)]
+        if min(sizes) < PROTOTYPE_MIN_SHARE:
+            break
+        best = [total] + [{
+            "sum": [round(float(x), 5) for x in
+                    (vectors[assigned == g] * weights[assigned == g][:, None]).sum(axis=0)],
+            "n": sizes[g], "weight": round(float(weights[assigned == g].sum()), 3)}
+            for g in range(k)]
+    return best
+
+
+def remember_series(db, series_id: str, revision_id: str, sidecar: dict | None,
+                    labels: dict[str, str], language: str) -> dict[str, int]:
+    """Teach a series what this revision's identified voices sound like.
+
+    `labels` maps a voice group to a character id. Re-teaching a revision
+    replaces what it taught before, so naming again never counts twice.
+    """
+    if not sidecar or not sidecar.get("model"):
+        return {}
+    key = series_key(series_id)
+    doc = (db.load_plan(key) or {}).get("plan") or {}
+    partitions = dict(doc.get("partitions") or {})
+    part = dict(partitions.get(partition(sidecar["model"], language)) or {})
+    grouped: dict[str, list[dict]] = {}
+    for line in _anchors(sidecar.get("lines") or []):
+        character = labels.get(line.get("speaker") or "")
+        if character:
+            grouped.setdefault(character, []).append(line)
+    taught = {character: {"protos": prototypes(lines), "n": len(lines)}
+              for character, lines in grouped.items()}
+    if taught:
+        part[revision_id] = taught
+    else:
+        part.pop(revision_id, None)
+    partitions[partition(sidecar["model"], language)] = part
+    doc.update(version=PRINTS_VERSION, partitions=partitions)
+    db.save_plan(key, series_id, doc)
+    return {character: int(len(grouped[character])) for character in taught}
+
+
+def _entry_protos(entry: dict) -> list[dict]:
+    # A legacy (migrated) entry is a single {sum, n}.
+    return entry.get("protos") or [{"sum": entry["sum"], "n": entry.get("n", 1)}]
+
+
+def prints_series(db, series_id: str, model: str, language: str,
+                  exclude: set[str] | None = None) -> dict[str, dict]:
+    """Every identified character of a series for one model and language.
+
+    `exclude` drops revisions (the one being named, held-out evaluation
+    episodes) so a voice is never matched against what it taught itself.
+    """
+    import numpy as np
+
+    doc = (db.load_plan(series_key(series_id)) or {}).get("plan") or {}
+    part = (doc.get("partitions") or {}).get(partition(model, language)) or {}
+    totals: dict[str, dict] = {}
+    for revision, taught in part.items():
+        if exclude and revision in exclude:
+            continue
+        for character, entry in taught.items():
+            protos = _entry_protos(entry)
+            total = totals.setdefault(character, {"sum": None, "n": 0, "episodes": 0,
+                                                  "protos": []})
+            mean = np.asarray(protos[0]["sum"], dtype=np.float64)
+            total["sum"] = mean if total["sum"] is None else total["sum"] + mean
+            total["n"] += int(entry.get("n", protos[0].get("n", 1)))
+            total["episodes"] += 1
+            for proto in protos[1:]:
+                vector = np.asarray(proto["sum"], dtype=np.float64)
+                norm = float(np.linalg.norm(vector))
+                if norm:
+                    total["protos"].append(vector / norm)
+    out = {}
+    for character, total in totals.items():
+        norm = float(np.linalg.norm(total["sum"]))
+        if norm:
+            out[character] = {"vector": total["sum"] / norm, "protos": total["protos"],
+                              "lines": total["n"], "episodes": total["episodes"]}
+    return out
+
+
+def similarity(vector, known: dict, use_prototypes: bool = True) -> float:
+    """Cosine of a group mean to a character: its print, or its closest prototype."""
+    import numpy as np
+
+    scores = [float(vector @ known["vector"])]
+    if use_prototypes:
+        scores += [float(vector @ p) for p in known.get("protos") or []]
+    return max(scores) if scores else float(np.nan)
+
+
+def suggest_series(db, series_id: str, revision_id: str, sidecar: dict | None,
+                   named: set[str], language: str, top: int = 3,
+                   exclude: set[str] | None = None,
+                   use_prototypes: bool = False) -> dict[str, list[dict]]:
+    """For each unidentified group, the series' characters it sounds closest to,
+    with the margin to the next one (a small margin is a weak suggestion).
+
+    Prototypes are stored but not used by default: on the hand-labelled anime
+    episode, leave-one-out recognition fell from 0.966 to 0.938 top-1 with
+    them, so the single duration-weighted print stays the default until a
+    larger evaluation says otherwise."""
+    import numpy as np
+
+    if not sidecar or not sidecar.get("model"):
+        return {}
+    known = prints_series(db, series_id, sidecar["model"], language,
+                          exclude={revision_id, *(exclude or set())})
+    if not known:
+        return {}
+    groups: dict[str, list] = {}
+    for line in _anchors(sidecar.get("lines") or []):
+        label = line.get("speaker") or ""
+        if label and label not in named:
+            groups.setdefault(label, []).append(np.asarray(line["vector"], dtype=np.float64))
+    out: dict[str, list[dict]] = {}
+    for label, vectors in groups.items():
+        mean = np.mean(vectors, axis=0)
+        norm = float(np.linalg.norm(mean))
+        if not norm:
+            continue
+        mean = mean / norm
+        ranked = sorted(((similarity(mean, p, use_prototypes), character, p)
+                         for character, p in known.items()), key=lambda r: -r[0])
+        picks = []
+        for i, (score, character, p) in enumerate(ranked[:top]):
+            if score < FLOOR:
+                continue
+            following = ranked[i + 1][0] if i + 1 < len(ranked) else None
+            picks.append({"character_id": character, "similarity": round(score, 3),
+                          "margin": round(score - following, 3) if following is not None
+                          else None, "lines": p["lines"], "episodes": p["episodes"],
+                          "group_lines": len(vectors)})
+        if picks:
+            out[label] = picks
+    return out
+
+
 def carry_names(old: list[str], new: list[str], seconds: list[float],
                 names: dict[str, str], share: float = 0.5) -> dict[str, str]:
     """Names for a fresh grouping of the same lines: a new group takes the name

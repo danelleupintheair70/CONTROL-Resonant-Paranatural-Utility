@@ -35,18 +35,54 @@ def band(relative_db) -> str:
 def find_script(work_dir: Path, episode_file: str | Path) -> Path | None:
     """The newest full-run script for an episode file, wherever its run lived.
 
-    A run keys its work by the input's absolute path, so the same episode run
-    from the library and from a copy in `work/input` lands in two places; the
-    file name is what they share. Teasers and auditions are partial and skipped.
+    See `locate_script`; this returns the path alone.
+    """
+    return locate_script(work_dir, episode_file)[0]
+
+
+def locate_script(work_dir: Path, episode_file: str | Path) -> tuple[Path | None, str]:
+    """The script for an episode file and how it was found.
+
+    A script records the media path its run read. A script made from exactly
+    this path is the answer (``exact``). Only when none was is a script with
+    the same file stem offered (``name``), because a copy of the episode run
+    from elsewhere shares the name; if scripts with that stem were made from
+    several different inputs, the match is ``ambiguous`` and a caller must not
+    treat it as this file's identity. Teasers and auditions are skipped.
     """
     stem = Path(str(episode_file).replace("\\", "/")).stem
     media = Path(work_dir) / "media"
     if not stem or not media.is_dir():
-        return None
+        return None, "none"
     found = [p for p in media.glob(f"*/**/{glob_escape(stem)}.script.json") if p.is_file()]
+    if not found:
+        return None, "none"
+    wanted = _norm(episode_file)
+    inputs = {p: _norm(_input_of(p)) for p in found}
+    exact = [p for p in found if inputs[p] == wanted]
     # A script whose lines carry the original actor's level can say how a
     # character talks, not only how much; an older run without it is a fallback.
-    return max(found, key=lambda p: (_measured(p), p.stat().st_mtime)) if found else None
+    def rank(p):
+        return (_measured(p), p.stat().st_mtime)
+
+    if exact:
+        return max(exact, key=rank), "exact"
+    distinct = {inputs[p] for p in found if inputs[p]}
+    return max(found, key=rank), ("ambiguous" if len(distinct) > 1 else "name")
+
+
+def _norm(path) -> str:
+    import os
+
+    return os.path.normcase(str(path or "").replace("\\", "/")).replace("\\", "/")
+
+
+def _input_of(script: Path) -> str:
+    try:
+        return str((json.loads(Path(script).read_text(encoding="utf-8")).get("identity")
+                    or {}).get("input") or "")
+    except (OSError, ValueError):
+        return ""
 
 
 def _measured(path: Path) -> bool:

@@ -148,7 +148,12 @@ def build_router(config, services, db):
     def save_traits(body: Traits):
         if not any(v["key"] == body.key for v in catalog()["voices"]):
             raise HTTPException(404, "Voice not found")
-        db.save_plan("voice-traits:" + body.key, "Voice traits", body.model_dump(exclude={"key"}))
+        # Only the fields this request set change. An older form that does not
+        # know a field must not erase it, so the saved traits are merged, never
+        # replaced. (The rich character profile lives apart, doblarr.profiles.)
+        existing = (db.load_plan("voice-traits:" + body.key) or {}).get("plan", {})
+        db.save_plan("voice-traits:" + body.key, "Voice traits",
+                     {**existing, **body.model_dump(exclude={"key"}, exclude_unset=True)})
         return {"ok": True}
 
     @api.post("/api/voice-catalog/select")

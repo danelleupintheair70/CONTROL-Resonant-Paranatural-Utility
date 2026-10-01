@@ -175,6 +175,21 @@ const TABS = [
     N("boundaries.edge_fade_ms", "Edge fade (ms)", "The older single short linear fade at both ends. When above 0 it replaces the two eases above."),
     N("boundaries.edge_threshold_db", "Edge already smooth below (dB)"),
   ])]),
+  tab("adaptive", "Envelopes", [{ ...group("Voice envelopes and background", [
+    C("adaptive.mode", "Envelopes", ["off", "suggest", "apply"], "Off renders exactly as before. Suggest records a recommended envelope per line for review. Apply renders it; it needs a dialogue level approach other than legacy."),
+    T("adaptive.judge", "Chosen by", "retrieval (a rule), kev/<model>, laya/<model> or llm:<model>, for example llm:ollama/gemma3:12b."),
+    N("adaptive.envelope_strength", "Envelope strength", "Scales every envelope, 0 to 1.5."),
+    N("adaptive.max_envelope_db", "Largest envelope move (dB)"),
+    T("adaptive.background_policy", "Background policy", "A background template such as background/strong-ducking. Empty keeps the current sidechain ducking; a policy replaces it, never adds to it."),
+    N("adaptive.max_bed_attenuation_db", "Deepest background dip (dB)"),
+  ]), desc: "Templates are edited under Knowledge → Audio templates. Changing an envelope reprocesses existing takes; it never generates speech." },
+  group("Episode analysis", [
+    B("analysis.features", "Measure energy curves"),
+    B("analysis.visual", "Analyse the picture", "Faces and mouth movement as evidence for you to check. Needs the vision extra and model files."),
+    B("analysis.verify_tracks", "Check dub tracks line up before using them"),
+    B("analysis.knowledge", "Extract title knowledge", "Reads the lines with a language model. Proposals are only used after you review them."),
+    T("analysis.knowledge_model", "Knowledge model", "A Prompture model, for example ollama/gemma3:12b."),
+  ])]),
   tab("hardware", "Hardware", [group("This machine", [
     I("hardware", "Detected hardware", "What this Doblarr process can use for separation, diarization and transcription. voicebox is a separate program and picks its own device."),
   ]), group("Devices", [

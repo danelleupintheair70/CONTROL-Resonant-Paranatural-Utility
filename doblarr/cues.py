@@ -47,7 +47,12 @@ from .errors import DoblarrError
 # 4 (Plan 05): the `treated` artifact role and the acoustic treatment record.
 # Older payloads load unchanged and their treatment stays empty, which is the
 # honest state: that run placed dry dialogue and no preset was ever chosen.
-CUE_SCHEMA_VERSION = 4
+#
+# 5 (adaptive audio): the envelope decision — which voice envelope template a
+# line uses, fitted how, chosen by whom, and what the render measured. Older
+# payloads load with an empty decision, which is honest: no envelope was ever
+# chosen for them and their render is the prior path.
+CUE_SCHEMA_VERSION = 5
 
 # Time domains. Never mix them in one number.
 SOURCE = "source"    # the original media timeline
@@ -1364,6 +1369,80 @@ class Treatment:
         )
 
 
+ENVELOPE_OUTCOMES = ("applied", "preserved", "bypassed", "unsupported", "unavailable",
+                     "unknown")
+ENVELOPE_ORIGINS = ("none", "manual", "judge", "retrieval", "default")
+
+
+@dataclass
+class EnvelopeDecision:
+    """Which voice envelope a line gets and what rendering it actually did.
+
+    The template is pinned by id, version and fingerprint, so a saved version
+    reproduces even after the catalogue changes. `requested` and `applied` are
+    the strength asked for and the strength used after the line's own emphasis
+    was credited (`preserved`) and the bounds clamped it; `peak`/`max_step_db`
+    are what the render measured. The curve itself is recomputed from the
+    template and the take's measured features, never stored as audio.
+    """
+
+    template: dict = field(default_factory=dict)   # {id, version, fingerprint, family}
+    params: dict = field(default_factory=dict)
+    origin: str = "none"                # ENVELOPE_ORIGINS
+    locked: bool = False                # a person chose it; automation keeps it
+    requested: float = 0.0              # strength requested
+    applied: float = 0.0                # strength rendered
+    preserved: float = 0.0              # share of the shape the take already had
+    clamps: dict = field(default_factory=dict)
+    outcome: str = "unknown"            # ENVELOPE_OUTCOMES
+    reason: str = ""
+    decision: str = ""                  # the recommendation record it came from
+    range_db: float | None = None       # max - min of the fitted curve
+    max_step_db: float | None = None    # largest change between 10 ms frames
+    peak: float | None = None
+    inputs: str = ""
+
+    def __post_init__(self) -> None:
+        if self.origin not in ENVELOPE_ORIGINS:
+            raise SchemaError(f"unknown envelope origin {self.origin!r}")
+        if self.outcome not in ENVELOPE_OUTCOMES:
+            raise SchemaError(f"unknown envelope outcome {self.outcome!r}")
+
+    @property
+    def active(self) -> bool:
+        """True when an envelope other than preserve should be rendered."""
+        return bool(self.template) and self.template.get("family") not in (None, "preserve")
+
+    def as_dict(self) -> dict:
+        return {"template": dict(self.template), "params": dict(self.params),
+                "origin": self.origin, "locked": self.locked, "requested": self.requested,
+                "applied": self.applied, "preserved": self.preserved,
+                "clamps": dict(self.clamps), "outcome": self.outcome, "reason": self.reason,
+                "decision": self.decision, "range_db": self.range_db,
+                "max_step_db": self.max_step_db, "peak": self.peak, "inputs": self.inputs}
+
+    @classmethod
+    def from_dict(cls, data: Any) -> EnvelopeDecision:
+        data = _mapping(data, "envelope decision")
+        return cls(
+            template=_mapping(data.get("template"), "envelope template"),
+            params=_mapping(data.get("params"), "envelope params"),
+            origin=_text(data.get("origin")) or "none",
+            locked=bool(data.get("locked", False)),
+            requested=_finite(data.get("requested") or 0.0, "requested strength"),
+            applied=_finite(data.get("applied") or 0.0, "applied strength"),
+            preserved=_finite(data.get("preserved") or 0.0, "preserved share"),
+            clamps=_mapping(data.get("clamps"), "envelope clamps"),
+            outcome=_text(data.get("outcome")) or "unknown",
+            reason=_text(data.get("reason")),
+            decision=_text(data.get("decision")),
+            range_db=_opt_float(data.get("range_db"), "envelope range"),
+            max_step_db=_opt_float(data.get("max_step_db"), "envelope step"),
+            peak=_opt_float(data.get("peak"), "envelope peak"),
+            inputs=_text(data.get("inputs")),
+        )
+
+
 @dataclass
 class Take:
     """One generation of a cue. Raw audio is never overwritten by processing."""
@@ -1813,6 +1892,7 @@ def cue_payload(seg) -> dict:
         "verification": seg.verification.as_dict(),
         "phrasing": seg.phrasing.as_dict(),
         "treatment": seg.treatment.as_dict(),
+        "envelope": seg.envelope.as_dict(),
         "findings": [f.as_dict() for f in seg.findings],
     }
 
@@ -1844,6 +1924,9 @@ def apply_cue_payload(seg, data: Any) -> None:
     # run placed dry dialogue, and giving it `preset="dry", outcome="bypassed"`
     # would claim a decision nobody made.
     seg.treatment = Treatment.from_dict(data.get("treatment"))
+    # A payload older than version 5 has no envelope decision. Empty is honest:
+    # no envelope was chosen and its level render is the prior path.
+    seg.envelope = EnvelopeDecision.from_dict(data.get("envelope"))
     seg.findings = [Finding.from_dict(f) for f in _sequence(data.get("findings"), "findings")]
 
 

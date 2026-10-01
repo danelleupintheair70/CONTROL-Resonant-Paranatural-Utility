@@ -2,6 +2,7 @@ import { api, apiUrl } from './api.js';
 import { escapeHtml as esc, safeGet } from './dom.js';
 import { openMediaPlayer } from './media-player.js';
 import { characterPicker } from './character-picker.js';
+import { mountEvidence, mountSelection, weak, whyText } from './episode-evidence.js';
 
 // One episode broken down line by line: the voices found in it (with how much
 // each talks, and who they are once picked from the show's cast), then every
@@ -231,9 +232,11 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
         </label>`).join('')}</div>
         ${dubs.length ? `<p class="hint">Also listen to the dubs: each has its own cast, so voices one language confuses another often keeps apart.</p>
         <div class="analysis-dubs">${dubs.map(t => `<label class="analysis-model"><input type="checkbox" data-dub value="${t.stream}" ${heardDubs.has(t.stream) ? 'checked' : ''}> ${esc(trackLabel(t))}</label>`).join('')}</div>` : ''}
+        ${(data.track_evidence || []).length ? `<p class="hint">Dub tracks last time: ${data.track_evidence.map(t => `${esc(trackLabel(t))} ${t.state === 'verified' ? `lined up (offset ${(t.offset ?? 0).toFixed(2)} s)` : `not used: ${esc(t.reason || t.state)}`}`).join('; ')}.</p>` : ''}
         <button type="button" class="btn btn-secondary" data-regroup>Regroup voices</button>
       </details>` : ''}
       <p class="hint" role="status" data-status></p>
+      <div data-evidence-top></div>
       <section class="analysis-voices" aria-label="Voices in this episode">
         ${groups.map(label => {
           const share = shareOf(label);
@@ -241,7 +244,7 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
           return `<div class="analysis-voice">
             <span class="voice-dot" style="background:${tint(label)}"></span>
             <span class="analysis-naming"><span data-picker="${esc(label)}"></span>
-              ${data.names[label] ? '' : (data.suggestions?.[label] || []).slice(0, 2).map((s, i) => `<button type="button" class="analysis-suggest${i ? ' analysis-suggest-alt' : ''}" data-suggest="${esc(label)}" data-suggest-name="${esc(s.name)}" title="Of the named voices, the closest is ${esc(s.name)} (tagged on ${s.lines} line${s.lines === 1 ? '' : 's'}${s.episodes > 1 ? ` across ${s.episodes} episodes` : ''}). Click to name this voice ${esc(s.name)}.">${i ? '' : 'Closest: '}${esc(s.name)} <span class="m">${Math.round(s.similarity * 100)}%</span></button>`).join('')}</span>
+              ${data.names[label] ? '' : (data.suggestions?.[label] || []).slice(0, 2).map((s, i) => `<button type="button" class="analysis-suggest${i ? ' analysis-suggest-alt' : ''}" data-suggest="${esc(label)}" data-suggest-name="${esc(s.name)}" title="Of the named voices, the closest is ${esc(s.name)} (tagged on ${s.lines} line${s.lines === 1 ? '' : 's'}${s.episodes > 1 ? ` across ${s.episodes} episodes` : ''})${s.margin != null ? `, ${Math.round(s.margin * 100)} points ahead of the next${s.margin < 0.05 ? ', a weak lead' : ''}` : ''}. Click to name this voice ${esc(s.name)}.">${i ? '' : 'Closest: '}${esc(s.name)} <span class="m">${Math.round(s.similarity * 100)}%</span></button>`).join('')}</span>
             <span class="cast-share-bar"><span class="cast-share-fill" style="width:${Math.max(3, ((share?.share || 0) / lead) * 100).toFixed(0)}%;background:${tint(label)}"></span>
               <span class="m">${((share?.share || 0) * 100).toFixed(1)}%</span></span>
             <span class="hint m">${lines} line${lines === 1 ? '' : 's'}</span>
@@ -257,18 +260,21 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
           ${['intense', 'calm', 'quiet'].map(b => `<option value="${b}" ${b === bandFilter ? 'selected' : ''}>${b}${b === 'intense' ? ' (training lines)' : ''}</option>`).join('')}</select></label>
         <span class="hint">${visible.length} line${visible.length === 1 ? '' : 's'}</span>
       </div>
+      <div class="analysis-selection" data-selection hidden><span class="hint" data-count></span><span data-selection-picker></span></div>
       <div class="analysis-lines" role="table" aria-label="Every line of the episode">
         ${visible.map(l => `<div class="analysis-line" role="row">
-          <span class="m" role="cell">${clock(l.start)}</span>
-          <span role="cell"><span class="analysis-who" style="border-color:${tint(l.speaker)}">${esc(data.names[l.speaker] || l.speaker)}</span>${l.uncertain ? '<span class="hint" title="Too short to be sure of the voice">?</span>' : ''}</span>
+          <span class="m" role="cell"><input type="checkbox" data-select-line="${esc(l.cue)}" aria-label="Select line at ${clock(l.start)}"> ${clock(l.start)}</span>
+          <span role="cell"><span class="analysis-who" style="border-color:${tint(l.speaker)}" title="${esc(whyText(l.why))}">${esc(data.names[l.speaker] || l.speaker)}</span>${l.uncertain || weak(l.why) ? `<span class="hint" title="${esc(whyText(l.why) || 'Too short to be sure of the voice')}">?</span>` : ''}${l.locked ? `<button type="button" class="analysis-lock" data-unlock="${esc(l.cue)}" title="You assigned this line; it stays with this character when voices are regrouped. Click to let the grouping decide again.">assigned</button>` : ''}
+            <span class="hint analysis-screen" data-screen-cue="${esc(l.cue)}"></span></span>
           <span role="cell" class="analysis-text">${esc(l.text)}${l.original_text ? `<span class="analysis-original">${esc(l.original_text)}</span>` : ''}</span>
           <span role="cell"><span class="cast-band cast-band-${l.band} analysis-band">${BANDS[l.band]}</span></span>
-          <span role="cell" class="m hint">${l.pitch_hz ? `${Math.round(l.pitch_hz)} Hz` : ''}${l.movement_st ? ` · ${l.movement_st} st` : ''}</span>
+          <span role="cell" class="m hint">${l.pitch_hz ? `${Math.round(l.pitch_hz)} Hz` : ''}${l.movement_st ? ` · ${l.movement_st} st` : ''}${l.features?.quality && l.features.quality !== 'ok' ? `<br><span title="${esc((l.features.reasons || []).join('; '))}">curve ${esc(l.features.quality)}</span>` : ''}</span>
           <span role="cell" class="analysis-play">
             <button type="button" class="btn btn-ghost" data-watch-line="${l.index}" data-watch="${esc(l.speaker)}" title="This line on screen, then the rest of this voice’s lines">Watch</button>
             <button type="button" class="btn btn-ghost" data-play="${l.start},${l.end}" data-track="vocals" title="The separated dialogue only">Voice</button></span>
         </div>`).join('')}
-      </div>`;
+      </div>
+      <div data-visual></div>`;
 
     const usedBy = {};
     Object.entries(data.names).forEach(([label, name]) => { (usedBy[name] ||= []).push(label); });
@@ -287,6 +293,8 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
       }));
     });
     box.querySelector('[data-analyze]').onclick = start;
+    mountEvidence(box, data, { path, target, reload: load, say });
+    mountSelection(box, data, { path, reload: load, say });
     const regroupButton = box.querySelector('[data-regroup]');
     if (regroupButton) regroupButton.onclick = () => regroup(models, found);
     box.querySelectorAll('[data-suggest]').forEach(b => b.onclick = () => {

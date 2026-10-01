@@ -471,3 +471,16 @@ character's voice, and export the chosen version without generating speech by su
 It also runs controlled writing experiments — does an English dub reference improve the
 Spanish? — with the official Spanish adaptation held out of every request and revealed
 only after the candidates are frozen. See [the studio guide](docs/studio.md).
+
+### Media knowledge and voice envelopes
+
+An episode's **Analysis** tab ties everything it learns to the file's content rather than
+its name: characters of the series, why each line got its voice, which dub tracks were
+safe to listen to, optional picture evidence (faces, mouth movement) and title knowledge
+proposals you review before anything uses them. See [media knowledge](docs/media-knowledge.md).
+
+Character voice profiles live under **Voices → Characters**. Voice envelopes (a line's
+emphasis inside itself) and background policies are data templates under
+**Knowledge → Audio templates**, recommended per line and chosen or changed in review;
+changing one reprocesses existing takes and never generates speech. See
+[voice envelopes and background policies](docs/adaptive-audio.md).

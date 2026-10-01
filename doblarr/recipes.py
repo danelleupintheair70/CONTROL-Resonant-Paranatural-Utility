@@ -54,6 +54,16 @@ SETTING_KEYS = (
     "levels.min_separation_db",
     "levels.peak_ceiling",
     "levels.measure_source",
+    # Adaptive audio policy travels; per-line choices (`adaptive.lines`) and the
+    # judge's endpoint do not, for the same reason manual gains do not.
+    "adaptive.mode",
+    "adaptive.judge",
+    "adaptive.candidates",
+    "adaptive.envelope_strength",
+    "adaptive.max_envelope_db",
+    "adaptive.background_policy",
+    "adaptive.max_bed_attenuation_db",
+    "analysis.features",
     "dub.locale_direction",
     "dub.candidate_limit",
     "dub.clone_cleanup",

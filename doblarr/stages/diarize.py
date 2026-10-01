@@ -124,22 +124,57 @@ def _assign_speakers(job: DubJob, diarization) -> None:
     job.speakers = {label: Speaker(label=label) for label in used}
 
 
+def usable_tracks(job, audio, voices: dict) -> tuple[list, list[dict]]:
+    """The permitted other audio tracks that line up with the original, and a
+    record of every track considered (doblarr.track_alignment).
+
+    `speakers.tracks` is the permission (which tracks may be heard at all);
+    alignment is the check. A track that is not verifiably the same cut on the
+    same clock is reported, never used.
+    """
+    from .. import track_alignment
+
+    if not voices.get("tracks"):
+        return [], []
+    try:
+        found = speakers.other_tracks(job.input_file, job.source_lang, audio.parent,
+                                      work_stem(job), voices["tracks"])
+    except (OSError, ValueError) as exc:
+        log.warning("diarize: the other audio tracks could not be read (%s)", exc)
+        return [], []
+    if not found:
+        return [], []
+    described = {t["stream"]: t for t in speakers.audio_tracks(job.input_file)} \
+        if job.input_file and job.input_file.is_file() else {}
+    reference = job.source_track or job.source_audio or audio
+    evidence = track_alignment.check_tracks(
+        reference, [{"stream": stream, "path": path,
+                     "lang": described.get(stream, {}).get("lang", ""),
+                     "title": described.get(stream, {}).get("title", "")}
+                    for stream, path in found],
+        evaluation_streams=set(voices.get("evaluation_streams") or ()),
+        max_offset=float(voices.get("max_offset", 2.0)),
+        min_correlation=float(voices.get("min_correlation", 0.45)),
+        verify=bool(voices.get("verify", True)))
+    allowed = track_alignment.usable(evidence)
+    for row in evidence:
+        if int(row["stream"]) not in allowed:
+            log.info("diarize: not using audio %s (%s): %s", row["stream"], row.get("state"),
+                     row.get("reason", ""))
+    return [(s, p) for s, p in found if s in allowed], evidence
+
+
 def _local(job: DubJob, audio, device, why: str, voices: dict | None = None) -> bool:
     """Group the lines by voice locally; False when that cannot run either."""
     voices = voices or {}
     try:
         sidecar = audio.parent / f"{work_stem(job)}.speakers.json"
-        tracks = []
-        if voices.get("tracks"):
-            try:
-                tracks = speakers.other_tracks(job.input_file, job.source_lang, audio.parent,
-                                               work_stem(job), voices["tracks"])
-            except (OSError, ValueError) as exc:
-                log.warning("diarize: the other audio tracks could not be read (%s)", exc)
+        tracks, evidence = usable_tracks(job, audio, voices)
         speakers.assign(job, audio, sidecar=sidecar,
                         device="cpu" if device is None else device.torch,
                         threshold=voices.get("threshold"), models=voices.get("models"),
-                        models_dir=voices.get("models_dir"), tracks=tracks)
+                        models_dir=voices.get("models_dir"), tracks=tracks,
+                        track_evidence=evidence)
     except Exception as exc:  # noqa: BLE001 - missing model or library: narrator fallback
         chosen = voices.get("models") or []
         if [m.id for m in chosen] != [voice_models.DEFAULT]:

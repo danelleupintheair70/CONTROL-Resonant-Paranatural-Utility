@@ -1,0 +1,8 @@
+/* ---- Knowledge: title knowledge review and the audio template catalogue ---- */
+.narrative-panel, .templates-panel { padding:18px 22px; }
+.narrative-pick { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+.narrative-claim { padding:10px 0; border-top:1px solid var(--line); }
+.narrative-claim p { margin:2px 0; }
+.narrative-correction { min-width:280px; }
+.template-editor { margin-top:14px; }
+.narrative-draft { padding:14px 18px; margin:12px 0; }

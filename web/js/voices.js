@@ -2,6 +2,7 @@ import { api, apiUrl } from './api.js';
 import { escapeHtml as esc, safeGet } from './dom.js';
 import { library } from './state.js';
 import { createOrb, primeAudio } from './orb.js';
+import { renderCharacter, renderCharacterList } from './character-profile.js';
 
 // The voice catalogue as a cast: named voices grouped by the show they belong
 // to first, then presets, then the working clones a run or an audition made
@@ -9,7 +10,7 @@ import { createOrb, primeAudio } from './orb.js';
 // /voices lists them; /voices/<key> is one voice with its orb, a preview and
 // who it is.
 
-const FILTERS = [['cast', 'Cast'], ['preset', 'Presets'], ['working', 'Working clones'], ['all', 'All']];
+const FILTERS = [['cast', 'Cast'], ['characters', 'Characters'], ['preset', 'Presets'], ['working', 'Working clones'], ['all', 'All']];
 const PALETTES = [['#CADCFC', '#A0B9D1'], ['#F6C6A8', '#E8845C'], ['#C9F2D6', '#7FC8A4'],
   ['#E7D1FA', '#B18AE0'], ['#FCE7A8', '#E9B949'], ['#FAD0DA', '#E47A98']];
 const AGES = ['unknown', 'child', 'young', 'adult', 'older'];
@@ -48,7 +49,7 @@ const identity = v => [v.character && v.character.toLowerCase() !== (v.display_n
   .filter(Boolean).join(' · ');
 
 export function createVoices({ goVoice }) {
-  let catalog = null, filter = 'cast', query = '', orb = null, loading = null;
+  let catalog = null, filter = 'cast', query = '', orb = null, loading = null, seriesId = '';
 
   async function load(refresh = false) {
     if (catalog && !refresh) return catalog;
@@ -61,6 +62,7 @@ export function createVoices({ goVoice }) {
     orb?.destroy(); orb = null;
     const root = document.getElementById('voicesRoot');
     if (!root) return;
+    if (voiceKey?.startsWith('character:')) return renderCharacter(root, voiceKey.slice(10), { goVoice });
     if (voiceKey) return renderDetail(root, voiceKey);
     root.innerHTML = '<p class="hint">Loading voices…</p>';
     try { await load(); } catch (error) { root.textContent = error.message; return; }
@@ -81,7 +83,7 @@ export function createVoices({ goVoice }) {
       groups.get(show).push(v);
     }
     for (const voices of groups.values()) voices.sort((a, b) => title(a).localeCompare(title(b)));
-    const counts = { cast: catalog.filter(isNamed).length,
+    const counts = { cast: catalog.filter(isNamed).length, characters: '',
       preset: catalog.filter(v => v.kind === 'preset' && !isNamed(v)).length,
       working: catalog.filter(isWorking).length, all: catalog.length };
     root.innerHTML = `
@@ -111,6 +113,9 @@ export function createVoices({ goVoice }) {
       input.focus(); input.setSelectionRange(at, at);
     };
     root.querySelectorAll('[data-filter]').forEach(b => b.onclick = () => { filter = b.dataset.filter; drawList(root); });
+    if (filter === 'characters') {
+      renderCharacterList(root, { goVoice, seriesId, onSeries: id => { seriesId = id; drawList(root); } });
+    }
     root.querySelectorAll('[data-voice]').forEach(el => {
       el.onclick = () => goVoice(el.dataset.voice);
       el.onkeydown = e => { if (e.key === 'Enter') goVoice(el.dataset.voice); };
@@ -155,6 +160,7 @@ export function createVoices({ goVoice }) {
           <div class="voice-tags">${v.gender && v.gender !== 'unknown' ? `<span class="tag tag-neutral">${esc(v.gender)}</span>` : ''}
             ${v.age && v.age !== 'unknown' ? `<span class="tag tag-neutral">${esc(v.age)}</span>` : ''}</div>
           ${v.notes ? `<p>${esc(v.notes)}</p>` : ''}
+          <p data-character-link></p>
         </div>
       </div>
 
@@ -199,6 +205,17 @@ export function createVoices({ goVoice }) {
       </section>`;
 
     root.querySelector('[data-back]').onclick = e => { e.preventDefault(); goVoice(''); };
+    const showId = /^tvdb-\d+$/.test(v.show || '') ? `show:tvdb:${v.show.slice(5)}` : '';
+    if (showId && v.character) {
+      api(`characters?series_id=${encodeURIComponent(showId)}`).then(result => {
+        const found = result.characters.find(c => [c.name, ...(c.aliases || [])]
+          .some(n => n.toLowerCase() === v.character.toLowerCase()));
+        const slot = root.querySelector('[data-character-link]');
+        if (!found || !slot) return;
+        slot.innerHTML = `<a href="/voices/character:${esc(found.id)}">Open ${esc(found.name)}'s voice profile</a>`;
+        slot.querySelector('a').onclick = e => { e.preventDefault(); goVoice(`character:${found.id}`); };
+      }).catch(() => {});
+    }
     const canvas = root.querySelector('.voice-orb');
     const [a, b] = palette(v);
     try { orb = createOrb(canvas, { colors: [a, b], seed: seedOf(v.key) }); } catch (error) {

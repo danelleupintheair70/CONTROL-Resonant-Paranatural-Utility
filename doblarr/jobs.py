@@ -54,6 +54,9 @@ class Job:
     force: bool = False        # re-run every stage, ignoring cached artifacts
     overrides: dict | None = None   # per-title config overrides (dub.*, transcribe.*, …)
     knowledge_snapshot: dict | None = None   # frozen knowledge rule pins
+    # The accepted narrative revision this job reads (doblarr.knowledge.narrative):
+    # None = not frozen yet, {} = frozen with nothing activated for the series.
+    narrative_snapshot: dict | None = None
     show_ref: str = ""     # stable series id (series:<tvdb_id>) for show-scope rules
     output_file: str | None = None   # muxed result (planned path in dry-run)
     report_file: str | None = None
@@ -337,6 +340,18 @@ class Worker(threading.Thread):
             if snapshot is None:
                 snapshot = knowledge_snapshot(self.store.db)
                 self.store.update(job.id, knowledge_snapshot=snapshot)
+            narrative_pin = job.narrative_snapshot
+            if narrative_pin is None and job.kind != "analyze":
+                # Frozen once, at the first run: a resumed job keeps reading the
+                # revision it started with even after new knowledge is accepted.
+                from .knowledge import narrative
+
+                try:
+                    cache_dir = config.work_dir / "cache"
+                except (KeyError, TypeError):
+                    cache_dir = None    # a minimal config: identify without the cache
+                narrative_pin = narrative.freeze_for(self.store.db, job.input_file, cache_dir)
+                self.store.update(job.id, narrative_snapshot=narrative_pin)
             dj = DubJob(
                 input_file=Path(job.input_file) if job.input_file else Path(job.title),
                 source_lang=job.source_lang,
@@ -345,6 +360,7 @@ class Worker(threading.Thread):
                 kind=job.kind,
                 knowledge_snapshot=snapshot,
                 show_ref=job.show_ref,
+                narrative_snapshot=narrative_pin,
             )
             run_job(dj, config, dry_run=dry_run, on_stage=on_stage,
                     cancel_event=cancel_evt, services=self.services,
