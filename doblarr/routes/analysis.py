@@ -49,6 +49,7 @@ from ..studio import records
 MAX_CLIP = 30.0
 CLIP_CACHE = 400          # watched clips kept on disk, newest first
 VIDEO_HEIGHT = 540        # clips are for recognising who talks, not for archiving
+FRAME_CACHE = 5000        # stills of lines kept on disk (a few KB each)
 
 
 class NamesIn(BaseModel):
@@ -868,6 +869,37 @@ def build_router(config, store) -> APIRouter:
                 for old in kept[CLIP_CACHE:]:
                     old.unlink(missing_ok=True)
         return FileResponse(clip, media_type="video/mp4",
+                            headers={"Cache-Control": "private, max-age=86400"})
+
+    @api.get("/api/analysis/frame")
+    def frame(path: str, t: float, height: int = 180):
+        """One still of the episode at `t` seconds, to see who is talking."""
+        if t < 0 or not 90 <= height <= 540:
+            raise HTTPException(422, "a frame is at t >= 0, 90 to 540 pixels tall")
+        source = source_video(locate(path))
+        cache = Path(config.work_dir) / "cache" / "frames"
+        key = hashlib.sha1(f"{source}|{source.stat().st_mtime_ns}|{t:.2f}|{height}"
+                           .encode()).hexdigest()[:20]
+        still = cache / f"{key}.jpg"
+        if not still.is_file():
+            cache.mkdir(parents=True, exist_ok=True)
+            temp = cache / f"{key}.{threading.get_ident()}.part"
+            result = subprocess.run(
+                ["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(source),
+                 "-frames:v", "1", "-an", "-sn", "-vf", f"scale=-2:{height}", "-q:v", "4",
+                 "-f", "image2", "-c:v", "mjpeg", str(temp)], capture_output=True,
+                check=False)
+            if result.returncode or not temp.is_file():
+                temp.unlink(missing_ok=True)
+                raise HTTPException(500, "could not read the frame: "
+                                    + result.stderr.decode(errors="replace")[-300:])
+            temp.replace(still)
+            with cutting:
+                kept = sorted(cache.glob("*.jpg"), key=lambda f: f.stat().st_mtime,
+                              reverse=True)
+                for old in kept[FRAME_CACHE:]:
+                    old.unlink(missing_ok=True)
+        return FileResponse(still, media_type="image/jpeg",
                             headers={"Cache-Control": "private, max-age=86400"})
 
     @api.get("/api/analysis/clip")

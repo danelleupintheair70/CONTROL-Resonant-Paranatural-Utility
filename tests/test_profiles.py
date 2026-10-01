@@ -201,3 +201,36 @@ def test_a_dub_run_inherits_voices_of_characters_identified_by_analysis(db, tmp_
     cast = voices.assigned_cast(job, db, "rev-9", "show:tvdb:5")
     assert [(e["speaker_id"], e["voice"], e.get("pitch_semitones")) for e in cast] == [
         ("SPEAKER_07", "v-kaito", 2)]
+
+
+def test_characters_list_across_shows_and_where_each_one_talks(client_factory, tmp_path):
+    import json
+
+    from doblarr import snapshots
+
+    client = client_factory()
+    db = client.app.state.jobs.db
+    episode = tmp_path / "harbor-e02.mkv"
+    episode.write_bytes(b"")
+    script = tmp_path / "e.script.json"
+    script.write_text(json.dumps({"identity": {"input": str(episode)}, "segments": [
+        {"speaker": "SPEAKER_00", "start": 4.0, "end": 6.0, "text_src": "Wait for me!",
+         "cue": {"cue_id": "c0"}},
+        {"speaker": "SPEAKER_01", "start": 7.0, "end": 8.0, "text_src": "Huh?",
+         "cue": {"cue_id": "c1"}},
+        {"speaker": "SPEAKER_00", "start": 1.0, "end": 2.5, "text_src": "Morning.",
+         "cue": {"cue_id": "c2"}}]}), encoding="utf-8")
+    snapshots.record_stage(db, "rev-7", "ja", "transcribe", "done", inputs=[1],
+                           outputs={"script": str(script)})
+    kaito = identity.ensure_character(db, "show:tvdb:9", "Kaito")
+    identity.ensure_character(db, "movie:tmdb:4", "Ren")
+    identity.associate(db, "rev-7", "cluster", "SPEAKER_00", kaito["id"], state="manual")
+    client.put(f"/api/characters/{kaito['id']}/assignments", json={"voice": "vb-k"})
+    listed = client.get("/api/characters").json()["characters"]
+    assert {c["name"] for c in listed} == {"Kaito", "Ren"}
+    assert next(c for c in listed if c["name"] == "Kaito")["voices"] == ["vb-k"]
+    talks = client.get(f"/api/characters/{kaito['id']}/appearances").json()
+    assert talks["lines"] == 2
+    [found] = talks["episodes"]
+    assert found["episode"] == "harbor-e02" and found["reachable"] is True
+    assert [line["text"] for line in found["lines"]] == ["Morning.", "Wait for me!"]

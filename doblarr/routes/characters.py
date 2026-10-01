@@ -118,16 +118,24 @@ def build_router(config, services, db) -> APIRouter:
         return HTTPException(409, {"error": str(exc), "current": exc.current})
 
     @api.get("/api/characters")
-    def list_characters(series_id: str, include_retired: bool = False):
+    def list_characters(series_id: str = "", include_retired: bool = False):
+        """The characters of one series, or of every series when none is given."""
+        if series_id:
+            found_all = identity.characters(db, series_id, include_retired=include_retired)
+        else:
+            found_all = [c for c in records.list_latest(db, "character")
+                         if include_retired or not (c.get("retired") or c.get("merged_into"))]
         rows = []
-        for found in identity.characters(db, series_id, include_retired=include_retired):
+        for found in found_all:
             profile = profiles.get(db, found["id"])
+            chosen = casting.assignments(db, series_ref_for_casting(found["series_id"]),
+                                         found["name"])
             rows.append({**found, "profile_revision": profile["revision"],
                          "references": profiles.coverage(profile),
-                         "assignments": len(casting.assignments(
-                             db, series_ref_for_casting(series_id), found["name"]))})
+                         "assignments": len(chosen),
+                         "voices": sorted({c.get("voice") for c in chosen if c.get("voice")})})
         return {"series_id": series_id, "characters": sorted(
-            rows, key=lambda r: r["name"].casefold())}
+            rows, key=lambda r: (r["series_id"], r["name"].casefold()))}
 
     @api.post("/api/characters")
     def create_character(body: CharacterIn):
@@ -213,6 +221,8 @@ def build_router(config, services, db) -> APIRouter:
                 if extra_path.is_file():
                     extra = {r["cue"]: r for r in json.loads(
                         extra_path.read_text(encoding="utf-8")).get("lines") or []}
+                source = str((json.loads(Path(script).read_text(encoding="utf-8"))
+                              .get("identity") or {}).get("input") or "")
                 for seg in speaking.load_segments(Path(script)):
                     if seg.get("speaker") != link["ref"]:
                         continue
@@ -220,6 +230,7 @@ def build_router(config, services, db) -> APIRouter:
                     level = (cue.get("measurement") or {}).get("relative_db")
                     analysed = extra.get(cue.get("cue_id"), {})
                     rows.append({"revision_id": revision_id, "cue": cue.get("cue_id"),
+                             "input": source, "episode": Path(source).stem if source else "",
                                  "start": seg.get("start"), "end": seg.get("end"),
                                  "text": seg.get("text_src") or "",
                                  "original_text": analysed.get("original_text"),
@@ -229,6 +240,26 @@ def build_router(config, services, db) -> APIRouter:
                                                                       or [])})
                 break
         return rows
+
+    @api.get("/api/characters/{cid}/appearances")
+    def appearances(cid: str):
+        """Where this character speaks: each analysed episode with its lines,
+        so the page can show stills and play them. Reads only."""
+        episodes: dict[str, dict] = {}
+        for row in character_lines(character(cid)):
+            found = episodes.setdefault(row["revision_id"], {
+                "revision_id": row["revision_id"], "episode": row["episode"],
+                "path": row["input"], "reachable": bool(row["input"])
+                and Path(row["input"]).is_file(), "lines": []})
+            found["lines"].append({k: row[k] for k in (
+                "cue", "start", "end", "text", "original_text", "pitch_hz", "relative_db",
+                "band")})
+        rows = sorted(episodes.values(), key=lambda e: e["episode"])
+        for row in rows:
+            row["lines"].sort(key=lambda line: line["start"] or 0)
+            row["seconds"] = round(sum((line["end"] or 0) - (line["start"] or 0)
+                                       for line in row["lines"]), 1)
+        return {"episodes": rows, "lines": sum(len(e["lines"]) for e in rows)}
 
     @api.get("/api/characters/{cid}/proposals")
     def proposals(cid: str):

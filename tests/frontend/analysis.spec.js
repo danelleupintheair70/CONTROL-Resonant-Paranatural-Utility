@@ -85,7 +85,7 @@ test('unnamed voices show the closest named voice and the lines can be regrouped
     return route.fulfill({ json: { model: analysis.model, voices: 2, names: { SPEAKER_00: 'Kaito' } } });
   });
   await page.goto('/title/tvdb-81234/episode/2/analysis');
-  await page.getByRole('button', { name: /Closest: Mina/ }).click();
+  await page.getByRole('button', { name: /closest to Mina/ }).click();
   await expect.poll(() => names?.SPEAKER_01).toBe('Mina');
   await expect(page.getByLabel('Character for SPEAKER_01')).toHaveValue('Mina');
   await page.locator('.analysis-models summary').click();

@@ -61,6 +61,8 @@ test('the analysis shows what ran, what is stale or unsupported, and why a line 
   await expect(page.getByText('Dub tracks last time')).toContainText('not used: its title says commentary');
   await page.locator('.analysis-lock').click();
   await expect.poll(() => unlocked?.cue).toBe('c0');
+  await page.waitForTimeout(1600);                          // the rerun's reload redraws the page
+  await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: 'Move older names onto this episode' }).click();
   await expect(page.locator('[data-migration]')).toContainText('Episode names');
   await page.getByLabel('Select line at 0:05.0').check();
@@ -123,6 +125,7 @@ test('a character profile saves only what changed and refuses a stale save', asy
   const made = await (await request.post('/api/characters', { data: { series_id: 'show:tvdb:81234', name: 'Tomoe' } })).json();
   await page.goto(`/voices/character:${made.id}`);
   await expect(page.getByRole('heading', { name: 'Tomoe' })).toBeVisible();
+  await page.getByText('Edit the description').click();
   await page.locator('[data-field="delivery.pace"]').selectOption('quick');
   await page.locator('[data-lock="delivery.pace"]').check();
   await page.getByRole('button', { name: 'Save changes' }).click();

@@ -60,3 +60,36 @@
 .profile-lock { display:inline-flex; gap:4px; align-items:center; margin-left:6px; font-size:11.5px; }
 .profile-proposal { display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-top:1px solid var(--line); font-size:13.5px; }
 .profile-proposal span { display:flex; flex-direction:column; gap:2px; }
+
+/* One character: who they are, the voice they speak with, where they talk. */
+.voice-orb-empty { display:block; width:100%; height:100%; border-radius:50%; border:2px dashed var(--line-strong); }
+.voice-tile-silent .voice-dot { background:transparent; border:2px dashed var(--line-strong); }
+.character-voice-line { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; margin:6px 0; }
+.character-rename { display:flex; gap:8px; margin:4px 0 8px; }
+.character-rename-open { padding:2px 8px; font-size:12px; margin-top:6px; }
+.voice-subhead { margin:18px 0 8px; font-size:14px; }
+.voice-cast-as { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;
+  & .cp { flex:0 1 280px; }
+}
+.profile-facts { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 8px; margin:0 0 10px;
+  & > .hint { flex-basis:100%; font-size:12px; }
+}
+.profile-fact { padding:3px 10px; border-radius:999px; font-size:13px; background:color-mix(in srgb, var(--color-text) 6%, transparent); }
+.profile-fact-locked { box-shadow:inset 0 0 0 1px var(--line-strong); }
+.profile-edit { margin-top:8px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius-md);
+  & > summary { cursor:pointer; font-weight:600; font-size:13.5px; }
+}
+.appear-episode { display:flex; flex-direction:column; gap:8px; padding:12px 0; border-top:1px solid var(--line); }
+.appear-head { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+  & strong { font-size:14px; }
+  & .btn { margin-left:auto; padding:4px 10px; font-size:12.5px; }
+}
+.appear-episode .cast-frames { grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); }
+.appear-lines { font-size:13px;
+  & summary { cursor:pointer; color:var(--muted); }
+  & ol { margin:6px 0 0; padding-left:18px; display:grid; gap:4px; }
+}
+.voice-assign { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-top:10px;
+  & .review-field { flex:1 1 180px; }
+  & .btn { flex:none; }
+}

@@ -37,7 +37,7 @@ function thumbUrl(path, name) {
     + (key ? `&api_key=${encodeURIComponent(key)}` : '');
 }
 
-export function mountEvidence(box, data, { path, target, reload, say }) {
+export function mountEvidence(box, data, { path, target, reload, say, visual = null }) {
   const top = box.querySelector('[data-evidence-top]');
   const coverage = data.coverage || [];
   const rerunnable = data.rerunnable || [];
@@ -74,7 +74,7 @@ export function mountEvidence(box, data, { path, target, reload, say }) {
     } catch (error) { say(error.message); }
   };
   top.querySelector('[data-migrate]')?.addEventListener('click', () => migration(top.querySelector('[data-migration]'), reload, say));
-  loadVisual(box.querySelector('[data-visual]'), data, { path, reload, say });
+  loadVisual(box.querySelector('[data-visual]'), data, { path, reload, say, visual });
 }
 
 async function migration(box, reload, say) {
@@ -100,10 +100,11 @@ async function migration(box, reload, say) {
   };
 }
 
-async function loadVisual(box, data, { path, reload, say }) {
+async function loadVisual(box, data, { path, reload, say, visual = null }) {
   if (!box) return;
-  let visual;
-  try { visual = await api(`analysis/visual?path=${encodeURIComponent(path)}`); } catch { box.innerHTML = ''; return; }
+  if (!visual) {
+    try { visual = await api(`analysis/visual?path=${encodeURIComponent(path)}`); } catch { box.innerHTML = ''; return; }
+  }
   if (!visual.analysed) {
     const why = visual.capability?.reasons?.length ? ` Not available here: ${visual.capability.reasons.join('; ')}.` : '';
     box.innerHTML = `<p class="hint">The picture has not been analysed.${esc(why)}</p>`;
@@ -150,7 +151,7 @@ async function loadVisual(box, data, { path, reload, say }) {
   box.querySelectorAll('[data-unknown]').forEach(b => b.onclick = () => assign(b.dataset.unknown, ''));
   box.querySelector('[data-all-faces]')?.addEventListener('click', () => {
     box.dataset.allFaces = '1';
-    loadVisual(box, data, { path, reload, say }).then(() => { box.querySelector('details').open = true; });
+    loadVisual(box, data, { path, reload, say, visual }).then(() => { box.querySelector('details').open = true; });
   });
 }
 

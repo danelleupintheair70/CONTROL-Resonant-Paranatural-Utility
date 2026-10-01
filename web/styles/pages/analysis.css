@@ -9,10 +9,6 @@
 @media (prefers-reduced-motion: reduce) { .analysis-pulse { animation:none; } }
 .analysis-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .analysis-head h3 { margin:0; font-size:17px; }
-.analysis-voices { display:flex; flex-direction:column; gap:8px; margin:14px 0 18px; }
-.analysis-voice { display:grid; grid-template-columns:20px minmax(200px,420px) minmax(120px,1fr) 70px auto; gap:12px; align-items:center; }
-.analysis-voice .voice-dot { margin:0; }
-.analysis-naming { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .analysis-suggest { border:1px dashed var(--color-accent); background:color-mix(in srgb, var(--color-accent) 8%, transparent);
   color:var(--color-text); border-radius:999px; padding:3px 10px; font-size:12px; cursor:pointer; white-space:nowrap; }
 .analysis-suggest:hover, .analysis-suggest:focus-visible { background:color-mix(in srgb, var(--color-accent) 18%, transparent); }
@@ -39,7 +35,6 @@
 .analysis-play .btn { padding:4px 8px; font-size:12px; }
 @media (max-width: 860px) {
   .analysis-line { grid-template-columns:1fr; gap:4px; }
-  .analysis-voice { grid-template-columns:20px 1fr; }
 }
 
 .analysis-dubs { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 10px; }
@@ -72,3 +67,39 @@
 .analysis-face img { width:72px; height:72px; object-fit:cover; border-radius:6px; background:var(--color-neutral-200); }
 .analysis-face figcaption { display:flex; flex-direction:column; gap:3px; }
 .analysis-face .cp, .analysis-selection .cp { flex:none; }
+
+/* ---- Who speaks: a tally, a timeline of the episode and a card per character ---- */
+.analysis-tally { margin:10px 0 4px; font-size:14px; color:var(--muted);
+  & strong { color:var(--color-text); font-variant-numeric:tabular-nums; }
+}
+.analysis-timeline { position:relative; height:34px; margin:12px 0 18px; border-radius:var(--radius-sm);
+  background:color-mix(in srgb, var(--color-text) 5%, transparent); overflow:hidden; }
+.analysis-tick { position:absolute; top:6px; bottom:12px; min-width:2px; border-radius:2px; cursor:pointer; opacity:.85; }
+.analysis-tick:hover { opacity:1; top:3px; bottom:9px; }
+.analysis-minute { position:absolute; bottom:0; transform:translateX(-50%); font-size:9.5px; color:var(--muted); pointer-events:none; }
+.cast-grid { display:grid; align-items:start; grid-template-columns:repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap:12px; margin:4px 0 10px; }
+.cast-card { display:flex; flex-direction:column; gap:8px; padding:12px 14px 14px; border:1px solid var(--line);
+  border-left:4px solid var(--tint); border-radius:var(--radius-md); background:var(--panel); min-width:0; }
+.cast-card-unnamed { border-left-style:dashed; background:color-mix(in srgb, var(--color-text) 2%, var(--panel)); }
+.cast-card-head { display:flex; align-items:center; gap:10px; min-width:0;
+  & .voice-dot { margin:0; flex:none; }
+  & .cp { flex:1 1 auto; min-width:120px; max-width:240px; }
+}
+.cast-card-stats { margin-left:auto; font-size:12.5px; color:var(--muted); white-space:nowrap; }
+.cast-card-watch { padding:4px 10px; font-size:12.5px; }
+.cast-card-share { display:block; height:4px; border-radius:2px; background:color-mix(in srgb, var(--color-text) 7%, transparent);
+  & span { display:block; height:100%; border-radius:2px; background:var(--tint); }
+}
+.cast-card-suggest { display:flex; flex-wrap:wrap; gap:6px; margin:0; }
+.cast-card-warn { margin:0; padding:6px 10px; border-radius:var(--radius-sm); font-size:12.5px;
+  background:color-mix(in srgb, var(--color-accent) 10%, transparent); color:var(--color-text); }
+.cast-group { display:flex; flex-direction:column; gap:6px; padding-top:6px; border-top:1px dashed var(--line); }
+.cast-group-head { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px;
+  & .cp { flex:0 1 220px; }
+}
+.cast-card-line { margin:0; font-size:13px; line-height:1.4; color:var(--color-text);
+  & .hint { display:block; font-size:12px; }
+}
+.analysis-behind { margin-top:22px; padding-top:12px; border-top:1px solid var(--line);
+  & h4 { margin:0 0 4px; font-size:14px; }
+}
