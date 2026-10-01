@@ -18,22 +18,22 @@ from doblarr.studio.sources import ReferenceIn, reference_id, write_utterances
 SESSION = "sess-test"
 
 JAPANESE = [
-    {"utt_id": "ja-1", "start": 10.0, "end": 12.5, "speaker": "NARUTO",
+    {"utt_id": "ja-1", "start": 10.0, "end": 12.5, "speaker": "KAITO",
      "text": "ただいま、みんな元気にしてたか"},
-    {"utt_id": "ja-2", "start": 13.0, "end": 15.0, "speaker": "SAKURA",
+    {"utt_id": "ja-2", "start": 13.0, "end": 15.0, "speaker": "MINA",
      "text": "遅いよ、二年半も待ったんだから"},
-    {"utt_id": "ja-3", "start": 15.2, "end": 16.4, "speaker": "SAKURA",
+    {"utt_id": "ja-3", "start": 15.2, "end": 16.4, "speaker": "MINA",
      "text": "背が伸びたね"},
-    {"utt_id": "ja-4", "start": 40.0, "end": 43.0, "speaker": "KAKASHI",
+    {"utt_id": "ja-4", "start": 40.0, "end": 43.0, "speaker": "REN",
      "text": "この鈴を取れたら合格だ、時間は日没まで"},
-    {"utt_id": "ja-5", "start": 44.0, "end": 45.5, "speaker": "NARUTO",
+    {"utt_id": "ja-5", "start": 44.0, "end": 45.5, "speaker": "KAITO",
      "text": "今度こそ絶対に取ってみせる"},
 ]
 
-# The English dub, offset by +2.0 s and merging Sakura's two lines into one.
+# The English dub, offset by +2.0 s and merging Mina's two lines into one.
 ENGLISH = [
     {"utt_id": "en-1", "start": 12.1, "end": 14.4,
-     "text": "I'm back everybody did you miss the future hokage"},
+     "text": "I'm back everybody did you miss the future captain"},
     {"utt_id": "en-2", "start": 15.0, "end": 18.3,
      "text": "You took forever two and a half years and look how tall you got"},
     {"utt_id": "en-3", "start": 42.0, "end": 45.1,
@@ -145,5 +145,5 @@ DEFINITION = {
     "target_locale": "es-MX",
     "provider": "prompture", "model": "local/test",
     "shared": {"scene_notes": {"x1": "A gate at dusk; a boy with a backpack walks in."},
-               "character_notes": {"NARUTO": "loud, earnest"}},
+               "character_notes": {"KAITO": "loud, earnest"}},
 }

@@ -62,7 +62,7 @@ def test_offset_merge_and_unmatched_lines():
     body = alignment.align(JAPANESE, ENGLISH, TimeMap([MapSegment(0, 1000, -2.0)]))
     groups = {tuple(g["source"]): g for g in body["groups"] if g["source"]}
     assert groups[("ja-1",)]["reference"] == ["en-1"]
-    # Sakura's two lines were merged into one English line: one 2:1 group.
+    # Mina's two lines were merged into one English line: one 2:1 group.
     assert groups[("ja-2", "ja-3")]["reference"] == ["en-2"]
     assert groups[("ja-2", "ja-3")]["state"] == "matched"
     added = [g for g in body["groups"] if g["reference"] == ["en-5"]]
@@ -131,33 +131,33 @@ def test_differences_are_prompts_to_look():
 # ----------------------------------------------------------------- casting
 
 def test_series_episode_and_line_scopes_with_visible_exceptions(db):
-    casting.decide(db, casting.ChoiceIn(character="NARUTO", scope="series",
-                                        scope_ref="series:naruto", voice="vb-1"))
-    casting.decide(db, casting.ChoiceIn(character="SAKURA", scope="series",
-                                        scope_ref="series:naruto", voice="vb-2"))
-    casting.decide(db, casting.ChoiceIn(character="SAKURA", scope="episode",
+    casting.decide(db, casting.ChoiceIn(character="KAITO", scope="series",
+                                        scope_ref="series:kaito", voice="vb-1"))
+    casting.decide(db, casting.ChoiceIn(character="MINA", scope="series",
+                                        scope_ref="series:kaito", voice="vb-2"))
+    casting.decide(db, casting.ChoiceIn(character="MINA", scope="episode",
                                         scope_ref="ep1", voice="vb-3"))
-    casting.decide(db, casting.ChoiceIn(character="NARUTO", scope="line", scope_ref="cue-9",
+    casting.decide(db, casting.ChoiceIn(character="KAITO", scope="line", scope_ref="cue-9",
                                         episode_ref="ep1", voice="vb-4"))
-    chosen = casting.effective(db, series_ref="series:naruto", episode_ref="ep1",
-                               speakers=["NARUTO", "SAKURA", "KAKASHI"])
+    chosen = casting.effective(db, series_ref="series:kaito", episode_ref="ep1",
+                               speakers=["KAITO", "MINA", "REN"])
     rows = {r["speaker"]: r for r in chosen["speakers"]}
-    assert rows["NARUTO"]["source"] == "series" and rows["NARUTO"]["voice"] == "vb-1"
-    assert rows["SAKURA"]["source"] == "episode" and rows["SAKURA"]["overrides_series"]
-    assert rows["KAKASHI"]["source"] == "none"
+    assert rows["KAITO"]["source"] == "series" and rows["KAITO"]["voice"] == "vb-1"
+    assert rows["MINA"]["source"] == "episode" and rows["MINA"]["overrides_series"]
+    assert rows["REN"]["source"] == "none"
     assert chosen["line_exceptions"][0]["cue_id"] == "cue-9"
-    episode2 = casting.effective(db, series_ref="series:naruto", episode_ref="ep2",
-                                 speakers=["SAKURA"])
+    episode2 = casting.effective(db, series_ref="series:kaito", episode_ref="ep2",
+                                 speakers=["MINA"])
     assert episode2["speakers"][0]["voice"] == "vb-2"          # carried into episode 2
-    impact = casting.affected(db, series_ref="series:naruto", character="SAKURA",
+    impact = casting.affected(db, series_ref="series:kaito", character="MINA",
                               episodes=["ep1", "ep2"])
     assert [r["episode"] for r in impact["follow"]] == ["ep2"]
     assert [r["episode"] for r in impact["keep"]] == ["ep1"]
-    cast = casting.to_voice_cast([{"speaker_id": "SAKURA", "label": "Sakura",
+    cast = casting.to_voice_cast([{"speaker_id": "MINA", "label": "Mina",
                                    "category": "young_f", "voice": "old"}], chosen)
     by = {e["speaker_id"]: e for e in cast}
-    assert by["SAKURA"]["voice"] == "vb-3" and by["SAKURA"]["revision"]
-    assert "KAKASHI" not in by
+    assert by["MINA"]["voice"] == "vb-3" and by["MINA"]["revision"]
+    assert "REN" not in by
 
 
 # -------------------------------------------------------------- session
@@ -298,3 +298,57 @@ def test_exported_results_import_with_limits(db, tmp_path):
             else importer.attach_results(db, {**saved, "legacy_id": "cmp-2"}, parsed, "r.md")
     with pytest.raises(importer.ImportError_):
         importer.parse_results("# Something else")
+
+
+# ------------------------------------------------------------ auditions
+
+def _vocals(path, lines):
+    """A dialogue stem with one tone per (start, end, hz) line and silence between."""
+    import math
+    import struct
+    import wave
+
+    rate = 16000
+    total = max(end for _s, end, _hz in lines) + 1.0
+    frames = bytearray()
+    for i in range(int(rate * total)):
+        t = i / rate
+        hz = next((h for s, e, h in lines if s <= t < e), None)
+        value = 0.3 * math.sin(2 * math.pi * hz * t) if hz else 0.0
+        frames += struct.pack("<h", int(value * 32000))
+    with wave.open(str(path), "wb") as out:
+        out.setparams((1, 2, rate, 0, "NONE", "not compressed"))
+        out.writeframes(bytes(frames))
+    return path
+
+
+@pytest.mark.parametrize(("pick", "expected"), [("low", 0), ("high", 1), ("", 2)])
+def test_a_clone_reference_can_be_picked_by_pitch(tmp_path, pick, expected):
+    import shutil
+
+    pytest.importorskip("numpy")
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg is required")
+    from doblarr.studio.auditions import character_reference
+
+    lines = [(0.0, 4.2, 180), (10.0, 14.3, 290), (20.0, 28.0, 230)]
+    vocals = _vocals(tmp_path / "vocals.wav", lines)
+    rows = [{"index": i, "speaker": "TAMAKI", "start": s, "end": e, "text_src": f"line {i}"}
+            for i, (s, e, _hz) in enumerate(lines)]
+    _clip, found = character_reference(rows, "TAMAKI", vocals, tmp_path / "work", pick=pick)
+    assert found["line"] == expected          # the default keeps the line nearest 8 s
+    assert found["pitch_hz"] and found["pick"] == pick
+
+
+def test_casting_carries_shaping_into_the_voice_cast_and_clears_it(db):
+    casting.decide(db, casting.ChoiceIn(character="TAMAKI", scope="episode", scope_ref="ep1",
+                                        voice="vb-t", pitch_semitones=2, formant_semitones=5))
+    chosen = casting.effective(db, series_ref="", episode_ref="ep1", speakers=["TAMAKI"])
+    cast = casting.to_voice_cast([], chosen)
+    assert (cast[0]["pitch_semitones"], cast[0]["formant_semitones"]) == (2, 5)
+    casting.decide(db, casting.ChoiceIn(character="TAMAKI", scope="episode", scope_ref="ep1",
+                                        voice="vb-t"))
+    again = casting.to_voice_cast(cast, casting.effective(
+        db, series_ref="", episode_ref="ep1", speakers=["TAMAKI"]))
+    assert "pitch_semitones" not in again[0] and "formant_semitones" not in again[0]
+    assert again[0]["revision"] != cast[0]["revision"]

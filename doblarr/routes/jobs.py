@@ -42,7 +42,7 @@ class JobCreateIn(BaseModel):
     source_lang: str = "auto"
     target_lang: str | None = None
     path: str | None = None
-    kind: Literal["full", "tease", "audition"] = "full"
+    kind: Literal["full", "tease", "audition", "analyze"] = "full"
     force: bool = False  # re-run every stage, ignoring cached artifacts
     overrides: dict[str, Any] | None = None  # per-title config overrides
 

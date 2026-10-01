@@ -14,7 +14,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from ..artifacts import digest, matches, read_json, record, stamp
-from ..clients.speech import GenerationFailed, SpeechClient
+from ..clients.speech import GenerationFailed, SpeechClient, SpeechError
 from ..cues import (
     RAW,
     Artifact,
@@ -146,10 +146,37 @@ def reference_pitch(path: Path) -> float | None:
     Autocorrelation over voiced frames. Needs numpy, which the separation and
     recognition stacks already bring; without it the answer is simply unknown.
     """
+    track = pitch_track(path)
+    if not track:
+        return None
+    import statistics
+
+    return round(float(statistics.median(track)), 1)
+
+
+def reference_liveliness(path: Path) -> float | None:
+    """How much a reading's pitch moves, in semitones (standard deviation).
+
+    A clone copies the energy of its reference as much as its voice: an
+    energetic lead cloned from his flattest line (3.7 st, quiet) came out
+    sounding depressed, where his excited lines move 4.5 st and more.
+    """
+    track = pitch_track(path)
+    if len(track) < 10:
+        return None
+    import math
+    import statistics
+
+    centre = statistics.median(track)
+    return round(statistics.pstdev([12 * math.log2(f / centre) for f in track]), 2)
+
+
+def pitch_track(path: Path) -> list[float]:
+    """Pitch of each voiced 10 ms frame in Hz; empty when it cannot be measured."""
     try:
         import numpy as np
     except ImportError:
-        return None
+        return []
     import wave
 
     try:
@@ -158,9 +185,17 @@ def reference_pitch(path: Path) -> float | None:
             x = np.frombuffer(audio.readframes(audio.getnframes()),
                               dtype=np.int16).astype(float)
     except (OSError, EOFError, wave.Error):
-        return None
+        return []
+    return pitch_track_samples(x, rate)
+
+
+def pitch_track_samples(x, rate: int) -> list[float]:
+    """`pitch_track` over samples already in memory (any scale, mono)."""
+    import numpy as np
+
+    x = np.asarray(x, dtype=float)
     frame, hop = int(0.04 * rate), int(0.01 * rate)
-    peak = np.abs(x).max() + 1 if len(x) else 1
+    peak = np.abs(x).max() + 1e-9 if len(x) else 1
     low, high = int(rate / 400), int(rate / 70)
     found = []
     for i in range(0, len(x) - frame, hop):
@@ -171,35 +206,86 @@ def reference_pitch(path: Path) -> float | None:
         ac = np.correlate(f, f, "full")[frame - 1:]
         lag = low + int(np.argmax(ac[low:high]))
         if ac[lag] > 0.45 * ac[0]:
-            found.append(rate / lag)
-    return round(float(np.median(found)), 1) if found else None
+            found.append(float(rate / lag))
+    return found
+
+
+def _voice_shift(cast: dict, speaker: str) -> tuple[float, float]:
+    """(pitch, formant) semitones a cast entry asks for; 0 where unset or invalid."""
+    entry = (cast or {}).get(speaker, {})
+    values = []
+    for key in ("pitch_semitones", "formant_semitones"):
+        try:
+            values.append(float(entry.get(key) or 0.0))
+        except (TypeError, ValueError):
+            values.append(0.0)
+    return values[0], values[1]
+
+
+def shift_pitch(path: Path, semitones: float, cancel=None, formant: float = 0.0) -> None:
+    """Shift a generated take's pitch and formants in place, keeping its length.
+
+    For a clone the target language hears as the wrong gender. Pitch alone is
+    not what makes a voice read as a man's or a woman's; the formants (how big
+    the throat the voice seems to come from is) carry most of it. A husky
+    female original, raised in pitch only, still read as a man. `formant` moves
+    the formants by its own amount: the first pass shifts both together by
+    `formant`, the second moves pitch alone the rest of the way.
+    """
+    if not semitones and not formant:
+        return
+    chain = []
+    if formant:
+        chain.append(f"rubberband=pitch={2 ** (formant / 12):.6f}")
+    if semitones != formant:
+        chain.append(f"rubberband=pitch={2 ** ((semitones - formant) / 12):.6f}"
+                     + (":formant=preserved" if formant else ""))
+    temp = path.with_name(path.stem + ".pitch.wav")
+    run_ffmpeg(["-y", "-i", str(path), "-af", ",".join(chain), str(temp)], cancel=cancel)
+    temp.replace(path)
 
 
 # The length window a pitch-chosen reference is drawn from, and how many of the
 # best-scored lines are measured. Short lines teach a clone too little voice.
 LOW_REFERENCE_SECONDS = (4.0, 12.0)
 LOW_REFERENCE_MEASURED = 8
+# Fewer in-window lines than this is too little to choose a pitch from.
+LOW_REFERENCE_CHOICES = 3
+# Voicebox refuses a clone sample under 2.0 s. A character whose every line is
+# shorter has no reference, so the cast's fallback voice applies instead of the
+# job failing on the upload.
+CLONE_REFERENCE_MIN = 2.0
 
 
-def _lowest_first(candidates, source, clips_dir, cancel):
-    """Reorder clean candidates so the lowest-pitched reading comes first.
+def _by_pitch(candidates, source, clips_dir, cancel, mode="low"):
+    """Reorder clean candidates: lowest, highest or liveliest reading first.
 
     A light, young original voice can land above where a target-language
-    audience hears a man: Shinra's Japanese reads at ~260 Hz, and a clone of
-    his default reference came out feminine in Spanish. Choosing his calmest,
-    lowest line kept him recognisably himself and fixed it.
+    audience hears a man: a young male lead read at ~260 Hz in Japanese, and a
+    clone of his default reference came out feminine in Spanish. Choosing his
+    calmest, lowest line kept him recognisably himself and fixed it. The mirror
+    case is a deep female voice: cloned from a 222 Hz reading she was heard as
+    a man, and her brightest clean reading keeps her a woman. `lively` is about
+    energy rather than register: an excited character cloned from a flat line
+    comes out flat.
     """
     low, high = LOW_REFERENCE_SECONDS
+    # Longer lines teach the clone more, but one or two of them is no choice at
+    # all: a short excerpt or a side role also offers its shorter lines.
+    window = [c for c in candidates if low <= c.duration <= high]
+    if len(window) < LOW_REFERENCE_CHOICES:
+        window += [c for c in candidates
+                   if c.duration >= CLONE_REFERENCE_MIN and c not in window]
     measured = []
-    for seg in [c for c in candidates if low <= c.duration <= high][:LOW_REFERENCE_MEASURED]:
+    for seg in window[:LOW_REFERENCE_MEASURED]:
         probe = _extract_ref(source, seg.start, seg.end,
                              clips_dir / "pitch" / f"line_{seg.index:04d}.wav", cancel)
-        pitch = reference_pitch(probe)
-        if pitch:
-            measured.append((pitch, seg))
+        value = reference_liveliness(probe) if mode == "lively" else reference_pitch(probe)
+        if value:
+            measured.append((value, seg))
     if not measured:
         return candidates
-    measured.sort(key=lambda item: item[0])
+    measured.sort(key=lambda item: item[0], reverse=mode in ("high", "lively"))
     first = [seg for _pitch, seg in measured]
     return first + [c for c in candidates if c not in first]
 
@@ -214,14 +300,16 @@ def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel, cleanup=
         return
     if voice_mode != "clone":
         raise ValueError(f"assign a preset voice to {spk.label} before synthesis")
-    candidates = [s for s in job.segments if s.speaker == spk.label and s.duration >= 1.5]
+    candidates = [s for s in job.segments
+                  if s.speaker == spk.label and s.duration >= CLONE_REFERENCE_MIN]
     candidates.sort(key=lambda s: reference_score(s, job), reverse=True)
     # An overlapped or contaminated cue is a last resort, not a silent choice.
     usable = [s for s in candidates if reference_score(s, job)[0]]
     candidates = usable or candidates
     source = job.vocals if job.vocals and job.vocals.exists() else job.source_audio
     # A cast entry may choose the reference: a line a person picked by ear
-    # (`reference_line`), or the lowest-pitched clean reading (`reference: low`).
+    # (`reference_line`), or the lowest- or highest-pitched clean reading
+    # (`reference: low` / `high`), or the most expressive one (`lively`).
     entry = cast.get(spk.label, {})
     choice = ""
     if entry.get("reference_line") is not None:
@@ -231,9 +319,9 @@ def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel, cleanup=
             raise ValueError(f"{spk.label}: reference_line {pinned} is not a line of this job")
         candidates = chosen + [s for s in candidates if s.index != pinned]
         choice = f"line:{pinned}"
-    elif entry.get("reference") == "low":
-        candidates = _lowest_first(candidates, source, clips_dir, cancel)
-        choice = "low"
+    elif entry.get("reference") in ("low", "high", "lively"):
+        choice = entry["reference"]
+        candidates = _by_pitch(candidates, source, clips_dir, cancel, mode=choice)
     key = digest(
         {
             "source": stamp(source),
@@ -271,7 +359,16 @@ def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel, cleanup=
             text = vb.transcribe(ref, language=job.source_lang).get("text", "").strip()
         if not text or _bad_ref_text(text):
             continue
-        pid = vb.clone_voice(f"{job.input_file.stem}-{key[:16]}", job.target_lang, ref, text)
+        try:
+            pid = vb.clone_voice(f"{job.input_file.stem}-{key[:16]}", job.target_lang, ref, text)
+        except SpeechError as exc:
+            # The service measures speech after trimming silence, so a cue just
+            # over CLONE_REFERENCE_MIN can still be refused; try the next one.
+            if "too short" not in str(exc).lower():
+                raise
+            log.info("%s: reference %s refused as too short; trying the next line",
+                     spk.label, candidate.cue_id)
+            continue
         write_json(profile_receipt, {
             "id": pid, "reference": key,
             # The original sample is kept whether or not cleanup ran, so the
@@ -420,6 +517,11 @@ def candidates(job, vb, work_dir: Path, requests: dict, *, cast=None, engine=Non
                 "candidate": attempt,
                 "revision": cast.get(seg.speaker, {}).get("revision", ""),
             }
+            pitch, formant = _voice_shift(cast, seg.speaker)
+            if pitch or formant:
+                signature["pitch_semitones"] = pitch
+            if formant:
+                signature["formant_semitones"] = formant
             dest = clips_dir / f"line_{seg.index:04d}.candidate{attempt}.wav"
             existing = seg.audio.take(take_id(generation_fingerprint(signature), attempt))
             if existing is not None and existing.raw is not None and existing.raw.exists():
@@ -440,6 +542,7 @@ def candidates(job, vb, work_dir: Path, requests: dict, *, cast=None, engine=Non
             try:
                 vb.synthesize_to_file(signature["profile"], text, job.target_lang, dest,
                                       cancel_event=cancel, **kwargs)
+                shift_pitch(dest, pitch, cancel, formant)
             except JobCancelled:
                 raise
             except Exception as exc:  # noqa: BLE001 - a failed candidate is evidence
@@ -643,6 +746,13 @@ def run(
             "line_revision": seg.revision,
             "revision": (cast or {}).get(seg.speaker, {}).get("revision", ""),
         }
+        # Only present when set, so every take made without a shift keeps the
+        # request it was cached under.
+        pitch, formant = _voice_shift(cast, seg.speaker)
+        if pitch or formant:
+            signature["pitch_semitones"] = pitch
+        if formant:
+            signature["formant_semitones"] = formant
         receipt = dest.with_suffix(".json")
         try:
             saved = json.loads(receipt.read_text()) if receipt.exists() else {}
@@ -690,6 +800,7 @@ def run(
                 cancel_event=stop,
                 **kwargs,
             )
+        shift_pitch(dest, pitch, stop, formant)
         count("tts_generated")
         receipt.parent.mkdir(parents=True, exist_ok=True)
         temp = receipt.with_suffix(".partial.json")

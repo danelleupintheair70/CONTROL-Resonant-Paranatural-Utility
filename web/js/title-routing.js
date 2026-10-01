@@ -15,8 +15,10 @@ export function parseTitlePath(path) {
 
 export function resolveTitleTab(item, requested) {
   const show = item.media_type === 'show' || (!item.media_type && /^sonarr/i.test(item.source || ''));
-  const allowed = show ? ['episodes', ...TABS.filter(tab => tab !== 'recipes')] : TABS;
-  return allowed.includes(requested) ? requested : item.episode_id ? 'voices' : show ? 'episodes' : 'plan';
+  // An episode opens on its analysis: who says what, before anything is dubbed.
+  const allowed = show ? ['episodes', ...TABS.filter(tab => tab !== 'recipes')]
+    : item.episode_id ? ['analysis', ...TABS] : TABS;
+  return allowed.includes(requested) ? requested : item.episode_id ? 'analysis' : show ? 'episodes' : 'plan';
 }
 
 export function titlePath(key, episodeId, tab) {

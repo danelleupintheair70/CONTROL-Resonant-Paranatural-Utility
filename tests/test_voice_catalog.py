@@ -54,3 +54,29 @@ def test_catalog_preview_guards_language_and_scopes_audio(client_factory):
     assert client.get("/api/voice-catalog/preview/preview-id").json()["status"] == "completed"
     assert client.get("/api/voice-catalog/preview/preview-id/audio").content == b"audio"
     assert client.get("/api/voice-catalog/preview/unrelated/audio").status_code == 404
+
+
+def test_a_voice_has_an_identity_and_says_where_it_is_cast(client_factory):
+    client = client_factory()
+    fake_voicebox(client)
+    key = "profile:saved"
+    named = client.put("/api/voice-catalog/traits", json={
+        "key": key, "gender": "male", "age": "young", "display_name": "Kaito",
+        "character": "KAITO", "show": "tvdb-79214", "show_name": "Harbor Lights"})
+    assert named.status_code == 200
+    db = client.app.state.jobs.db
+    db.save_cast("e02", "S01E02", [{"speaker_id": "KAITO", "label": "Kaito",
+                                    "voice": "saved", "pitch_semitones": 2}])
+    db.save_cast("e01", "S01E01", [{"speaker_id": "MINA", "voice": "other"}])
+    detail = client.get("/api/voice-catalog/voice", params={"key": key}).json()
+    assert detail["voice"]["display_name"] == "Kaito"
+    assert detail["voice"]["show"] == "tvdb-79214" and detail["voice"]["gender"] == "male"
+    assert [u["title_key"] for u in detail["used_in"]] == ["e02"]
+    assert detail["used_in"][0]["pitch_semitones"] == 2
+    assert client.get("/api/voice-catalog/voice", params={"key": "profile:nope"}).status_code == 404
+    coloured = {"key": key, "display_name": "Kaito", "color": "#F08A24"}
+    assert client.put("/api/voice-catalog/traits", json=coloured).status_code == 200
+    shown = client.get("/api/voice-catalog/voice", params={"key": key}).json()["voice"]
+    assert shown["color"] == "#F08A24"
+    bad = client.put("/api/voice-catalog/traits", json={**coloured, "color": "orange"})
+    assert bad.status_code == 422          # a colour is a hex value, never free text

@@ -51,6 +51,9 @@ const TABS = [
   tab("speech", "Transcript", [{ ...group("Transcription", [
     C("transcribe.source", "Transcript from", ["subtitles", "whisper"]),
     T("transcribe.whisper_model", "Whisper model"), B("transcribe.diarize", "Speaker diarization"),
+    C("transcribe.diarizer", "Who speaks, found by", ["auto", "local", "pyannote"], "Local groups the lines by voice on this machine, no account. Pyannote needs a HuggingFace token. Auto uses pyannote only when a token is set."),
+    L("speakers.models", "Voice models", "Comma-separated; several are combined. Built in: wespeaker-resnet34, 3dspeaker-campplus, 3dspeaker-eres2netv2, nemo-titanet-large, nemo-titanet-small, wespeaker-cnceleb-resnet34. Each episode's Analysis tab can also regroup with any of them."),
+    J("speakers.custom", "Your own voice models", 'Any sherpa-onnx speaker-embedding ONNX, for example [{"id": "my-model", "name": "My model", "url": "https://…/model.onnx", "threshold": 0.6}].'),
     B("transcribe.clean_cues", "Remove nonspoken cues"),
     B("transcribe.align_subtitles", "Align source-language subtitles to speech"),
     N("transcribe.batch_size", "Transcription batch size"),

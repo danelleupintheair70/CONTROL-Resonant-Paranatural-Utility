@@ -95,8 +95,9 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--from", dest="source", default="auto",
                    help="source language code, e.g. ko (default: auto)")
     d.add_argument("--subs", default=None, help="subtitle file for text + timing")
-    d.add_argument("--kind", choices=["full", "tease", "audition"], default="full",
-                   help="full video, opening teaser, or representative audio audition")
+    d.add_argument("--kind", choices=["full", "tease", "audition", "analyze"], default="full",
+                   help="full video, opening teaser, representative audio audition, or "
+                        "a line-by-line analysis without dubbing")
     d.add_argument("--dry-run", action="store_true", default=None,
                    help="print the plan without running heavy stages "
                         "(overrides dub.dry_run in config)")

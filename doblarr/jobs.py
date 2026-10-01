@@ -351,7 +351,9 @@ class Worker(threading.Thread):
                     force=job.force, db=self.store.db, events=self.events,
                     on_progress=on_progress)
             out = str(dj.output_file) if dj.output_file else "(planned)"
-            message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
+            message = (f"analysed {len(dj.segments)} lines · {len(dj.speakers)} voices"
+                       if dj.kind == "analyze" else
+                       f"{'planned' if dry_run else 'dubbed'} -> {out}")
             self.store.update(job.id, status="done", stage="mux", progress=100,
                               message=message,
                               report_file=str(dj.report_file) if dj.report_file else None,
@@ -362,7 +364,7 @@ class Worker(threading.Thread):
                               version_file=str(dj.version_file) if dj.version_file else None,
                               output_file=str(dj.output_file) if dj.output_file else None)
             self._publish(job, "done", progress=100, message=message)
-            if not dry_run:
+            if not dry_run and dj.kind != "analyze":
                 self._plex_refresh(job)
         except JobCancelled as exc:
             log.info("job %s cancelled", job.id)

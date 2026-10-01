@@ -784,7 +784,8 @@ def build_router(config: Config, store: JobStore, worker: Worker, bus: EventBus)
             voice=profile, engine=candidate.get("engine") or "",
             direction=candidate.get("direction") or "", reference=candidate.get(
                 "reference") or "", audition=aid, candidate=candidate["name"],
-            actor=body.actor))
+            actor=body.actor, pitch_semitones=float(candidate.get("pitch_semitones") or 0),
+            formant_semitones=float(candidate.get("formant_semitones") or 0)))
         result: dict[str, Any] = {"casting": _casting_view(saved)}
         if body.apply:
             result["rerender"] = _apply_cast(sess, found["job_id"], found["character"],

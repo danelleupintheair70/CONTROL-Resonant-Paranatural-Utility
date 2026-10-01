@@ -132,7 +132,13 @@ class VoiceboxClient(SpeechClient):
     def clone_voice(self, name: str, language: str, sample: Path, reference_text: str,
                     description: str = "") -> str:
         profile_id = self.create_profile(name, language, description=description)
-        self.add_sample(profile_id, sample, reference_text)
+        try:
+            self.add_sample(profile_id, sample, reference_text)
+        except SpeechError:
+            # A rejected sample would leave an empty profile behind.
+            with contextlib.suppress(SpeechError):
+                self.delete_profile(profile_id)
+            raise
         return profile_id
 
     # -- speech generation ------------------------------------------------

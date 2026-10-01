@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from .discovery import ISO3_TO_ISO2
-from .ffmpeg import run_ffmpeg, run_ffprobe
+from .ffmpeg import FFmpegError, run_ffmpeg, run_ffprobe
 
 log = logging.getLogger("doblarr.subtitles")
 
@@ -50,7 +51,45 @@ def pick_stream(streams: list[dict], prefer_lang: str) -> dict | None:
     return None
 
 
+# Styled (ASS/SSA) subtitles carry more than dialogue: fansubs typeset the
+# opening and ending songs twice (romaji and translation), the episode title
+# and on-screen signs, each in a style named for what it is. None of it is a
+# line anybody speaks, and read as dialogue it becomes the episode's two
+# "loudest voices". Events in such a style are dropped before conversion.
+NOT_DIALOGUE = re.compile(r"lyric|karaoke|kfx|song|romaji|\bop\b|\bed\b|sign|title|typeset",
+                          re.IGNORECASE)
+
+
 def extract_srt(video: Path, stream_index: int, dest: Path) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    run_ffmpeg(["-y", "-i", str(video), "-map", f"0:{stream_index}", str(dest)])
+    styled = dest.with_suffix(".styled.ass")
+    try:
+        run_ffmpeg(["-y", "-i", str(video), "-map", f"0:{stream_index}", str(styled)])
+        kept = dialogue_only(styled.read_text(encoding="utf-8-sig", errors="replace"))
+        styled.write_text(kept, encoding="utf-8")
+        run_ffmpeg(["-y", "-i", str(styled), str(dest)])
+    except (FFmpegError, OSError):
+        # A stream ffmpeg cannot write as ASS is plain text already.
+        run_ffmpeg(["-y", "-i", str(video), "-map", f"0:{stream_index}", str(dest)])
+    finally:
+        styled.unlink(missing_ok=True)
     return dest
+
+
+def dialogue_only(ass: str) -> str:
+    """The same ASS document without events in a song, sign or title style."""
+    out: list[str] = []
+    fields: list[str] | None = None
+    section = ""
+    for line in ass.splitlines():
+        if line.startswith("["):
+            section = line.strip().lower()
+        elif section == "[events]" and line.startswith("Format:"):
+            fields = [f.strip().lower() for f in line[len("Format:"):].split(",")]
+        if line.startswith("Dialogue:") and fields and "style" in fields:
+            parts = line[len("Dialogue:"):].split(",", len(fields) - 1)
+            style = parts[fields.index("style")].strip() if len(parts) == len(fields) else ""
+            if NOT_DIALOGUE.search(style):
+                continue
+        out.append(line)
+    return "\n".join(out) + "\n"

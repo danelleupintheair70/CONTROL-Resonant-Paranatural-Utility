@@ -15,7 +15,14 @@ inputs:
   unsupported, not silently dropped.
 - **References** are cut from the original-language separated dialogue (never
   another dub, never an evaluation-only track), with their identity, duration,
-  overlapping speakers and level over the bed recorded as findings.
+  overlapping speakers and level over the bed recorded as findings. A clone
+  candidate may ask for the lowest, brightest or liveliest clean line instead
+  of the default: a clone copies its reference's energy and register, so an
+  excitable character cloned from a flat line comes out flat.
+- **Shaping** (pitch and formant shifts, in semitones) is applied to each take
+  after generation and is part of the take's identity, so the same line can be
+  heard plain and shaped. A shaped candidate that is cast carries its shaping
+  into the voice cast; the pipeline applies it to every line of that character.
 
 Generation is bounded (candidates x excerpts x retakes, and a request budget),
 cancellable between takes, and resumable: every take has a receipt keyed by its
@@ -31,7 +38,7 @@ import time
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..artifacts import digest, read_json
 from ..budget import RequestBudget
@@ -48,8 +55,12 @@ CATEGORIES = ("calm", "quiet", "intense", "contextual")
 ALL_CATEGORIES: list[Literal["calm", "quiet", "intense", "contextual"]] = [
     "calm", "quiet", "intense", "contextual"]
 KINDS = ("current", "preset", "directed", "clone_character", "clone_line")
+PICKS = ("", "low", "high", "lively")
+SHAPE_LIMIT = 6.0             # semitones; beyond this a voice is a different person
 REFERENCE_SECONDS = (4.0, 12.0)
 LINE_REFERENCE_MIN = 2.0      # voicebox refuses a clone sample shorter than this
+PICK_CHOICES = 3              # fewer preferred-length lines than this is no choice
+PICK_MEASURED = 8             # lines measured when ranking for a pick
 QUIET_DB, INTENSE_DB = -3.5, 3.5
 MAX_CANDIDATES = 6
 MAX_EXCERPTS = 8
@@ -69,6 +80,24 @@ class CandidateIn(BaseModel):
     direction: str = Field(default="", max_length=500)
     reference: str | None = Field(default=None, max_length=64)   # studio voice reference
     seed: int | None = Field(default=3197, ge=0, le=2**31)
+    # Which original line a clone learns from: "" keeps the default (the
+    # cleanest line near 8 s); low / high / lively rank the clean lines by
+    # pitch or by how much the pitch moves.
+    pick: Literal["", "low", "high", "lively"] = ""
+    pitch_semitones: float = Field(default=0.0, ge=-SHAPE_LIMIT, le=SHAPE_LIMIT)
+    formant_semitones: float = Field(default=0.0, ge=-SHAPE_LIMIT, le=SHAPE_LIMIT)
+
+    @model_validator(mode="after")
+    def coherent(self):
+        if self.pick and self.kind not in ("clone_character", "clone_line"):
+            raise ValueError("choosing a reference line only applies to a clone")
+        if self.pick and self.reference:
+            raise ValueError("a chosen voice reference already fixes the line; "
+                             "drop either the reference or the pick")
+        if self.kind == "current" and (self.pitch_semitones or self.formant_semitones):
+            raise ValueError("the current voice's takes are not regenerated, so they "
+                             "cannot be shaped; audition a generated candidate instead")
+        return self
 
 
 class AuditionIn(BaseModel):
@@ -220,29 +249,62 @@ def reference_findings(clip: Path, rows: list[dict], character: str, start: floa
             "voice_over_bed_db": margin, "findings": findings}
 
 
+def _alone(rows: list[dict], row: dict, character: str) -> bool:
+    return not any(o.get("speaker") != character and _span(o)[0] < _span(row)[1] + 0.3
+                   and _span(o)[1] > _span(row)[0] - 0.3 for o in rows)
+
+
 def character_reference(rows: list[dict], character: str, vocals: Path, root: Path,
-                        bed: Path | None = None) -> tuple[Path, dict]:
-    """The cleanest solo line of this character's ORIGINAL performance."""
+                        bed: Path | None = None, pick: str = "") -> tuple[Path, dict]:
+    """A clean solo line of this character's ORIGINAL performance.
+
+    By default the cleanest line near 8 s. With `pick`, the clean lines are
+    measured and ranked instead: `low` and `high` by median pitch, `lively` by
+    how far the pitch moves. Fewer than PICK_CHOICES lines in the preferred
+    length is no choice at all, so shorter lines that can still be cloned join.
+    """
     low, high = REFERENCE_SECONDS
     mine = [r for r in rows if r.get("speaker") == character
             and low <= _span(r)[1] - _span(r)[0] <= high]
-    alone = [r for r in mine if not any(
-        o.get("speaker") != character and _span(o)[0] < _span(r)[1] + 0.3
-        and _span(o)[1] > _span(r)[0] - 0.3 for o in rows)]
+    alone = [r for r in mine if _alone(rows, r, character)]
     pool = alone or mine
+    if pick and len(pool) < PICK_CHOICES:
+        shorter = [r for r in rows if r.get("speaker") == character and r not in pool
+                   and _span(r)[1] - _span(r)[0] >= LINE_REFERENCE_MIN
+                   and _alone(rows, r, character)]
+        pool = pool + shorter
     if not pool:
         raise AuditionError(f"no {low:.0f}–{high:.0f} s line of {character} to clone from")
+    ordered = (pool if pick else
+               sorted(pool, key=lambda r: abs((_span(r)[1] - _span(r)[0]) - 8.0)))
     best = None
-    for row in sorted(pool, key=lambda r: abs((_span(r)[1] - _span(r)[0]) - 8.0))[:6]:
+    for row in ordered[:PICK_MEASURED if pick else 6]:
         start, end = _span(row)
         clip = cut_audio(vocals, start, end, root)
         found = reference_findings(clip, rows, character, start, end, bed, root)
-        score = (not found["findings"], found["voice_over_bed_db"] or 0)
+        found.update(_voice_measures(clip))
+        usable = not any(f["severity"] == "error" for f in found["findings"])
+        if pick:
+            value = found["liveliness_st"] if pick == "lively" else found["pitch_hz"]
+            if value is None:
+                continue
+            rank = -value if pick == "low" else value
+            score: tuple = (usable, rank, not found["findings"])
+        else:
+            score = (not found["findings"], found["voice_over_bed_db"] or 0)
         if best is None or score > best[0]:
-            best = (score, clip, {**found, "line": row["index"],
+            best = (score, clip, {**found, "line": row["index"], "pick": pick,
                                   "text": row.get("text_src") or ""})
-    assert best is not None
+    if best is None:
+        raise AuditionError(f"none of {character}'s lines could be measured for a "
+                            f"{pick} reference")
     return best[1], best[2]
+
+
+def _voice_measures(clip: Path) -> dict:
+    from ..stages.synthesize import reference_liveliness, reference_pitch
+
+    return {"pitch_hz": reference_pitch(clip), "liveliness_st": reference_liveliness(clip)}
 
 
 def _spoken(excerpt: dict, pronunciations: dict) -> str:
@@ -389,7 +451,8 @@ def _reference_for(db, candidate, rows, audition, vocals, bed, work):
         found = reference_findings(clip, rows, audition["character"], sample["start"],
                                    sample["end"])
         return clip, {**found, "reference": reference["id"], "text": sample.get("text", "")}
-    return character_reference(rows, audition["character"], vocals, work, bed)
+    return character_reference(rows, audition["character"], vocals, work, bed,
+                               pick=candidate.get("pick") or "")
 
 
 def _take(vb, work: Path, audition: dict, candidate: dict, excerpt: dict, profile: str,
@@ -403,6 +466,10 @@ def _take(vb, work: Path, audition: dict, candidate: dict, excerpt: dict, profil
         options["instruct"] = direction[:500]
     request = {"profile": profile, "text": text, "language": language, "options": options,
                "seed": candidate.get("seed")}
+    shape = _shape(candidate)
+    if any(shape.values()):
+        # Only present when set, so every unshaped take keeps its existing receipt.
+        request["shape"] = shape
     key = digest(request)[:16]
     dest = work / candidate["name"] / f"{excerpt['cue_id'] or excerpt['index']}.wav"
     receipt = read_json(dest.with_suffix(".json"))
@@ -438,11 +505,20 @@ def _take(vb, work: Path, audition: dict, candidate: dict, excerpt: dict, profil
                 "error": attempts[-1].get("error", "") if attempts else ""}
     chosen = next((a for a in usable if a.get("clean") is not False), usable[-1])
     shutil.copy2(str(chosen["path"]), dest)
+    if any(shape.values()):
+        from ..stages.synthesize import shift_pitch
+
+        shift_pitch(dest, shape["pitch_semitones"], cancel, shape["formant_semitones"])
     result = {"state": "generated", "attempts": len(attempts), "chosen": chosen["attempt"],
               "clean": chosen.get("clean"), "heard": chosen.get("heard", ""),
               "request": request, "history": attempts}
     write_json(dest.with_suffix(".json"), {"request": key, "result": result})
     return {**result, "path": str(dest)}
+
+
+def _shape(candidate: dict) -> dict:
+    return {"pitch_semitones": float(candidate.get("pitch_semitones") or 0.0),
+            "formant_semitones": float(candidate.get("formant_semitones") or 0.0)}
 
 
 def _judge(vb, path: Path, text: str, language: str) -> dict:

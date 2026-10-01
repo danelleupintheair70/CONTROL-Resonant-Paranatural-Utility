@@ -8,6 +8,8 @@ import { renderEpisodes } from './episodes.js';
 import { languageName, targetChoices } from './languages.js';
 import { getJobs } from './jobs-data.js';
 import { renderRecipes } from './recipes.js';
+import { renderShowVoices } from './title-voices.js';
+import { renderEpisodeAnalysis } from './episode-analysis.js';
 
 const ROLE_LABELS = {speaker:'Unknown speaker', narrator:'Narrator', child_f:'Girl', child_m:'Boy',
   young_f:'Young woman', young_m:'Young man', adult_f:'Adult woman', adult_m:'Adult man',
@@ -185,7 +187,8 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${(show ? [["episodes", "Episodes"], ...TITLE_TABS.filter(([key]) => key !== "recipes")] : TITLE_TABS).map(([k, t]) => `<button type="button" class="tab" data-dtab="${k}" aria-current="${titleState.dtab === k ? "page" : "false"}">${t}</button>`).join("")}
+        ${(show ? [["episodes", "Episodes"], ...TITLE_TABS.filter(([key]) => key !== "recipes")]
+          : item.episode_id ? [["analysis", "Analysis"], ...TITLE_TABS] : TITLE_TABS).map(([k, t]) => `<button type="button" class="tab" data-dtab="${k}" aria-current="${titleState.dtab === k ? "page" : "false"}">${t}</button>`).join("")}
       </div>
       <div id="titleTabBody"></div>`;
     document.getElementById("titleBack").addEventListener("click", () => item.parent ? goTitle(item.parent, "episodes") : setPage("Library"));
@@ -251,11 +254,16 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
       const target = titleState.plan?.target_lang || library.targets?.[0] || 'en';
       renderEpisodes(body, { item, target, targets: library.targets || ['en'],
         onTarget: value => setPlanValue('target_lang', value),
-        onCast: episode => goEpisode(item, episode),
+        onCast: (episode, tab) => goEpisode(item, episode, tab),
         openWatch });
       return;
     }
     body.className = '';
+    if (titleState.dtab === "analysis" && item.episode_id) {
+      body.className = 'panel analysis-panel';
+      renderEpisodeAnalysis(body, item, { target: titleState.plan?.target_lang || library.targets?.[0] || 'es' });
+      return;
+    }
     if (titleState.dtab === "plan") {
       body.innerHTML = `
         <div class="panel" style="padding:20px 24px 22px;">
@@ -278,7 +286,12 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
       return;
     }
     if (titleState.dtab === "voices") {
-      body.innerHTML = `
+      const showCast = isShow(item) && item.tvdb_id ? `
+        <div class="panel" style="padding:20px 24px 22px;margin-bottom:16px;">
+          <h3 style="font-size:17px;margin:0;">Characters</h3>
+          <div id="showVoices" style="margin-top:8px;"></div>
+        </div>` : '';
+      body.innerHTML = showCast + `
         <div class="panel" style="padding:20px 24px 22px;">
           <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">
             <h3 style="font-size:17px;margin:0;">Speakers and voices</h3>
@@ -291,6 +304,7 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
           </div>
         </div>`;
       document.getElementById("titleCastSave").addEventListener("click", saveCast);
+      if (showCast) renderShowVoices(document.getElementById('showVoices'), item);
       renderNarrator(item);
       const castItem = titleState.castItem || item;
       document.getElementById('castScope').textContent = isShow(item)
@@ -371,6 +385,12 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
 
   async function renderNarrator(item) {
     const root = document.getElementById('narratorControls');
+    // The plan re-renders this panel when it arrives. Controls shown before
+    // then would let a choice be made and silently wiped by that re-render.
+    if (!titleState.plan) {
+      root.innerHTML = '<p class="hint">Loading this title’s plan…</p>';
+      return;
+    }
     const value = key => titleState.plan?.[key] ?? cfgGet(key) ?? '';
     root.innerHTML = `<div class="narrator-panel"><h3>Narrator voice</h3>
       <p class="hint">Used for a single narrator or a speaker marked Narrator. An explicit character voice takes priority. Multiple detected speakers keep their own voices.</p>

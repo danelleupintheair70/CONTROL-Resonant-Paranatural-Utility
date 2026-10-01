@@ -32,6 +32,8 @@ discovery:
   treat_undefined_as: original  # how to read an 'und' (untagged) audio track
   cache_ttl: 300                # seconds /api/library may serve a cached scan
   webhook_debounce: 30          # coalesce *arr webhook bursts into one rescan
+  plex: true                    # also list what Plex has that Sonarr/Radarr do not
+  plex_unmatched: false         # include titles Plex could not match (home videos, YouTube)
 
 # Plex labeling + hide (Doblarr labels; Kometa/a smart collection hides)
 filtering:
@@ -103,6 +105,17 @@ transcribe:
   keep_models_loaded: false     # opt in only with enough RAM / VRAM
   # hf_token read from HF_TOKEN env var (pyannote needs it)
 
+# Telling speakers apart without an account (transcribe.diarizer: local/auto).
+# Built in: wespeaker-resnet34, 3dspeaker-campplus, 3dspeaker-eres2netv2,
+# nemo-titanet-large, nemo-titanet-small, wespeaker-cnceleb-resnet34. ONNX models
+# download once from the sherpa-onnx GitHub releases into models_dir.
+speakers:
+  models: [wespeaker-resnet34, 3dspeaker-eres2netv2]  # one, or several joined
+  threshold:                    # grouping distance; blank uses the models' tuned ones
+  models_dir: ""                # blank: <work_dir>/models/speakers
+  custom: []                    # your own: [{id: my-model, name: My model, url: https://.../x.onnx, threshold: 0.6}]
+  tracks: all                   # also hear the dub tracks: all | [en, es] | [] (original only)
+
 # Where the local model stages run: Demucs separation, pyannote diarization and
 # whisper transcription. voicebox is a separate process with its own device.
 compute:
@@ -138,6 +151,8 @@ dub:
   cast_group: ""               # explicit series/group name for recurring characters
   character_map: {}             # current speaker ID: stable character name
   pronunciations: {}            # written term: TTS spelling (captions stay unchanged)
+  romaji_names: false           # ja -> es: respell glossary names for the engine
+                                # (Jiro -> Yiro, Hikari -> Jikari)
   duration_match: true          # time-fit each line to the original slot
   max_fit_attempts: 2           # shorten/retranslate to fit before stretching
   ducking_ratio: "4:1"         # sidechain ducking of background under speech
@@ -260,7 +275,11 @@ coverage:
   max_seconds: 4.0               # a longer window is a scene, not a reaction
   leakage_check: false           # screen retained sounds and the bed for source words
   generate: false                # ask the engine for a reaction where it supports one
-  events: {}                     # per-event decisions, set in review
+  detect: false                  # voice in the dialogue stem outside every line
+                                 # (an untagged laugh or grunt) becomes an event
+  auto_retain: false             # keep the original sound of unreviewed vocal events
+                                 # with a clean window up to max_seconds long
+  events: {}                   # per-event decisions, set in review
   assets: {}                     # per-event local replacement sound files (machine-local)
   extra: []                      # events a person added that no subtitle recorded
 

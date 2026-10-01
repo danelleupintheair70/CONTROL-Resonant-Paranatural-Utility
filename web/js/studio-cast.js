@@ -12,7 +12,20 @@ const KINDS = [
   ['clone_line', 'Clone each line (experimental)', 'unstable on short lines; not castable'],
 ];
 
+const PICKS = [
+  ['', 'Cleanest line', 'the default: the cleanest solo line near 8 s'],
+  ['lively', 'Liveliest line', 'the line whose pitch moves most; for excitable characters'],
+  ['low', 'Lowest line', 'the lowest-pitched line; for a young male voice that reads too high'],
+  ['high', 'Brightest line', 'the highest-pitched line; for a deep voice that reads too low'],
+];
+
 let playing = null;
+
+// "+2 st pitch · +4 st formant", or '' when the voice is unshaped.
+function shapeLabel(c) {
+  const part = (v, what) => (Number(v) ? `${v > 0 ? '+' : ''}${Number(v)} st ${what}` : '');
+  return [part(c.pitch_semitones, 'pitch'), part(c.formant_semitones, 'formant')].filter(Boolean).join(' · ');
+}
 
 export async function renderCast(body, ctx) {
   const job = ctx.jobId();
@@ -30,7 +43,7 @@ export async function renderCast(body, ctx) {
       <h3 id="castNow">Who speaks with which voice</h3>
       ${cast.speakers.length ? `<table class="table"><thead><tr><th>Speaker</th><th>Voice</th><th>Decided at</th><th></th></tr></thead><tbody>
         ${cast.speakers.map(r => `<tr><td><strong>${esc(r.speaker)}</strong>${r.character !== r.speaker ? ` <span class="hint">(${esc(r.character)})</span>` : ''}</td>
-          <td class="m">${esc(r.voice || '—')}${r.engine ? ` <span class="hint">${esc(r.engine)}</span>` : ''}</td>
+          <td class="m">${esc(r.voice || '—')}${r.engine ? ` <span class="hint">${esc(r.engine)}</span>` : ''}${shapeLabel(r) ? ` <span class="tag tag-neutral">${esc(shapeLabel(r))}</span>` : ''}</td>
           <td>${r.source === 'none' ? '<span class="hint">not decided — the run\'s own cast applies</span>'
             : `<span class="tag ${r.source === 'episode' ? 'tag-accent' : 'tag-neutral'}">${esc(r.source)}</span>`}
             ${r.overrides_series ? '<span class="review-marker">overrides the series choice</span>' : ''}</td>
@@ -85,6 +98,10 @@ function candidateRow(n, voices) {
     <label class="review-field">Voice <select class="input" data-f="voice"><option value="">—</option>
       ${voices.map(v => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('')}</select></label>
     <label class="review-field">Direction <input class="input" data-f="direction" placeholder="only for directed presets"></label>
+    <label class="review-field">Clone from <select class="input" data-f="pick" title="Which line of the original actor a clone learns from">${PICKS.map(([v, l]) =>
+      `<option value="${v}">${l}</option>`).join('')}</select></label>
+    <label class="review-field">Pitch <input class="input m" type="number" step="0.5" min="-6" max="6" value="0" data-f="pitch_semitones" title="Semitones, applied after generation"></label>
+    <label class="review-field">Formant <input class="input m" type="number" step="0.5" min="-6" max="6" value="0" data-f="formant_semitones" title="Semitones; moves how big the voice sounds, which is most of what makes it read male or female"></label>
   </div>`;
 }
 
@@ -92,7 +109,10 @@ function auditionForm(body, ctx, voices) {
   const box = body.querySelector('#auCandidates');
   let rows = 3;
   box.innerHTML = [0, 1, 2].map(n => candidateRow(n, voices)).join('')
-    + `<p class="hint">${KINDS.map(([, l, note]) => `<strong>${l}</strong>: ${note}`).join('. ')}.</p>`;
+    + `<p class="hint">${KINDS.map(([, l, note]) => `<strong>${l}</strong>: ${note}`).join('. ')}.</p>`
+    + `<p class="hint"><strong>Clone from</strong> only applies to clones: ${PICKS.slice(1).map(([, l, note]) => `${l.toLowerCase()}, ${note}`).join('; ')}.
+       <strong>Pitch</strong> and <strong>formant</strong> shape every take after it is generated; a voice that reads as the
+       wrong gender usually needs formant more than pitch. Whatever you cast keeps its shaping.</p>`;
   body.querySelector('#auAdd').onclick = () => {
     if (rows >= 6) return;
     box.insertAdjacentHTML('beforeend', candidateRow(rows, voices)); rows += 1;
@@ -100,8 +120,12 @@ function auditionForm(body, ctx, voices) {
   body.querySelector('#auCreate').onclick = async () => {
     const candidates = [...box.querySelectorAll('.studio-candidate')].map(r => {
       const get = f => r.querySelector(`[data-f="${f}"]`).value.trim();
-      return { name: get('name'), kind: get('kind'), engine: get('engine'), voice: get('voice'),
-        direction: get('direction') };
+      const kind = get('kind');
+      const clone = kind === 'clone_character' || kind === 'clone_line';
+      return { name: get('name'), kind, engine: get('engine'), voice: get('voice'),
+        direction: get('direction'), pick: clone ? get('pick') : '',
+        pitch_semitones: kind === 'current' ? 0 : Number(get('pitch_semitones')) || 0,
+        formant_semitones: kind === 'current' ? 0 : Number(get('formant_semitones')) || 0 };
     }).filter(c => c.name);
     try {
       await api(`studio/sessions/${ctx.sid}/auditions`, { method: 'POST', json: {
@@ -132,6 +156,10 @@ async function renderAudition(box, ctx, id) {
       <div role="row" class="studio-audition-row"><span role="columnheader">Line</span>
         ${a.candidates.map(c => `<span role="columnheader"><strong>${esc(c.name)}</strong>
           <span class="hint">${esc(c.kind.replace('_', ' '))}${c.engine ? ` · ${esc(c.engine)}` : ''}</span>
+          ${shapeLabel(c) ? `<span class="tag tag-neutral">${esc(shapeLabel(c))}</span>` : ''}
+          ${c.reference_findings?.line != null ? `<span class="hint">from line ${c.reference_findings.line + 1}${c.pick ? ` (${esc((PICKS.find(p => p[0] === c.pick) || [])[1] || c.pick).toLowerCase()})` : ''}${
+            c.reference_findings.pitch_hz ? ` · ${Math.round(c.reference_findings.pitch_hz)} Hz` : ''}${
+            c.reference_findings.liveliness_st ? ` · moves ${c.reference_findings.liveliness_st} st` : ''}: “${esc(c.reference_findings.text || '')}”</span>` : ''}
           ${c.status && c.status !== 'generated' ? `<span class="review-marker">${esc(c.status)}${c.reason ? `: ${esc(c.reason)}` : ''}</span>` : ''}
           ${(c.reference_findings?.findings || []).map(f => `<span class="hint">${esc(f.code.replace('reference_', ''))}: ${esc(f.detail)}</span>`).join('')}
         </span>`).join('')}</div>

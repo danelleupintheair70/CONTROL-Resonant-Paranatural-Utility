@@ -7,7 +7,7 @@ def setup_series(client, tmp_path):
     show = {
         "id": 10,
         "tvdbId": 79214,
-        "title": "Mushi-Shi",
+        "title": "Quiet Valley",
         "path": str(tmp_path),
         "originalLanguage": {"name": "Japanese"},
     }
@@ -92,7 +92,7 @@ def test_episode_queue_deduplicates_and_inherits_series_narrator(client_factory,
     store = client.app.state.jobs
     store.db.save_plan(
         cast_key(path=str(tmp_path)),
-        "Mushi-Shi",
+        "Quiet Valley",
         {"dub.narrator_voice": "warm-voice", "target_lang": "en", "dub.dry_run": False},
     )
     store.db.save_plan(
@@ -117,3 +117,47 @@ def test_folder_job_is_rejected(client_factory, tmp_path):
     client = client_factory()
     response = client.post("/api/jobs", json={"title": "Show", "path": str(tmp_path)})
     assert response.status_code == 422 and "Episodes" in response.json()["error"]
+
+
+def _script(path, rows):
+    import json
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"segments": [
+        {"speaker": spk, "start": a, "end": b, "text_src": text,
+         "cue": {"measurement": {"relative_db": db}}}
+        for spk, a, b, db, text in rows]}), encoding="utf-8")
+
+
+def test_show_voices_share_talk_across_episodes_and_link_named_voices(client_factory, tmp_path):
+    client = client_factory()
+    first, second = setup_series(client, tmp_path)
+    work = client.app.state.worker.config.work_dir
+    # Two runs of episode 1 (an older unmeasured one is skipped) and one of episode 2,
+    # which ran from a copy of the file elsewhere: matched by the file name.
+    _script(work / "media" / "a" / "es-419" / "first.script.json", [
+        ("KAITO", 0, 6, 5.0, "¡Sí!"), ("MINA", 7, 9, 0.0, "Kaito.")])
+    _script(work / "media" / "b" / "es-MX" / "first.script.json", [
+        ("KAITO", 0, 6, None, "old run")])
+    _script(work / "media" / "c" / "es-419" / "second.script.json", [
+        ("KAITO", 0, 2, -4.0, "...ya."), ("TAMAKI", 3, 5, 0.5, "Hola.")])
+    client.app.state.jobs.db.save_cast(cast_key(path=str(tmp_path / "copy" / "second.mkv")),
+                                       "copy", [{"speaker_id": "TAMAKI", "voice": "vb-t"}])
+    client.app.state.services._cache["speech"] = SimpleNamespace(
+        voice_profiles=lambda: [{"id": "vb-n", "name": "x"}], preset_engines=(),
+        preset_voices=lambda e: [])
+    assert client.put("/api/voice-catalog/traits", json={
+        "key": "profile:vb-n", "display_name": "Kaito", "character": "KAITO",
+        "show": "tvdb-79214"}).status_code == 200
+    data = client.get("/api/series/79214/voices").json()
+    rows = {r["speaker"]: r for r in data["speakers"]}
+    assert [r["speaker"] for r in data["speakers"]] == ["KAITO", "MINA", "TAMAKI"]
+    assert rows["KAITO"]["seconds"] == 8 and rows["KAITO"]["share"] == 0.6667
+    assert rows["KAITO"]["episodes"] == [1, 2]
+    assert rows["KAITO"]["bands"] == {"quiet": 0.25, "calm": 0.0, "intense": 0.75,
+                                       "unmeasured": 0.0}
+    assert [h["text"] for h in rows["KAITO"]["highlights"]] == ["¡Sí!"]
+    assert rows["KAITO"]["voice"]["name"] == "Kaito"
+    assert rows["TAMAKI"]["voice"]["key"] == "profile:vb-t"
+    assert rows["MINA"]["voice"] is None
+    assert [e["label"] for e in data["analysed"]] == ["S01E01", "S01E02"]   # E03 shares a file

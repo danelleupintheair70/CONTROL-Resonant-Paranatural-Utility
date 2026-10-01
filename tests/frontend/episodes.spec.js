@@ -75,7 +75,10 @@ test('episode voice catalog ranks character traits, previews and saves the selec
   await page.route('**/api/voice-catalog/preview/sample/audio', route => route.fulfill({body:'audio',contentType:'audio/wav'}));
   await page.route('**/api/voice-catalog/select', route => route.fulfill({json:{profile_id:'elder-profile',engine:'qwen_custom_voice',name:'Weathered storyteller'}}));
   await showPage(page);
+  // An episode opens on its analysis; its voices are one tab away.
   await page.getByRole('link',{name:'The Green Seat',exact:true}).click();
+  await expect(page).toHaveURL(/\/episode\/1\/analysis$/);
+  await page.locator('[data-dtab="voices"]').click();
   await expect(page).toHaveURL(/\/episode\/1\/voices$/);
   await page.getByRole('button',{name:'Find matching voice'}).click();
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -110,7 +113,7 @@ test('show and episode tabs survive refresh and browser history', async ({ page 
     await expect(page.locator(`[data-dtab="${tab}"]`)).toHaveAttribute('aria-current', 'page');
   }
   await page.getByRole('link', { name: 'The Green Seat', exact: true }).click();
-  for (const tab of ['plan', 'voices', 'jobs', 'meta']) {
+  for (const tab of ['analysis', 'plan', 'voices', 'jobs', 'meta']) {
     await page.locator(`[data-dtab="${tab}"]`).click();
     await expect(page).toHaveURL(new RegExp(`/episode/1/${tab}$`));
     await page.reload();
@@ -125,7 +128,7 @@ test('show and episode tabs survive refresh and browser history', async ({ page 
   await expect(page).toHaveURL(/episode\/1\/meta$/);
   await expect(page.locator('[data-dtab="meta"]')).toHaveAttribute('aria-current', 'page');
   await page.goto('/title/tvdb-79214/episode/1');
-  await expect(page).toHaveURL(/episode\/1\/voices$/);
+  await expect(page).toHaveURL(/episode\/1\/analysis$/);
   await page.goto('/title/tvdb-79214/episode/invalid/jobs');
   await expect(page.locator('#titleRoot')).toContainText('URL is invalid');
 });

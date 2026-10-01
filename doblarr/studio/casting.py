@@ -37,6 +37,10 @@ class ChoiceIn(BaseModel):
     audition: str = Field(default="", max_length=64)
     candidate: str = Field(default="", max_length=40)
     actor: str = Field(default="", max_length=100)
+    # Shaping heard in the audition travels with the voice: semitones applied
+    # to every line of the character after generation.
+    pitch_semitones: float = Field(default=0.0, ge=-6.0, le=6.0)
+    formant_semitones: float = Field(default=0.0, ge=-6.0, le=6.0)
     clear: bool = False
 
 
@@ -59,7 +63,7 @@ def decide(db, body: ChoiceIn, base_revision: int | None = None) -> dict:
                                                    "characters": {}, "lines": {}}
     entry = {k: v for k, v in body.model_dump().items()
              if k in ("voice", "engine", "direction", "reference", "audition", "candidate",
-                      "actor") and v}
+                      "actor", "pitch_semitones", "formant_semitones") and v}
     entry["decided_at"] = _now()
     characters = dict(current.get("characters") or {})
     lines = dict(current.get("lines") or {})
@@ -138,8 +142,17 @@ def to_voice_cast(existing: list[dict], chosen: dict) -> list[dict]:
             entry["engine"] = row["engine"]
         if row.get("direction"):
             entry["delivery"] = row["direction"]
+        # The choice decides the shaping outright: a voice picked without any
+        # must not inherit a shift an earlier choice left on the entry.
+        for key in ("pitch_semitones", "formant_semitones"):
+            if row.get(key):
+                entry[key] = row[key]
+            else:
+                entry.pop(key, None)
         # A new choice gets a new revision so cached takes of the old voice are
         # not reused for it.
         entry["revision"] = digest([row.get("voice"), row.get("engine"),
-                                    row.get("direction"), row.get("reference")])[:12]
+                                    row.get("direction"), row.get("reference"),
+                                    row.get("pitch_semitones") or 0,
+                                    row.get("formant_semitones") or 0])[:12]
     return list(by_speaker.values())

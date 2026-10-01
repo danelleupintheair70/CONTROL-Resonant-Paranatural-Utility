@@ -22,6 +22,7 @@ from .events import EventBus
 from .jobs import JobStore, Worker, import_legacy_json
 from .library_service import LibraryService
 from .logging_setup import attach_log_stream
+from .routes import analysis as analysis_routes
 from .routes import configuration as configuration_routes
 from .routes import jobs as job_routes
 from .routes import knowledge as knowledge_routes
@@ -160,6 +161,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(job_routes.build_router(config, store, worker, bus))
     api.include_router(title_routes.build_router(config, db, bus, services))
     api.include_router(series_routes.build_router(config, services, store, bus))
+    api.include_router(analysis_routes.build_router(config, store))
     api.include_router(studio_routes.build_router(config, store, worker, bus))
     api.include_router(catalog_routes.build_router(config, services, db))
     app.include_router(api)

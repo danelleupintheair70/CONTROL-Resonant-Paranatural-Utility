@@ -403,3 +403,48 @@ def test_worker_dispatch_keeps_one_queue(client_factory, tmp_path):
     finished = run_studio_job(client, job.id)
     assert finished.status == "failed" and "no longer exists" in finished.message
 
+
+
+def test_a_shaped_candidate_is_heard_shaped_and_cast_with_its_shaping(client_factory, tmp_path):
+    from doblarr.stages.synthesize import reference_pitch
+    from doblarr.voices import cast_key
+
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg is required")
+    client = client_factory()
+    queued, job = review_client(client, tmp_path)
+    client.app.state.services._cache["speech"] = FakeVoicebox()
+    sid = studio(client, tmp_path, job)["id"]
+    refused = [client.post(f"/api/studio/sessions/{sid}/auditions", json={
+        "character": "B", "job_id": queued.id, "candidates": [candidate]}).status_code
+        for candidate in ({"name": "x", "kind": "preset", "voice": "vb-9", "pick": "lively"},
+                          {"name": "x", "kind": "current", "pitch_semitones": 2})]
+    assert refused == [422, 422]
+    made = client.post(f"/api/studio/sessions/{sid}/auditions", json={
+        "character": "B", "job_id": queued.id, "candidates": [
+            {"name": "plain", "kind": "preset", "engine": "qwen_custom_voice", "voice": "vb-9"},
+            {"name": "bright", "kind": "preset", "engine": "qwen_custom_voice", "voice": "vb-9",
+             "pitch_semitones": 4, "formant_semitones": 4}]}).json()["audition"]
+    run = client.post(f"/api/studio/auditions/{made['id']}/run").json()["job"]
+    assert run_studio_job(client, run["id"]).status == "done"
+    cue = made["plan"]["excerpts"][0]["cue_id"]
+    work = client.app.state.worker.config.work_dir / "studio" / "auditions" / made["id"]
+    plain, bright = (reference_pitch(work / name / f"{cue}.wav") for name in ("plain", "bright"))
+    assert plain == pytest.approx(220, rel=0.05)
+    assert bright == pytest.approx(220 * 2 ** (4 / 12), rel=0.05)
+
+    def cast_after(candidate):
+        client.post(f"/api/studio/auditions/{made['id']}/select", json={
+            "candidate": candidate, "scope": "episode", "apply": True})
+        saved = client.app.state.jobs.db.load_cast(cast_key(path=str(job.input_file)))
+        return next(e for e in saved["cast"] if e["speaker_id"] == "B")
+
+    shaped = cast_after("bright")
+    assert shaped["pitch_semitones"] == 4 and shaped["formant_semitones"] == 4
+    row = next(r for r in client.get(f"/api/studio/sessions/{sid}/casting").json()["speakers"]
+               if r["speaker"] == "B")
+    assert row["pitch_semitones"] == 4
+    # Casting the plain take afterwards must not keep the old shift.
+    plain_entry = cast_after("plain")
+    assert "pitch_semitones" not in plain_entry and "formant_semitones" not in plain_entry
+    assert plain_entry["revision"] != shaped["revision"]

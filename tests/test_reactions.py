@@ -309,3 +309,111 @@ def test_engine_capability_is_asked_and_unknown_when_it_cannot_answer():
 
     assert reactions.engine_capability("qwen", Honest()) == "unsupported"
     assert reactions.engine_capability("special", Honest()) == "supported"
+
+
+# -- reactions nobody typed ---------------------------------------------------
+
+def _stem(path, bursts, seconds=12.0):
+    """A dialogue stem that is silent except for tones in `bursts`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frames = bytearray()
+    for index in range(int(RATE * seconds)):
+        t = index / RATE
+        loud = any(a <= t < b for a, b in bursts)
+        value = 0.3 * math.sin(2 * math.pi * 330 * t) if loud else 0.0
+        frames += struct.pack("<h", int(value * 32000))
+    with wave.open(str(path), "wb") as out:
+        out.setparams((1, 2, RATE, 0, "NONE", "not compressed"))
+        out.writeframes(bytes(frames))
+    return path
+
+
+def _detecting(tmp_path, bursts, **options):
+    pytest.importorskip("numpy")
+    job = _job(tmp_path, [(1.0, 3.0, "Hola."), (8.0, 10.0, "Adiós.")])
+    job.source_audio = _audio(tmp_path / "work" / "source.wav")
+    job.vocals = _stem(tmp_path / "work" / "vocals.wav", bursts)
+    return job, reactions.settings({"mode": "retain", "detect": True, **options})
+
+
+def test_voice_outside_every_line_becomes_a_detector_event(tmp_path):
+    # Speech under both lines, a laugh between them, and a mumble that runs
+    # into the second line's margin.
+    job, config = _detecting(tmp_path, [(1.0, 3.0), (5.0, 6.0), (8.0, 10.0)])
+    added = reactions.detect(job, config)
+    assert len(added) == 1
+    event = added[0]
+    assert event.evidence == "detector" and event.category == "vocal"
+    assert event.span.start == pytest.approx(5.0, abs=0.05)
+    assert event.span.end == pytest.approx(6.0, abs=0.05)
+    assert event.decision == "unresolved"
+    validate_events(job.nonverbal)
+
+
+def test_detection_is_stable_and_does_not_duplicate_on_a_rerun(tmp_path):
+    job, config = _detecting(tmp_path, [(1.0, 3.0), (5.0, 6.0)])
+    first = reactions.detect(job, config)
+    again = reactions.detect(job, config)
+    assert [e.event_id for e in again] == [e.event_id for e in first]
+    assert [e.event_id for e in job.nonverbal] == [first[0].event_id]
+
+
+def test_a_detected_event_a_line_now_covers_goes_away(tmp_path):
+    job, config = _detecting(tmp_path, [(1.0, 3.0), (5.0, 6.0)])
+    assert reactions.detect(job, config)
+    job.segments[1].start = 5.0      # the second line was moved to its speech onset
+    assert reactions.detect(job, config) == []
+    assert not [e for e in job.nonverbal if e.evidence == "detector"]
+
+
+def test_faint_bleed_in_the_stem_is_not_taken_for_a_voice(tmp_path):
+    pytest.importorskip("numpy")
+    job, config = _detecting(tmp_path, [(1.0, 3.0)])
+    # 30 dB under the dialogue: separation bleed, not a performance.
+    job.vocals = _stem(tmp_path / "work" / "vocals.wav", [(1.0, 3.0)])
+    with wave.open(str(job.vocals), "rb") as audio:
+        params, data = audio.getparams(), bytearray(audio.readframes(audio.getnframes()))
+    for index in range(int(5 * RATE), int(6 * RATE)):
+        value = 0.3 * 0.03 * math.sin(2 * math.pi * 330 * index / RATE)
+        data[index * 2:index * 2 + 2] = struct.pack("<h", int(value * 32000))
+    with wave.open(str(job.vocals), "wb") as out:
+        out.setparams(params)
+        out.writeframes(bytes(data))
+    assert reactions.detect(job, config) == []
+
+
+def test_auto_retain_keeps_a_short_reaction_and_places_it(tmp_path):
+    job, _ = _detecting(tmp_path, [(1.0, 3.0), (5.0, 6.0)])
+    reactions.process(job, {"mode": "retain", "detect": True, "auto_retain": True},
+                      work_dir=tmp_path / "work")
+    event = next(e for e in job.nonverbal if e.evidence == "detector")
+    assert event.decision == "retain" and event.coverage == "retained" and event.placed
+    assert len([row for row in placements(job) if row.kind == "event"]) == 1
+
+
+def test_auto_retain_leaves_a_long_stretch_for_review(tmp_path):
+    # Five seconds of uncovered voice is as likely a line the subtitles missed.
+    job, _ = _detecting(tmp_path, [(1.0, 3.0)], max_seconds=4.0)
+    job.segments = job.segments[:1]
+    job.vocals = _stem(tmp_path / "work" / "vocals.wav", [(1.0, 3.0), (4.0, 9.5)])
+    reactions.process(job, {"mode": "retain", "detect": True, "auto_retain": True},
+                      work_dir=tmp_path / "work")
+    event = next(e for e in job.nonverbal if e.evidence == "detector")
+    assert event.decision == "unresolved" and not event.placed
+
+
+def test_a_reviewer_decision_beats_auto_retain_and_turning_it_off_undoes_it(tmp_path):
+    job, _ = _detecting(tmp_path, [(1.0, 3.0), (5.0, 6.0)])
+    options = {"mode": "retain", "detect": True, "auto_retain": True}
+    reactions.process(job, options, work_dir=tmp_path / "work")
+    event = next(e for e in job.nonverbal if e.evidence == "detector")
+    reactions.process(job, {**options, "events": {event.event_id: "omit"}},
+                      work_dir=tmp_path / "work")
+    assert event.decision == "omit"
+    reactions.process(job, options, work_dir=tmp_path / "work")
+    assert event.decision == "omit"      # a person chose it; the policy never overrides
+    (tmp_path / "b").mkdir()
+    other, _ = _detecting(tmp_path / "b", [(1.0, 3.0), (5.0, 6.0)])
+    reactions.process(other, options, work_dir=tmp_path / "b" / "work")
+    reactions.process(other, {**options, "auto_retain": False}, work_dir=tmp_path / "b" / "work")
+    assert next(e for e in other.nonverbal if e.evidence == "detector").decision == "unresolved"

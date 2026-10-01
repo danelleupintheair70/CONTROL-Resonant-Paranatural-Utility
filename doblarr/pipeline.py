@@ -9,15 +9,19 @@ from dataclasses import replace
 from pathlib import Path
 
 from . import (
+    analysis,
     background,
     conversation,
     decisions,
     delivery,
     levels,
+    onsets,
     phrases,
     prepass,
     reactions,
+    romaji,
     treatments,
+    voice_models,
 )
 from .artifacts import digest, media_work
 from .budget import RequestBudget
@@ -26,7 +30,7 @@ from .config import Config
 from .cues import ensure_identity, validate_cues
 from .errors import JobCancelled
 from .ffmpeg import FFmpegError
-from .hardware import gpu_stage
+from .hardware import gpu_stage, resolve_device
 from .knowledge import KnowledgeSelection
 from .knowledge import snapshot as freeze_knowledge
 from .languages import base_language, display_name, resolve_target_locale
@@ -55,7 +59,7 @@ from .stages import (
 from .stages.common import load_script, save_script
 from .telemetry import RunReport
 from .versions import preserve_version
-from .voices import cast_key, character_cast, ensure_cast, save_characters
+from .voices import cast_key, character_cast, ensure_cast, merge_cast, save_characters
 
 log = logging.getLogger("doblarr.pipeline")
 
@@ -92,6 +96,10 @@ def run_job(
     publishes a `cast` event); full dubs read the saved cast into synthesize.
     """
     config = effective_config(config)
+    if job.kind == "analyze":
+        # An analysis writes no media anyone could mistake for a dub, so the
+        # dub's dry-run switch does not apply to it.
+        dry_run = False
     canonical = parse_language_tag(job.target_lang)
     if canonical is None:
         raise ValueError("target language must be a language code")
@@ -125,6 +133,12 @@ def run_job(
     # Frozen knowledge for this run: pinned to the job's snapshot revisions, so
     # edits made after queueing never change a resumed job. Without a db (CLI)
     # the legacy pronunciation map alone applies, exactly as before.
+    spoken = dict(config["dub"].get("pronunciations", {}))
+    if (config["dub"].get("romaji_names") and base_language(job.source_lang) == "ja"
+            and base_language(job.target_lang) == "es"):
+        # Explicit pronunciations win over the respelled glossary.
+        spoken = {**romaji.respellings(config["translate"].get("glossary", {}).values()),
+                  **spoken}
     knowledge = None
     if db is not None:
         if job.knowledge_snapshot is None:
@@ -136,11 +150,9 @@ def run_job(
             title_ref=cast_key(path=str(job.input_file)),
             show_ref=character_group,
             show_refs=(job.show_ref,),
-            legacy=dict(config["dub"].get("pronunciations", {})),
+            legacy=spoken,
         )
-    pronunciations = (
-        None if knowledge is not None else dict(config["dub"].get("pronunciations", {}))
-    )
+    pronunciations = None if knowledge is not None else spoken
     direction = dict(config["translate"])
     if base_language(job.target_locale) != job.target_locale:
         direction["locale"] = job.target_locale  # regional target wins over translate.locale
@@ -209,11 +221,9 @@ def run_job(
     def _ensure_cast():
         if db is None or dry_run:
             return None
-        cast_holder["cast"] = ensure_cast(job, db, events=events)
-        inherited = character_cast(job, db, character_group, character_map)
-        assigned = {e["speaker_id"]: e for e in inherited}
-        assigned.update({e["speaker_id"]: e for e in (cast_holder["cast"] or []) if e.get("voice")})
-        cast_holder["cast"] = list(assigned.values())
+        cast_holder["cast"] = merge_cast(
+            ensure_cast(job, db, events=events),
+            character_cast(job, db, character_group, character_map))
 
     def _report(stage_name: str):
         if on_progress is None:
@@ -222,10 +232,18 @@ def run_job(
             stage_name, done / total if total else 0.0, detail
         )
 
+    def _voices():
+        picked = voice_models.resolve(voice_models.chosen(config), config)
+        return {"models": picked, "models_dir": voice_models.folder(config),
+                "threshold": (config.get("speakers") or {}).get("threshold"),
+                "tracks": (config.get("speakers") or {}).get("tracks", "all")}
+
     def _diarize():
         with gpu_stage("diarize", job, compute, retain=keep_models):
             diarize.run(job, enabled=config["transcribe"]["diarize"], dry_run=dry_run,
-                        compute=compute)
+                        compute=compute,
+                        method=config["transcribe"].get("diarizer", "auto"),
+                        voices=_voices())
         if not dry_run and job.segments:
             prepare.run(job, enabled=config["transcribe"].get("clean_cues", True),
                         interjections=config["transcribe"].get(
@@ -235,6 +253,13 @@ def run_job(
                 "transcribe"].get("interjections_as_reactions", True))
             decisions.sound_tags(job, oracle, decision_options)
             save_script(job, work)  # transcript + speakers survive a crash now
+
+    def _onsets():
+        # Subtitle timing lags speech; start each cue where its voice starts.
+        if dry_run or not job.segments or not timing_options.get("snap_onsets"):
+            return
+        onsets.snap(job)
+        save_script(job, effective_work)
 
     def _translate():
         translation_work = (
@@ -416,6 +441,19 @@ def run_job(
         levels.measure_sources(job, level_options, cancel=cancel_event, work_dir=work)
         if not dry_run and job.segments:
             save_script(job, effective_work)
+
+    def _measure_all():
+        # Every line's level against its speaker, whatever the levels mode:
+        # an analysis exists to say how each line was performed.
+        levels.measure_sources(job, {**level_options, "measure_source": True},
+                               cancel=cancel_event, work_dir=work)
+        if job.segments:
+            save_script(job, effective_work)
+
+    def _analyze():
+        compute_device = resolve_device("transcribe", compute)
+        analysis.run(job, work, whisper_model=config["transcribe"].get(
+            "whisper_model", "large-v3"), device=compute_device)
 
     def _levels():
         # A reviewer's per-line gain is merged over the configured map here, so
@@ -608,6 +646,7 @@ def run_job(
         ("cast", _ensure_cast),
         ("translate", _translate),
         ("edits", _edits),
+        ("onsets", _onsets),
         ("measure", _measure),
         ("synthesize", _synthesize),
         ("candidates", _candidates),
@@ -667,6 +706,11 @@ def run_job(
         ),
         ("validate", _validate),
     ]
+    if job.kind == "analyze":
+        # The first half of a dub and no more: who says what, and how.
+        keep = ("probe", "separate", "transcribe", "diarize")
+        steps = [step for step in steps if step[0] in keep] + [
+            ("measure", _measure_all), ("analyze", _analyze)]
     if job.kind == "audition":
         separation = next(step for step in steps if step[0] == "separate")
         steps = [step for step in steps if step[0] != "separate"]
@@ -695,7 +739,8 @@ def run_job(
                 on_stage(name, i, total)
             with report.stage(name):
                 fn()
-        if not dry_run and config["dub"].get("preserve_versions", True):
+        if not dry_run and job.kind != "analyze" and config["dub"].get(
+                "preserve_versions", True):
             with report.stage("save_version"):
                 # A candidate the export check rejected is kept on disk for
                 # diagnosis, but it is not saved as a version: a saved version

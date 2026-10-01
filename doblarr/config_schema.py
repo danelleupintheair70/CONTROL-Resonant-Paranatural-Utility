@@ -54,6 +54,9 @@ class DiscoveryModel(_Section):
     auto_scan: bool = False
     cache_ttl: int = 300
     webhook_debounce: int = 30
+    # Plex fills in what Sonarr and Radarr do not list (see doblarr.plex_library).
+    plex: bool = True
+    plex_unmatched: bool = False    # also titles Plex could not match to TMDB/TVDB
 
 
 class FilteringModel(_Section):
@@ -127,6 +130,8 @@ class TranscribeModel(_Section):
     source: str = "subtitles"
     whisper_model: str = "large-v3"
     diarize: bool = True
+    # auto: pyannote when HF_TOKEN is set, else local voice grouping (no account)
+    diarizer: Literal["auto", "pyannote", "local"] = "auto"
     clean_cues: bool = True
     # A cue that is only a reaction written as a word ("Tsk!", "Heh heh") becomes
     # a reaction event instead of a line for the engine to act.
@@ -136,6 +141,22 @@ class TranscribeModel(_Section):
     device: str = "auto"
     compute_type: str = "auto"
     keep_models_loaded: bool = False
+
+
+class SpeakersModel(_Section):
+    """Which voice models tell the speakers apart (see doblarr.voice_models).
+
+    One model or several joined; `custom` registers any sherpa-onnx speaker
+    embedding ONNX as {id, name, url or path, threshold}.
+    """
+
+    models: list[str] = ["wespeaker-resnet34", "3dspeaker-eres2netv2"]
+    threshold: float | None = None     # grouping distance; blank uses the models' own
+    models_dir: str = ""               # blank: <work_dir>/models/speakers
+    custom: list[dict] = []
+    # Also hear the video's other audio tracks (the dubs): "all", a list of
+    # languages or stream numbers, or [] for the original dialogue alone.
+    tracks: str | list[str] = "all"
 
 
 class ComputeModel(_Section):
@@ -184,6 +205,9 @@ class DubModel(_Section):
     output_codec: str = "aac"
     output_bitrate: str = "192k"
     pronunciations: dict[str, str] = {}
+    # Japanese source, Spanish target: respell the glossary's names for the
+    # engine the way Latin American dubs say them (Jiro -> Yiro).
+    romaji_names: bool = False
     line_edits: dict[str, dict] = {}
     cast_group: str = ""
     character_map: dict[str, str] = {}
@@ -277,6 +301,9 @@ class TimingModel(_Section):
     """
 
     mode: Literal["whole", "phrase"] = "whole"
+    # Move each subtitle cue's start to the speech onset in the dialogue stem
+    # (fansub timing often trails the voice by a few hundred milliseconds).
+    snap_onsets: bool = False
     max_stretch: float = 1.3
     min_stretch: float = 1.0        # 1.0 = never slow speech down
     handle_ms: float = 40           # margin kept each side of a phrase
@@ -318,6 +345,11 @@ class CoverageModel(_Section):
     max_seconds: float = 4.0
     leakage_check: bool = False
     generate: bool = False
+    # Voice in the separated dialogue stem that no line covers (an untagged
+    # laugh, a grunt) becomes an event; auto_retain keeps each unreviewed
+    # vocal event's original sound where its window is clean and short.
+    detect: bool = False
+    auto_retain: bool = False
     events: dict[str, dict] = {}    # per-event decisions set in review
     assets: dict[str, str] = {}     # machine-local replacement sounds
     extra: list[dict] = []          # events a person added by hand
@@ -399,6 +431,7 @@ class ConfigModel(_Section):
     voicestudio: VoiceStudioModel = VoiceStudioModel()
     translate: TranslateModel = TranslateModel()
     transcribe: TranscribeModel = TranscribeModel()
+    speakers: SpeakersModel = SpeakersModel()
     separate: SeparateModel = SeparateModel()
     compute: ComputeModel = ComputeModel()
     dub: DubModel = DubModel()

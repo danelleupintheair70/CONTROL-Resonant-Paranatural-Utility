@@ -102,6 +102,20 @@ def assign_default_cast(speakers, existing: list[dict] | None = None) -> list[di
     return existing
 
 
+def merge_cast(own: list[dict] | None, inherited: list[dict]) -> list[dict]:
+    """The title's cast over the series voices it inherits.
+
+    A title entry with its own voice wins. One without a voice does not blank an
+    inherited voice, but is otherwise kept: in clone mode its reference choice
+    and fallback voice are the whole point of the entry.
+    """
+    assigned = {e["speaker_id"]: e for e in inherited}
+    for entry in own or []:
+        if entry.get("voice") or entry["speaker_id"] not in assigned:
+            assigned[entry["speaker_id"]] = entry
+    return list(assigned.values())
+
+
 def character_cast(job, db, group, mapping):
     """Reuse only explicitly mapped characters; diarization numbers are not identities."""
     if not group or not mapping:

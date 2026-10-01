@@ -36,6 +36,50 @@ class PlexClient(ArrClient):
         return [{"key": s["key"], "type": s["type"], "title": s["title"]}
                 for s in data["MediaContainer"].get("Directory", [])]
 
+    # -- library reading (Plex as a discovery source) ---------------------
+    def section_items(self, section_key: str) -> list[dict]:
+        """Every movie or show in a section, with its external ids."""
+        data = self._get(f"/library/sections/{section_key}/all", {"includeGuids": 1},
+                         timeout=120)
+        return data["MediaContainer"].get("Metadata", [])
+
+    def leaves(self, rating_key: str) -> list[dict]:
+        """A show's episodes (or a movie itself), each with its file."""
+        data = self._get(f"/library/metadata/{rating_key}/allLeaves", timeout=60)
+        return data["MediaContainer"].get("Metadata", [])
+
+    def metadata(self, rating_key: str) -> dict:
+        """One item's full metadata, including every stream of every part."""
+        data = self._get(f"/library/metadata/{rating_key}")
+        found = data["MediaContainer"].get("Metadata") or [{}]
+        return found[0]
+
+    def image(self, path: str) -> tuple[bytes, str]:
+        """An artwork path (a poster) as bytes and its media type."""
+        resp = self._request("GET", path, headers={"Accept": "image/*"})
+        return resp.content, resp.headers.get("Content-Type", "image/jpeg")
+
+    @staticmethod
+    def external_ids(item: dict) -> dict[str, int]:
+        """{'tvdb': 81234, 'tmdb': 40404} from an item's Guid list."""
+        ids = {}
+        for guid in item.get("Guid") or []:
+            scheme, _, value = str(guid.get("id", "")).partition("://")
+            if scheme in ("tvdb", "tmdb") and value.isdigit():
+                ids[scheme] = int(value)
+        return ids
+
+    @staticmethod
+    def audio_languages(item: dict) -> list[str]:
+        """ISO 639-2 codes of every audio stream, in stream order; 'und' if untagged."""
+        codes = []
+        for media in item.get("Media") or []:
+            for part in media.get("Part") or []:
+                for stream in part.get("Stream") or []:
+                    if stream.get("streamType") == 2:
+                        codes.append(str(stream.get("languageCode") or "und").lower())
+        return codes
+
     @staticmethod
     def _meta_labels(m: dict) -> list[str]:
         return [lbl["tag"] for lbl in m.get("Label", [])]

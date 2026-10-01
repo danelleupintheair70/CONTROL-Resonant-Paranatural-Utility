@@ -3,10 +3,12 @@
 import datetime as _dt
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .. import discovery, plex_labels
+from ..clients.plex import PlexError
 from ..config import Config
 from ..errors import ConfigError
 from ..jobs import Worker
@@ -40,6 +42,18 @@ def build_router(config: Config, library: LibraryService, services: Services,
             "rescan_interval": config.get("discovery", {}).get("rescan_interval", "6h"),
             "queue_paused": worker.paused,
         }
+
+    @api.get("/api/plex/thumb")
+    def plex_thumb(path: str):
+        """A Plex poster fetched with Doblarr's token, which never reaches the browser."""
+        if not path.startswith("/library/metadata/") or ".." in path:
+            raise HTTPException(422, "Only Plex artwork paths are served")
+        try:
+            content, media_type = services.plex.image(path)
+        except (ConfigError, PlexError) as exc:
+            raise HTTPException(502, f"Plex artwork unavailable: {exc}") from exc
+        return Response(content=content, media_type=media_type,
+                        headers={"Cache-Control": "max-age=86400"})
 
     @api.get("/api/library")
     def list_library(refresh: bool = False):
