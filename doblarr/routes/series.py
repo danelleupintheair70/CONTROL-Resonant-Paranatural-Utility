@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import AfterValidator, BaseModel, Field
 
-from .. import analysis, plex_library, speaking
+from .. import analysis, original_language, plex_library, speaking
 from ..artifacts import read_json
 from ..cache import TTLCache
 from ..clients.plex import PlexError
@@ -46,6 +46,10 @@ class EpisodeQueueIn(BaseModel):
     target_lang: LanguageTag
     kind: Literal["full", "tease", "audition", "analyze"] = "full"
     missing_only: bool = True
+
+
+class OriginalIn(BaseModel):
+    lang: str = Field(default="", pattern=r"^([a-z]{2})?$")
 
 
 def build_router(config, services, store, bus):
@@ -95,7 +99,13 @@ def build_router(config, services, store, bus):
     def detail(tvdb_id, target, refresh=False):
         show, episodes, files = inventory(tvdb_id, refresh)
         indexed = {f["id"]: f for f in files}
-        original = _name_to_iso2((show.get("originalLanguage") or {}).get("name"))
+        metadata = _name_to_iso2((show.get("originalLanguage") or {}).get("name"))
+        # A show only Plex has carries no original language: the episode files
+        # tell (doblarr.original_language), probed once and kept for the show.
+        spoken = original_language.for_title(
+            store.db, original_language.cache_key("show", tvdb_id),
+            [f.get("path") for f in files], metadata)
+        original = spoken.get("lang") or metadata
         base = base_language(target)  # media audio tags are base-language only
         jobs = store.list()
         rows = []
@@ -156,6 +166,8 @@ def build_router(config, services, store, bus):
             "source": "Plex · Shows" if show.get("source") == "Plex" else "Sonarr · Shows",
             "path": show.get("path"),
             "original": original,
+            "original_from": {k: spoken.get(k) for k in ("source", "confidence", "evidence",
+                                                         "candidates", "probed")},
             "media_type": "show",
             "target_lang": target,
             "episodes": rows,
@@ -233,6 +245,17 @@ def build_router(config, services, store, bus):
         refresh: bool = False,
     ):
         return detail(tvdb_id, target_lang, refresh)
+
+    @api.put("/api/series/{tvdb_id}/original-language")
+    def set_original(tvdb_id: int, body: OriginalIn):
+        """A person says what the show was made in; it outranks any detection."""
+        key = original_language.cache_key("show", tvdb_id)
+        if not body.lang:
+            store.db.save_plan(key, "Original language", {})
+            return {"lang": "", "source": "cleared"}
+        return original_language.remember(store.db, key, {
+            "lang": body.lang, "confidence": "manual", "evidence": ["set by hand"]},
+            source="manual")
 
     @api.post("/api/series/{tvdb_id}/queue")
     def queue_episodes(tvdb_id: int, body: EpisodeQueueIn):

@@ -355,12 +355,31 @@ export function createTitle({ goTitle, goEpisode, goTitleTab, findItemByKey, set
               <div class="m" style="font-size:13px;padding-top:8px;word-break:break-all;user-select:all;">${escapeHtml(String(v))}</div>
             </div>`).join("")}
         </div>
+        ${(item.tvdb_id || item.parent?.tvdb_id) ? `<div class="panel" style="padding:20px 24px 22px;">
+          <h3 style="font-size:17px;margin:0 0 2px;">Original language</h3>
+          <p style="margin:0 0 12px;font-size:13px;color:var(--muted);">What the show was made in: the audio a dub and an analysis start from. When the library does not say, it is read from the episode files (the default track, tracks titled as dubs, subtitles that only a dub needs) and kept for the show. Set it here to override; leave it blank to detect again.</p>
+          <form class="original-form" data-original-form style="display:flex;gap:10px;align-items:center;">
+            <input class="input m" data-original value="${escapeHtml(item.original === "??" ? "" : item.original || "")}" maxlength="2" size="4" placeholder="ja" aria-label="Original language (two letters)">
+            <button type="submit" class="btn btn-secondary">Save</button>
+            <span class="hint" role="status" data-original-status></span>
+          </form>
+        </div>` : ""}
         <div class="panel" style="padding:20px 24px 22px;">
           <h3 style="font-size:17px;margin:0 0 10px;">Audio languages</h3>
           <div class="lang-chips">${langChipsHtml(item)}</div>
           <p style="margin:12px 0 0;font-size:12.5px;color:var(--muted);">Dashed chips are target languages with no audio track yet — that's what a dub adds.</p>
         </div>
       </div>`;
+    const originalForm = body.querySelector("[data-original-form]");
+    if (originalForm) originalForm.onsubmit = async e => {
+      e.preventDefault();
+      const lang = originalForm.querySelector("[data-original]").value.trim().toLowerCase();
+      const status = originalForm.querySelector("[data-original-status]");
+      try {
+        await api(`series/${item.tvdb_id || item.parent.tvdb_id}/original-language`, { method: "PUT", json: { lang } });
+        status.textContent = lang ? `Saved: ${lang}. New jobs and analyses start from it.` : "Cleared; it is detected from the files again.";
+      } catch (error) { status.textContent = error.message; }
+    };
   }
 
   function renderTitleJobs(list) {

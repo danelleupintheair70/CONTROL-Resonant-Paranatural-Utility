@@ -175,9 +175,9 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     if (status) status.textContent = text;
   }
 
-  async function saveNames(data, names, message) {
+  async function saveNames(data, names, message, keep = []) {
     try {
-      await api('analysis/names', { method: 'PUT', json: { path, names } });
+      await api('analysis/names', { method: 'PUT', json: { path, names, keep } });
       await load();
       say(message);
     } catch (error) { say(error.message); }
@@ -287,6 +287,12 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
       const parts = [said.answers.length ? `answers to ${said.answers.slice(0, 2).map(a => `“${esc(a.name)}” ${a.count}×`).join(', ')}` : '',
         said.calls.length ? `calls ${said.calls.slice(0, 3).map(a => esc(a.name)).join(', ')}` : ''].filter(Boolean);
       const clash = said.suggests && !(name && sameName(name, said.suggests));
+      const auto = data.named_by?.[label];
+      if (auto) {
+        return `<p class="cast-clue cast-clue-auto">Named by the dialogue: it answers when ${esc(name)} is called (${auto.answers}×)${auto.replaced ? `, was ${esc(auto.replaced)}` : ''}.
+          <button type="button" class="btn btn-ghost" data-undo-dialogue="${esc(label)}" data-was="${esc(auto.replaced || '')}">${auto.replaced ? `Keep ${esc(auto.replaced)}` : 'Undo'}</button></p>
+          ${parts.length ? `<p class="cast-clue">In the dialogue: ${parts.join(' · ')}</p>` : ''}`;
+      }
       return `<p class="cast-clue" title="A line that calls a name is spoken to that person; the next line in another voice is usually theirs.">In the dialogue: ${parts.join(' · ')}</p>
         ${clash ? `<p class="cast-clue-warn">${name ? `Named ${esc(name)}, but the` : 'The'} dialogue says this is <strong>${esc(said.suggests)}</strong>: it answers when ${esc(said.suggests)} is called (${said.answers[0].count}×).
           <button type="button" class="btn btn-ghost" data-suggest="${esc(label)}" data-suggest-name="${esc(said.suggests)}">Name it ${esc(said.suggests)}</button></p>` : ''}`;
@@ -402,6 +408,13 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     mountSelection(box, data, { path, reload: load, say });
     const regroupButton = box.querySelector('[data-regroup]');
     if (regroupButton) regroupButton.onclick = () => regroup(models, found);
+    box.querySelectorAll('[data-undo-dialogue]').forEach(b => b.onclick = () => {
+      const label = b.dataset.undoDialogue;
+      const names = { ...data.names };
+      if (b.dataset.was) names[label] = b.dataset.was; else delete names[label];
+      saveNames(data, names, b.dataset.was ? `${label} is ${b.dataset.was} again; the dialogue will not rename it.`
+        : `${label} has no name again; the dialogue will not rename it.`, [label]);
+    });
     box.querySelectorAll('[data-suggest]').forEach(b => b.onclick = () => {
       const label = b.dataset.suggest;
       saveNames(data, { ...data.names, [label]: b.dataset.suggestName },

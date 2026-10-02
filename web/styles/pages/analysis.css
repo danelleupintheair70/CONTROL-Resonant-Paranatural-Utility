@@ -109,3 +109,6 @@
   background:color-mix(in srgb, var(--color-accent) 8%, transparent);
   & .btn { padding:2px 10px; font-size:12px; }
 }
+.cast-clue-auto { color:var(--color-text);
+  & .btn { padding:1px 8px; font-size:12px; margin-left:6px; }
+}

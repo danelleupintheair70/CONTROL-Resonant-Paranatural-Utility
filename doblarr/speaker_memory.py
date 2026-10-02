@@ -322,3 +322,51 @@ def speaker_stats(data: dict) -> list[dict]:
 
 def median_or_none(values: list[float]) -> float | None:
     return round(statistics.median(values), 3) if values else None
+
+
+def name_from_dialogue(db, ident: dict, lines: list[dict]) -> list[dict]:
+    """Name voice groups the dialogue clearly identifies (doblarr.dialogue_clues).
+
+    A group takes the name it answers to when that is strong: at least three
+    answers, or two for a group nobody named, and never a name it calls
+    itself. It replaces a name that disagrees; the old one is kept in the
+    evidence so the page can offer to undo, and a name a person kept after an
+    undo (evidence ``kept``) is never replaced. Writes ``accepted`` links.
+    Returns what changed: [{label, name, replaced, answers}].
+    """
+    from . import dialogue_clues
+
+    revision_id, series_id = ident.get("revision_id"), ident.get("series_id")
+    if db is None or not revision_id or not series_id or not lines:
+        return []
+    characters = identity.characters(db, series_id)
+    cast = [n for c in characters for n in [c["name"], *(c.get("aliases") or [])]]
+    clues = dialogue_clues.read(lines, cast)["groups"]
+    links = {r["ref"]: r for r in identity.associations(db, revision_id, "cluster")}
+    names = {c["id"]: c for c in identity.characters(db, series_id, include_retired=True)}
+    changes = []
+    for label, said in sorted(clues.items()):
+        wanted = said.get("suggests")
+        if not wanted or not said["answers"]:
+            continue
+        current = links.get(label) or {}
+        if any(e.get("kind") == "kept" for e in current.get("evidence") or []):
+            continue
+        named = names.get(current.get("character_id") or "")
+        count = said["answers"][0]["count"]
+        if count < (2 if named is None else 3):
+            continue
+        if named is not None and wanted.casefold() in {
+                n.casefold() for n in [named["name"], *(named.get("aliases") or [])]}:
+            continue
+        character = identity.ensure_character(db, series_id, wanted, origin="dialogue")
+        identity.associate(db, revision_id, "cluster", label, character["id"], state="accepted",
+                           locked=False, base_revision=current.get("revision", 0),
+                           evidence=[{"kind": "dialogue", "answers": count,
+                                      "replaced": named["name"] if named else "",
+                                      "reader": dialogue_clues.READER}])
+        changes.append({"label": label, "name": character["name"],
+                        "replaced": named["name"] if named else "", "answers": count})
+    if changes:
+        log.info("dialogue named %s", ", ".join(f"{c['label']}={c['name']}" for c in changes))
+    return changes

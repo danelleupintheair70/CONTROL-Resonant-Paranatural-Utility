@@ -56,6 +56,8 @@ FRAME_CACHE = 5000        # stills of lines kept on disk (a few KB each)
 class NamesIn(BaseModel):
     path: str = Field(min_length=1, max_length=2000)
     names: dict[str, str] = Field(default_factory=dict)
+    # Groups whose name a person kept against the dialogue: never renamed by it.
+    keep: list[str] = Field(default_factory=list, max_length=200)
 
 
 class LineIn(BaseModel):
@@ -290,6 +292,15 @@ def build_router(config, store) -> APIRouter:
         return {"models": voice_models.describe(config),
                 "folder": str(voice_models.folder(config))}
 
+    def named_by_dialogue(ident: dict | None) -> dict:
+        """Groups the dialogue named, with the name each replaced (for an undo)."""
+        found = {}
+        for row in identity.associations(db, ident["revision_id"], "cluster") if ident else []:
+            said = next((e for e in row.get("evidence") or [] if e.get("kind") == "dialogue"), None)
+            if said and row.get("state") == "accepted":
+                found[row["ref"]] = said
+        return found
+
     @api.get("/api/analysis")
     def get_analysis(path: str):
         active = running(path)
@@ -365,6 +376,7 @@ def build_router(config, store) -> APIRouter:
                 "grouping": grouped.get("diagnostics") or {},
                 "cast": cast,
                 "suggestions": suggestions,
+                "named_by": named_by_dialogue(ident),
                 # What the lines themselves say about each voice (names it
                 # answers to, names it calls): catches a misnamed group.
                 "dialogue": dialogue_clues.read(
@@ -411,15 +423,20 @@ def build_router(config, store) -> APIRouter:
             row = current.get(label)
             if name:
                 character = identity.ensure_character(db, ident["series_id"], name)
-                if row and row.get("character_id") == character["id"] and \
-                        row.get("state") == "manual":
+                same = bool(row) and row.get("character_id") == character["id"]
+                kept = label in body.keep or (not same and any(
+                    e.get("kind") == "dialogue" for e in (row or {}).get("evidence") or []))
+                if same and not kept and row.get("state") in ("manual", "accepted"):
                     continue
+                # A name chosen over the dialogue's is a person's answer to it.
                 identity.associate(db, ident["revision_id"], "cluster", label, character["id"],
-                                   state="manual", evidence=[{"kind": "named"}],
+                                   state="manual",
+                                   evidence=[{"kind": "kept" if kept else "named"}],
                                    base_revision=row["revision"] if row else 0)
             elif row and row.get("character_id"):
                 identity.associate(db, ident["revision_id"], "cluster", label, None,
-                                   state="manual", evidence=[{"kind": "cleared"}],
+                                   state="manual", evidence=[{"kind": "kept" if label in body.keep
+                                                              else "cleared"}],
                                    base_revision=row["revision"])
         tagged: dict[str, int] = {}
         if script is not None:
@@ -584,6 +601,10 @@ def build_router(config, store) -> APIRouter:
                 for seg in _read(script).get("segments") or []]
         speaker_memory.carry_identities(db, ident, before, after, seconds, cues)
         relocked = speaker_memory.reapply_line_locks(db, ident, script, grouped)
+        speaker_memory.name_from_dialogue(db, ident, [
+            {"speaker": seg.get("speaker"), "start": seg["start"], "end": seg["end"],
+             "text": seg.get("text_src") or "", "cue": (seg.get("cue") or {}).get("cue_id")}
+            for seg in _read(script).get("segments") or []])
         changed = membership_changed(ident, script, "regrouped")
         names = load_names(db, body.path, ident)
         return {"model": voice_models.combined_id(models), "voices": len(set(after)),

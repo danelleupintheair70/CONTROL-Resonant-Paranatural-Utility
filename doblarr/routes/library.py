@@ -55,6 +55,20 @@ def build_router(config: Config, library: LibraryService, services: Services,
         return Response(content=content, media_type=media_type,
                         headers={"Cache-Control": "max-age=86400"})
 
+    def with_known_originals(rows: list[dict]) -> list[dict]:
+        """Fill "??" with what a show's or film's files showed (kept, never probed here)."""
+        from .. import original_language
+
+        for row in rows:
+            if row.get("original") not in ("??", "", None):
+                continue
+            key = original_language.cache_key(row.get("media_type") or "", row.get("tvdb_id"),
+                                              row.get("tmdb_id"))
+            lang = original_language.remembered(worker.store.db, key).get("lang") if key else ""
+            if lang:
+                row["original"] = lang
+        return rows
+
     @api.get("/api/library")
     def list_library(refresh: bool = False):
         items, warnings = library.scan(force=refresh)
@@ -66,7 +80,7 @@ def build_router(config: Config, library: LibraryService, services: Services,
             "target_languages": config["general"]["target_languages"],
             "counts": discovery.summarize(items),
             "warnings": warnings,
-            "items": discovery.to_dicts(items),
+            "items": with_known_originals(discovery.to_dicts(items)),
         }
 
     @api.post("/api/plex/labels")

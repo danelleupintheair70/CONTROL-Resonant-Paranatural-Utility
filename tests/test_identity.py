@@ -245,3 +245,29 @@ def test_a_fresh_grouping_keeps_names_on_the_lines_not_on_the_group_numbers(db):
     same = [Segment(0, 0.0, 2.0, "a", speaker="SPEAKER_01", cue_id="x0")]
     assert speaker_memory.carry_by_time(
         db, ident, [{"start": 0.0, "end": 2.0, "speaker": "SPEAKER_01"}], same) is None
+
+
+def test_the_dialogue_names_a_voice_it_clearly_identifies_and_respects_a_kept_name(db):
+    from doblarr import speaker_memory
+
+    ident = {"revision_id": "rev-d", "series_id": "show:tvdb:9"}
+    kaito = identity.ensure_character(db, "show:tvdb:9", "Kaito")
+    identity.associate(db, "rev-d", "cluster", "V2", kaito["id"], state="manual")
+
+    def line(speaker, start, text):
+        return {"speaker": speaker, "start": start, "end": start + 1.5, "text": text,
+                "cue": f"c{start}"}
+
+    lines = [line("V1", 0, "What is it, Ren?"), line("V2", 2, "A rumour."),
+             line("V3", 4, "Ren-sama!"), line("V2", 6, "Ready."),
+             line("V1", 8, "Well done, Ren."), line("V2", 10, "Thank you."),
+             line("V1", 12, "Kaito!"), line("V4", 14, "Yes?")]
+    changes = speaker_memory.name_from_dialogue(db, ident, lines)
+    assert changes == [{"label": "V2", "name": "Ren", "replaced": "Kaito", "answers": 3}]
+    ren = identity.find_character(db, "show:tvdb:9", "Ren")
+    assert speaker_memory.labels_to_characters(db, "rev-d")["V2"] == ren["id"]
+    # A person keeps Kaito: the dialogue never renames that group again.
+    current = next(r for r in identity.associations(db, "rev-d", "cluster") if r["ref"] == "V2")
+    identity.associate(db, "rev-d", "cluster", "V2", kaito["id"], state="manual",
+                       evidence=[{"kind": "kept"}], base_revision=current["revision"])
+    assert speaker_memory.name_from_dialogue(db, ident, lines) == []

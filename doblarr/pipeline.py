@@ -119,6 +119,19 @@ def run_job(
     if base != job.target_lang:
         # engines and media tags keep the base language; the locale holds the region
         job.target_lang = base
+    unknown_source = (job.source_lang or "auto").lower() in ("auto", "und", "")
+    if unknown_source and not dry_run and job.input_file and Path(job.input_file).is_file():
+        # Resolved before the work folder is chosen: folders are keyed by the
+        # source language, and an "auto" run must share the original's work.
+        from . import original_language
+
+        found = original_language.detect(original_language.probe(Path(job.input_file)))
+        if found["lang"]:
+            log.info("source language detected as %s: %s", found["lang"],
+                     "; ".join(found["evidence"]))
+            job.source_lang = found["lang"]
+            job.metrics["source_detected"] = {k: found[k] for k in (
+                "lang", "stream", "confidence", "evidence", "candidates")}
     shared_work = media_work(config.work_dir, job)
     locale_ns = job.target_locale or job.target_lang  # regional targets get their own namespace
     work = shared_work / locale_ns
@@ -278,6 +291,15 @@ def run_job(
                         voices=_voices())
         if not dry_run and job.segments and prior_groups.get("segments"):
             _carry_names()
+        if not dry_run and job.segments and job.kind == "analyze" and db is not None:
+            from . import speaker_memory
+
+            named = speaker_memory.name_from_dialogue(
+                db, job.metrics.get("identity") or {},
+                [{"speaker": seg.speaker, "start": seg.start, "end": seg.end,
+                  "text": seg.text_src, "cue": seg.cue_id} for seg in job.segments])
+            if named:
+                job.metrics["named_by_dialogue"] = named
         if not dry_run and job.segments:
             prepare.run(job, enabled=config["transcribe"].get("clean_cues", True),
                         interjections=config["transcribe"].get(
