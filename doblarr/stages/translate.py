@@ -24,6 +24,7 @@ def run(
     synopsis=None,
     flag_reactions=False,
     references=None,
+    knowledge=None,
 ):
     """Translate every pending line.
 
@@ -40,8 +41,14 @@ def run(
             seg.text_translated = seg.text_translated or seg.text_src
         return
     size = max(1, min(32, int(batch_size)))
+    # Accepted title knowledge changes what a line means, so it joins the
+    # memory context: a reused translation made without it is not reused blind.
+    from ..artifacts import digest as _digest
+
+    remembered = (f"{synopsis or ''}|knowledge:{_digest(knowledge)[:12]}" if knowledge
+                  else synopsis)
     for position, seg in enumerate(job.segments):
-        context = memory.scene_context(job, position, glossary, synopsis)
+        context = memory.scene_context(job, position, glossary, remembered)
         if ((seg.memory_context and seg.memory_context != context)
                 or (job.script_is_target and job.translation_options.get("adapt_region")
                     and not seg.translation_provenance)):
@@ -55,7 +62,7 @@ def run(
         if cancel is not None and cancel.is_set():
             raise JobCancelled("cancelled during memory lookup")
         seg.memory_context = memory.scene_context(job, positions[seg.index], glossary,
-                                                  synopsis)
+                                                  remembered)
         reason = "reuse-disabled"
         match = None
         if memory_db is not None and job.translation_options.get("reuse_memory"):
@@ -124,6 +131,7 @@ def run(
                 glossary=glossary,
                 # only when there is one, so translators without it still work
                 **({"synopsis": synopsis} if synopsis else {}),
+                **({"knowledge": knowledge} if knowledge else {}),
             )
         else:
             results = [

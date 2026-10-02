@@ -134,6 +134,7 @@ def run(
     threshold=DUCK_THRESHOLD,
     attack=DUCK_ATTACK_MS,
     release=DUCK_RELEASE_MS,
+    bed_policy: dict | None = None,
 ) -> Plan | None:
     out = work_dir / f"{work_stem(job)}.{job.target_lang}.dub.wav"
     job.dubbed_track = out
@@ -144,6 +145,10 @@ def run(
     segs = placements(job)
     dependencies = [row.audio_clip for row in segs]
     dependencies += [p for p in (job.background, job.source_audio) if p]
+    if bed_policy:
+        # One background policy owns the bed (doblarr.bedpolicy): its rendered
+        # bed replaces the sidechain ducking, which is bypassed, not combined.
+        dependencies.append(Path(bed_policy["path"]))
     request = {
         "inputs": [stamp(p) for p in dependencies],
         "ducking": ducking_ratio,
@@ -153,6 +158,7 @@ def run(
         "events": [[row.key, row.start, row.end] for row in segs if row.kind == "event"],
         "version": 3,
         "mix": [background_volume, fallback_volume, threshold, attack, release],
+        **({"bed_policy": bed_policy["fingerprint"]} if bed_policy else {}),
     }
     # The mix has its own cache namespace: a bed level or ducking change must
     # not look like a dialogue-generation change.
@@ -163,6 +169,8 @@ def run(
     if not segs:
         raise RuntimeError("mix: no generated clips to place")
     bed = job.background or job.source_audio
+    if bed_policy:
+        bed = Path(bed_policy["path"])
     if sum(1 for row in segs if row.kind == "dialogue") != len(job.segments):
         raise RuntimeError("mix: missing generated dialogue clips")
     if bed is None:
@@ -231,7 +239,9 @@ def run(
     args += ["-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le"]
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    ratio = _parse_ratio(ducking_ratio)
+    ratio = None if bed_policy else _parse_ratio(ducking_ratio)
+    job.metrics["mix_ducking"] = ("bed policy (sidechain bypassed)" if bed_policy
+                                  else f"sidechain {ducking_ratio}")
     temp = out.with_suffix(".partial.wav")
     try:
         run_ffmpeg(

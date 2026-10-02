@@ -1,0 +1,18 @@
+  /* ---- Library poster grid ---- */
+  .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 20px; }
+  .poster-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    overflow: hidden; display: flex; flex-direction: column; }
+  .poster-card:hover { border-color: var(--line-strong); }
+  .poster-img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; object-position: center;
+    display: block; background: var(--color-neutral-200); }
+  .poster-fallback { width: 100%; aspect-ratio: 2 / 3; display: flex; align-items: center;
+    justify-content: center; text-align: center; padding: 12px; font-weight: 700;
+    font-size: 14px; line-height: 1.35; background: var(--color-neutral-200); color: var(--muted); }
+  .poster-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .lang-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .lang-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px;
+    font-weight: 600; padding: 2px 7px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--color-neutral-200); color: var(--color-neutral-700); }
+  .lang-chip.missing { border: 1px dashed var(--color-accent); background: transparent;
+    color: var(--color-accent-700); }
+  .app[data-theme="dark"] .lang-chip.missing { color: var(--color-accent); }

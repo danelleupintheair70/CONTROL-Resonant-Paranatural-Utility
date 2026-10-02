@@ -1,0 +1,49 @@
+  /* ---- App layout (from the original mockup) ---- */
+  .table th { border-bottom: 1px solid var(--line-strong); color: var(--muted); }
+  .table td { border-bottom: 1px solid var(--line); }
+  .m { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-feature-settings: "tnum" 1; }
+  .shell { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: 100vh; background: var(--color-bg); }
+  .navitem { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    padding: 10px 14px; border-radius: 10px; font-family: var(--font-body); font-size: 14px;
+    color: var(--muted); background: transparent; border: 0; cursor: pointer; }
+  .navitem:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); color: var(--color-text); }
+  .navitem[aria-current="page"] { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent-700); font-weight: 600; }
+  .dot9 { width: 7px; height: 7px; border-radius: 50%; flex: none; background: currentColor; opacity: 0.55; }
+  .navitem[aria-current="page"] .dot9 { opacity: 1; background: var(--color-accent); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .hint { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; max-width: 58ch; }
+  .bar { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--color-text) 12%, transparent); overflow: hidden; }
+  .bar > span { display: block; height: 6px; border-radius: 999px; background: var(--color-accent); }
+  .themebtn { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--color-text) 8%, transparent); }
+  .themebtn button { appearance: none; border: 0; cursor: pointer; border-radius: 999px; padding: 6px 13px;
+    font-family: var(--font-body); font-size: 12.5px; color: var(--muted); background: transparent; }
+  .themebtn button[aria-pressed="true"] { background: var(--color-bg); color: var(--color-text); font-weight: 600; box-shadow: var(--shadow-sm); }
+  .tab { appearance: none; background: transparent; border: 1px solid transparent; border-radius: 999px;
+    font-size: 13px; color: var(--muted); padding: 7px 14px; cursor: pointer; white-space: nowrap; font-family: var(--font-body); }
+  .tab:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+  .tab[aria-current="page"] { color: var(--color-text); background: var(--panel); border-color: var(--line-strong); font-weight: 600; }
+  .frow { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 8px 28px; padding: 15px 0; align-items: start; }
+  .frow + .frow { border-top: 1px solid var(--line); }
+  .flabel { font-size: 13.5px; font-weight: 600; padding-top: 8px; }
+  .fkey { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); margin-top: 3px; word-break: break-all; }
+  .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .opt { appearance: none; cursor: pointer; border: 1px solid var(--line-strong); background: transparent;
+    color: var(--muted); border-radius: 999px; padding: 6px 13px; font-family: var(--font-body); font-size: 12.5px; }
+  .opt:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+  .opt[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: #fff; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  [hidden] { display: none !important; }
+
+  @media (max-width: 1000px) { .frow { grid-template-columns: 1fr; gap: 6px; } .flabel { padding-top: 0; } }
+  @media (max-width: 980px) {
+    .shell { grid-template-columns: minmax(0, 1fr); }
+    .side { min-width:0; }
+    .side { position: static !important; height: auto !important; border-right: 0 !important; border-bottom: 1px solid var(--line) !important; }
+    .sidenav { flex-direction: row !important; overflow-x: auto; }
+    .navitem { width: auto; white-space: nowrap; }
+    .sidefoot { display: none !important; }
+  }
+  @media (max-width: 720px) {
+    .cards4 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+    header .input { max-width: 160px !important; }
+  }

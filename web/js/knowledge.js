@@ -2,6 +2,8 @@ import { api } from './api.js';
 import { escapeHtml as esc } from './dom.js';
 import { loadLanguages, languageName } from './languages.js';
 import { baseOf, listen, openCorrection } from './knowledge-correction.js';
+import { renderNarrative } from './narrative.js';
+import { renderTemplates } from './audio-templates.js';
 
 export function entriesQuery({ locale = '', kind = '', scope = '', status = '', q = '', page = 1, pageSize = 25 }) {
   const params = new URLSearchParams();
@@ -25,6 +27,8 @@ const TABS = [
   ['term', 'Terminology & phrases'],
   ['memory', 'Translation memory'],
   ['packs', 'Installed packs'],
+  ['narrative', 'Title knowledge'],
+  ['templates', 'Audio templates'],
 ];
 
 export function createKnowledge() {
@@ -84,6 +88,14 @@ export function createKnowledge() {
     }
     if (view.tab === 'packs') {
       await renderPacks(body);
+      return;
+    }
+    if (view.tab === 'narrative') {
+      await renderNarrative(body, view);
+      return;
+    }
+    if (view.tab === 'templates') {
+      await renderTemplates(body, view);
       return;
     }
     body.innerHTML = `

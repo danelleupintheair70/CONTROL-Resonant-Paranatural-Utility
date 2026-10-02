@@ -1,0 +1,35 @@
+/* ---- Design tokens (self-contained; replaces the _ds bundle) ---- */
+  .app {
+    --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-heading: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+    --color-bg: #f3efec;
+    --color-surface: #ffffff;
+    --color-text: #1c1a19;
+    --color-accent: #ec573c;
+    --color-accent-700: #cf4a2e;
+    --color-divider: rgba(0,0,0,0.12);
+    --color-neutral-100: #ffffff;
+    --color-neutral-200: #f5f1ed;
+    --color-neutral-300: #e7e1db;
+    --color-neutral-600: #6f6a66;
+    --color-neutral-700: #565250;
+    --color-neutral-800: #2f2c2a;
+    --color-neutral-900: #1c1a19;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+
+    --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
+    --line: color-mix(in srgb, var(--color-text) 12%, transparent);
+    --line-strong: color-mix(in srgb, var(--color-text) 18%, transparent);
+    --muted: color-mix(in srgb, var(--color-text) 62%, transparent);
+    --panel: var(--color-neutral-100);
+  }
+  .app[data-theme="dark"] {
+    --color-bg: #191817; --color-surface: #232120; --color-text: #f2f0ef;
+    --color-accent: #ff6a50; --color-accent-700: #ff8f7c; --color-divider: rgba(255,255,255,0.16);
+    --color-neutral-100: #232120; --color-neutral-200: #2c2a28; --color-neutral-300: #3a3735;
+    --color-neutral-600: #9c9795; --color-neutral-700: #b4afac; --color-neutral-800: #d6d2cf; --color-neutral-900: #f2f0ef;
+    --line: rgba(255,255,255,0.10); --line-strong: rgba(255,255,255,0.16);
+    --muted: rgba(242,240,239,0.62); --panel: #201f1e;
+    color-scheme: dark;
+  }

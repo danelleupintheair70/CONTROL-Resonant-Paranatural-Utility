@@ -54,6 +54,9 @@ class Job:
     force: bool = False        # re-run every stage, ignoring cached artifacts
     overrides: dict | None = None   # per-title config overrides (dub.*, transcribe.*, …)
     knowledge_snapshot: dict | None = None   # frozen knowledge rule pins
+    # The accepted narrative revision this job reads (doblarr.knowledge.narrative):
+    # None = not frozen yet, {} = frozen with nothing activated for the series.
+    narrative_snapshot: dict | None = None
     show_ref: str = ""     # stable series id (series:<tvdb_id>) for show-scope rules
     output_file: str | None = None   # muxed result (planned path in dry-run)
     report_file: str | None = None
@@ -337,6 +340,18 @@ class Worker(threading.Thread):
             if snapshot is None:
                 snapshot = knowledge_snapshot(self.store.db)
                 self.store.update(job.id, knowledge_snapshot=snapshot)
+            narrative_pin = job.narrative_snapshot
+            if narrative_pin is None and job.kind != "analyze":
+                # Frozen once, at the first run: a resumed job keeps reading the
+                # revision it started with even after new knowledge is accepted.
+                from .knowledge import narrative
+
+                try:
+                    cache_dir = config.work_dir / "cache"
+                except (KeyError, TypeError):
+                    cache_dir = None    # a minimal config: identify without the cache
+                narrative_pin = narrative.freeze_for(self.store.db, job.input_file, cache_dir)
+                self.store.update(job.id, narrative_snapshot=narrative_pin)
             dj = DubJob(
                 input_file=Path(job.input_file) if job.input_file else Path(job.title),
                 source_lang=job.source_lang,
@@ -345,13 +360,16 @@ class Worker(threading.Thread):
                 kind=job.kind,
                 knowledge_snapshot=snapshot,
                 show_ref=job.show_ref,
+                narrative_snapshot=narrative_pin,
             )
             run_job(dj, config, dry_run=dry_run, on_stage=on_stage,
                     cancel_event=cancel_evt, services=self.services,
                     force=job.force, db=self.store.db, events=self.events,
                     on_progress=on_progress)
             out = str(dj.output_file) if dj.output_file else "(planned)"
-            message = f"{'planned' if dry_run else 'dubbed'} -> {out}"
+            message = (f"analysed {len(dj.segments)} lines · {len(dj.speakers)} voices"
+                       if dj.kind == "analyze" else
+                       f"{'planned' if dry_run else 'dubbed'} -> {out}")
             self.store.update(job.id, status="done", stage="mux", progress=100,
                               message=message,
                               report_file=str(dj.report_file) if dj.report_file else None,
@@ -362,7 +380,7 @@ class Worker(threading.Thread):
                               version_file=str(dj.version_file) if dj.version_file else None,
                               output_file=str(dj.output_file) if dj.output_file else None)
             self._publish(job, "done", progress=100, message=message)
-            if not dry_run:
+            if not dry_run and dj.kind != "analyze":
                 self._plex_refresh(job)
         except JobCancelled as exc:
             log.info("job %s cancelled", job.id)

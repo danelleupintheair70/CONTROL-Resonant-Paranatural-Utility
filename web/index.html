@@ -271,55 +271,7 @@
 
     <!-- ===== Voices ===== -->
     <section data-view="Voices" hidden>
-      <div style="padding: 30px 26px 44px;">
-        <div style="display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;">
-          <h3 style="font-size: 18px; margin: 0;">Cast — Alice in Borderland</h3>
-          <span class="m" style="font-size: 12.5px; color: var(--muted);">pyannote · 6 speakers · 41 min of reference</span>
-          <button type="button" class="btn btn-secondary" style="margin-left: auto;">Re-run diarization</button>
-        </div>
-
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 16px;">
-          <div class="card">
-            <span class="card-kicker">Speaker 01 · 38% of lines</span>
-            <span class="card-title">Arisu</span>
-            <p class="card-body">Cloned from 96s of longest-clean reference. Male · young · warm mid.</p>
-            <div class="card-meta"><span class="tag tag-neutral">clone</span><span class="m">sim 0.93</span></div>
-          </div>
-          <div class="card">
-            <span class="card-kicker">Speaker 02 · 21% of lines</span>
-            <span class="card-title">Usagi</span>
-            <p class="card-body">Cloned from 74s of longest-clean reference. Female · young · bright.</p>
-            <div class="card-meta"><span class="tag tag-neutral">clone</span><span class="m">sim 0.90</span></div>
-          </div>
-          <div class="card">
-            <span class="card-kicker">Speaker 03 · 14% of lines</span>
-            <span class="card-title">Chishiya</span>
-            <p class="card-body">Preset voice assigned by hand — reference audio was too crowded to clone.</p>
-            <div class="card-meta"><span class="tag tag-accent">preset</span><span class="m">sim 0.71</span></div>
-          </div>
-          <div class="card">
-            <span class="card-kicker">Speaker 04 · 9% of lines</span>
-            <span class="card-title">Unmatched</span>
-            <p class="card-body">Only 11s isolated — under the minimum reference length.</p>
-            <div class="card-meta"><span class="tag tag-outline">needs a voice</span><span class="m">sim 0.38</span></div>
-          </div>
-        </div>
-
-        <h3 style="font-size: 18px; margin: 32px 0 6px;">Voice library</h3>
-        <div class="panel" style="padding: 6px 18px 10px;">
-          <table class="table">
-            <thead>
-              <tr><th>Voice</th><th style="width: 200px;">Engine</th><th style="width: 150px;">Character</th><th style="width: 120px;">Reference</th><th style="width: 120px;">Used in</th><th style="width: 100px;"></th></tr>
-            </thead>
-            <tbody>
-              <tr><td style="font-weight: 600;">ao-narrator</td><td class="m" style="font-size: 13px;">chatterbox-multilingual</td><td>Male · 30s · flat</td><td class="m" style="font-size: 13px;">3m 12s</td><td class="m" style="font-size: 13px;">4 series</td><td><button type="button" class="btn btn-ghost">Preview</button></td></tr>
-              <tr><td style="font-weight: 600;">kestrel</td><td class="m" style="font-size: 13px;">chatterbox-multilingual</td><td>Female · 20s · bright</td><td class="m" style="font-size: 13px;">2m 48s</td><td class="m" style="font-size: 13px;">6 series</td><td><button type="button" class="btn btn-ghost">Preview</button></td></tr>
-              <tr><td style="font-weight: 600;">gravel</td><td class="m" style="font-size: 13px;">qwen3-tts</td><td>Male · 50s · low</td><td class="m" style="font-size: 13px;">1m 55s</td><td class="m" style="font-size: 13px;">2 series</td><td><button type="button" class="btn btn-ghost">Preview</button></td></tr>
-              <tr><td style="font-weight: 600;">lantern</td><td class="m" style="font-size: 13px;">chatterbox-multilingual</td><td>Female · 40s · warm</td><td class="m" style="font-size: 13px;">4m 02s</td><td class="m" style="font-size: 13px;">1 series</td><td><button type="button" class="btn btn-ghost">Preview</button></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <div style="padding: 30px 26px 44px;" id="voicesRoot"></div>
     </section>
 
     <!-- ===== Knowledge ===== -->

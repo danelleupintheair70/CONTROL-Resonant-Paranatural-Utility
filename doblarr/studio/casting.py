@@ -37,6 +37,17 @@ class ChoiceIn(BaseModel):
     audition: str = Field(default="", max_length=64)
     candidate: str = Field(default="", max_length=40)
     actor: str = Field(default="", max_length=100)
+    # Shaping heard in the audition travels with the voice: semitones applied
+    # to every line of the character after generation.
+    pitch_semitones: float = Field(default=0.0, ge=-6.0, le=6.0)
+    formant_semitones: float = Field(default=0.0, ge=-6.0, le=6.0)
+    # A character can have a voice per language and per variant (an age, a
+    # transformation, an edition). Blank means "any": the choice every more
+    # specific one falls back to. `character_id` ties the choice to the
+    # canonical character (doblarr.identity) instead of only its name.
+    character_id: str = Field(default="", max_length=40)
+    variant: str = Field(default="", max_length=40)
+    locale: str = Field(default="", max_length=16)
     clear: bool = False
 
 
@@ -59,7 +70,8 @@ def decide(db, body: ChoiceIn, base_revision: int | None = None) -> dict:
                                                    "characters": {}, "lines": {}}
     entry = {k: v for k, v in body.model_dump().items()
              if k in ("voice", "engine", "direction", "reference", "audition", "candidate",
-                      "actor") and v}
+                      "actor", "pitch_semitones", "formant_semitones", "character_id",
+                      "variant", "locale") and v}
     entry["decided_at"] = _now()
     characters = dict(current.get("characters") or {})
     lines = dict(current.get("lines") or {})
@@ -69,17 +81,58 @@ def decide(db, body: ChoiceIn, base_revision: int | None = None) -> dict:
         else:
             lines[body.scope_ref] = {**entry, "character": body.character}
     elif body.clear:
-        characters.pop(body.character, None)
+        characters.pop(choice_key(body.character, body.variant, body.locale), None)
     else:
-        characters[body.character] = entry
+        characters[choice_key(body.character, body.variant, body.locale)] = {
+            **entry, "character": body.character}
     return records.put(db, "casting", rid, {**current, "characters": characters,
                                             "lines": lines},
                        scope=ref, base_revision=base_revision)
 
 
+def choice_key(character: str, variant: str = "", locale: str = "") -> str:
+    """Where a choice is kept: the bare name for "any", else name|variant|locale."""
+    return character if not (variant or locale) else f"{character}|{variant}|{locale}"
+
+
+def pick(choices: dict, character: str, *, variant: str = "", locale: str = "") -> dict | None:
+    """The most specific choice for a character: exact variant and locale, then
+    locale alone, then variant alone, then the character's "any" choice."""
+    from ..languages import base_language
+
+    locales = [locale] + ([base_language(locale)] if locale and base_language(locale)
+                          != locale else []) if locale else []
+    keys = [choice_key(character, variant, loc) for loc in locales if variant]
+    keys += [choice_key(character, "", loc) for loc in locales]
+    keys += [choice_key(character, variant, "")] if variant else []
+    keys.append(character)
+    for key in keys:
+        if key in choices:
+            return choices[key]
+    return None
+
+
+def assignments(db, series_ref: str, character: str) -> list[dict]:
+    """Every series-level choice for one character: one per variant and locale."""
+    series = records.get(db, "casting", record_id("series", series_ref)) or {}
+    out = []
+    for key, choice in (series.get("characters") or {}).items():
+        name = key.split("|", 1)[0]
+        if name.casefold() == character.casefold():
+            out.append({"key": key, "variant": choice.get("variant", ""),
+                        "locale": choice.get("locale", ""), **choice})
+    return out
+
+
 def effective(db, *, series_ref: str, episode_ref: str, speakers: list[str],
-              mapping: dict | None = None) -> dict:
-    """Each speaker's voice and where it came from; line exceptions listed."""
+              mapping: dict | None = None, locale: str = "",
+              variants: dict | None = None) -> dict:
+    """Each speaker's voice and where it came from; line exceptions listed.
+
+    `locale` and `variants` (speaker -> variant id) pick the most specific
+    series choice; without them the character's "any" choice applies, as
+    before.
+    """
     mapping = dict(mapping or {})
     series = records.get(db, "casting", record_id("series", series_ref)) if series_ref else None
     episode = records.get(db, "casting", record_id("episode", episode_ref))
@@ -87,7 +140,8 @@ def effective(db, *, series_ref: str, episode_ref: str, speakers: list[str],
     for speaker in speakers:
         name = mapping.get(speaker, speaker)
         from_episode = ((episode or {}).get("characters") or {}).get(speaker)
-        from_series = ((series or {}).get("characters") or {}).get(name)
+        from_series = pick((series or {}).get("characters") or {}, name, locale=locale,
+                           variant=(variants or {}).get(speaker, ""))
         if from_episode:
             rows.append({"speaker": speaker, "character": name, "source": "episode",
                          **from_episode,
@@ -138,8 +192,17 @@ def to_voice_cast(existing: list[dict], chosen: dict) -> list[dict]:
             entry["engine"] = row["engine"]
         if row.get("direction"):
             entry["delivery"] = row["direction"]
+        # The choice decides the shaping outright: a voice picked without any
+        # must not inherit a shift an earlier choice left on the entry.
+        for key in ("pitch_semitones", "formant_semitones"):
+            if row.get(key):
+                entry[key] = row[key]
+            else:
+                entry.pop(key, None)
         # A new choice gets a new revision so cached takes of the old voice are
         # not reused for it.
         entry["revision"] = digest([row.get("voice"), row.get("engine"),
-                                    row.get("direction"), row.get("reference")])[:12]
+                                    row.get("direction"), row.get("reference"),
+                                    row.get("pitch_semitones") or 0,
+                                    row.get("formant_semitones") or 0])[:12]
     return list(by_speaker.values())

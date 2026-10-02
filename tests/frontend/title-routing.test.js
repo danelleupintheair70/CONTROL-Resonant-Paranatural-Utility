@@ -21,9 +21,11 @@ test('defaults and incompatible tabs resolve according to media type', () => {
   const episode = { media_type: 'episode', episode_id: 3 };
   assert.equal(resolveTitleTab(show), 'episodes');
   assert.equal(resolveTitleTab(movie), 'plan');
-  assert.equal(resolveTitleTab(episode), 'voices');
+  assert.equal(resolveTitleTab(episode), 'analysis');
+  assert.equal(resolveTitleTab(episode, 'voices'), 'voices');
+  assert.equal(resolveTitleTab(movie, 'analysis'), 'plan');
   assert.equal(resolveTitleTab(show, 'plan'), 'plan');
   assert.equal(resolveTitleTab(movie, 'episodes'), 'plan');
-  assert.equal(resolveTitleTab(episode, 'episodes'), 'voices');
+  assert.equal(resolveTitleTab(episode, 'episodes'), 'analysis');
   assert.equal(resolveTitleTab(episode, 'jobs'), 'jobs');
 });

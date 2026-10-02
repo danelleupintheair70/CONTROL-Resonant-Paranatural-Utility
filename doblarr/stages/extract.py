@@ -19,7 +19,27 @@ from .common import Plan, cached, dry, stage, work_stem
 log = logging.getLogger("doblarr.extract")
 
 
+def _detect_original(job: DubJob) -> int:
+    """For a job whose source language is "auto": the original track the file
+    shows (doblarr.original_language), or a clear error naming the candidates."""
+    from .. import original_language
+
+    found = original_language.detect(original_language.probe(job.input_file))
+    if not found["lang"]:
+        raise RuntimeError(
+            f"cannot tell which audio track of {job.input_file.name} is the original "
+            f"({', '.join(found['candidates']) or 'none tagged'}); set the source language")
+    log.info("source language detected as %s (audio %s): %s", found["lang"], found["stream"],
+             "; ".join(found["evidence"]))
+    job.source_lang = found["lang"]
+    job.metrics["source_detected"] = {k: found[k] for k in (
+        "lang", "stream", "confidence", "evidence", "candidates")}
+    return int(found["stream"])
+
+
 def _select_audio_stream(job: DubJob, cancel=None) -> int:
+    if (job.source_lang or "auto").lower() in ("auto", "und", ""):
+        return _detect_original(job)
     data = json.loads(
         run_ffprobe(
             [

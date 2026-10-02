@@ -54,6 +54,9 @@ class DiscoveryModel(_Section):
     auto_scan: bool = False
     cache_ttl: int = 300
     webhook_debounce: int = 30
+    # Plex fills in what Sonarr and Radarr do not list (see doblarr.plex_library).
+    plex: bool = True
+    plex_unmatched: bool = False    # also titles Plex could not match to TMDB/TVDB
 
 
 class FilteringModel(_Section):
@@ -127,6 +130,8 @@ class TranscribeModel(_Section):
     source: str = "subtitles"
     whisper_model: str = "large-v3"
     diarize: bool = True
+    # auto: pyannote when HF_TOKEN is set, else local voice grouping (no account)
+    diarizer: Literal["auto", "pyannote", "local"] = "auto"
     clean_cues: bool = True
     # A cue that is only a reaction written as a word ("Tsk!", "Heh heh") becomes
     # a reaction event instead of a line for the engine to act.
@@ -136,6 +141,26 @@ class TranscribeModel(_Section):
     device: str = "auto"
     compute_type: str = "auto"
     keep_models_loaded: bool = False
+
+
+class SpeakersModel(_Section):
+    """Which voice models tell the speakers apart (see doblarr.voice_models).
+
+    One model or several joined; `custom` registers any sherpa-onnx speaker
+    embedding ONNX as {id, name, url or path, threshold}.
+    """
+
+    models: list[str] = ["wespeaker-resnet34", "3dspeaker-eres2netv2"]
+    threshold: float | None = None     # grouping distance; blank uses the models' own
+    models_dir: str = ""               # blank: <work_dir>/models/speakers
+    custom: list[dict] = []
+    # Also hear the video's other audio tracks (the dubs): "all", a list of
+    # languages or stream numbers, or [] for the original dialogue alone.
+    tracks: str | list[str] = "all"
+    # A dub kept as an evaluation reference (to compare a Doblarr dub with)
+    # may still help tell the voices apart: hearing who speaks is not
+    # learning how to perform. false keeps such tracks out of grouping too.
+    evaluation_tracks: bool = True
 
 
 class ComputeModel(_Section):
@@ -184,6 +209,9 @@ class DubModel(_Section):
     output_codec: str = "aac"
     output_bitrate: str = "192k"
     pronunciations: dict[str, str] = {}
+    # Japanese source, Spanish target: respell the glossary's names for the
+    # engine the way Latin American dubs say them (Jiro -> Yiro).
+    romaji_names: bool = False
     line_edits: dict[str, dict] = {}
     cast_group: str = ""
     character_map: dict[str, str] = {}
@@ -277,6 +305,9 @@ class TimingModel(_Section):
     """
 
     mode: Literal["whole", "phrase"] = "whole"
+    # Move each subtitle cue's start to the speech onset in the dialogue stem
+    # (fansub timing often trails the voice by a few hundred milliseconds).
+    snap_onsets: bool = False
     max_stretch: float = 1.3
     min_stretch: float = 1.0        # 1.0 = never slow speech down
     handle_ms: float = 40           # margin kept each side of a phrase
@@ -318,6 +349,11 @@ class CoverageModel(_Section):
     max_seconds: float = 4.0
     leakage_check: bool = False
     generate: bool = False
+    # Voice in the separated dialogue stem that no line covers (an untagged
+    # laugh, a grunt) becomes an event; auto_retain keeps each unreviewed
+    # vocal event's original sound where its window is clean and short.
+    detect: bool = False
+    auto_retain: bool = False
     events: dict[str, dict] = {}    # per-event decisions set in review
     assets: dict[str, str] = {}     # machine-local replacement sounds
     extra: list[dict] = []          # events a person added by hand
@@ -386,6 +422,72 @@ class DecisionsModel(_Section):
     review_order: bool = True       # the lines most likely wrong come first in review
 
 
+class AnalysisModel(_Section):
+    """What an episode analysis measures beyond its lines (docs/media-knowledge.md).
+
+    Nothing here translates, clones or generates speech. Visual analysis is
+    optional and off by default: it needs extra libraries and model files, and
+    audio analysis never waits for it or fails because of it.
+    """
+
+    features: bool = True             # energy curves, pauses and peaks per line
+    visual: bool = False              # shots, faces, tracks and active speaker
+    stages: list[str] = []            # rerun only these stages; [] runs everything enabled
+    # Narrative extraction reads the script with a language model (provider
+    # calls, charged to the request budget). Off unless asked for; the model
+    # is a Prompture model string such as ollama/qwen3:8b.
+    knowledge: bool = False
+    knowledge_model: str = ""
+    knowledge_endpoint: str | None = None
+    # How each line is said (doblarr.emotion): a still per line read by a
+    # model that sees, plus the voice. Off unless asked; local by default.
+    emotion: bool = False
+    emotion_model: str = "ollama/qwen3-vl:8b"
+    # Who speaks each line, read from the script by a strong model
+    # (doblarr.dialogue_reader). Empty: off. A cloud model sends the subtitle
+    # text out of this machine; local 8-12B models were not good enough.
+    reader_model: str = ""
+    # A dub track only helps tell voices apart when it is the same cut: its
+    # speech has to line up with the original before it is used as evidence.
+    verify_tracks: bool = True
+    min_track_correlation: float = 0.45
+    max_track_offset: float = 2.0     # seconds; a larger offset is another edit
+
+
+class VisionModel(_Section):
+    """Shots, faces and visible tracks (doblarr.vision). Optional dependencies."""
+
+    backend: Literal["auto", "opencv", "off"] = "auto"
+    domain: Literal["auto", "anime", "live_action"] = "auto"
+    frame_height: int = 360
+    frames_per_shot: int = 3
+    max_frames: int = 4000            # bound on frames sampled from one title
+    asd_fps: float = 8.0              # frames per second read inside a line for mouth motion
+    models_dir: str = ""              # blank: <work_dir>/models/vision
+    match_threshold: float = 0.55     # face-to-reference similarity to propose a name
+
+
+class AdaptiveModel(_Section):
+    """Voice envelopes, background policies, retrieval and the judge (docs/adaptive-audio.md).
+
+    `mode: off` renders exactly what earlier releases rendered. `suggest`
+    computes recommendations for review without changing audio; `apply` renders
+    the selected envelope through the one post-fit level owner.
+    """
+
+    mode: Literal["off", "suggest", "apply"] = "off"
+    # off | retrieval | kev/<model> | laya/<model> | llm:<prompture model>
+    judge: str = "retrieval"
+    judge_endpoint: str | None = None
+    judge_budget: int = 400           # model calls per run; then the retrieval fallback
+    candidates: int = 4               # template candidates per line (preserve is extra)
+    envelope_strength: float = 1.0    # global scale on every selected envelope
+    max_envelope_db: float = 6.0      # no envelope moves a line further than this
+    background_policy: str = ""       # a background template id; "" keeps sidechain ducking
+    max_bed_attenuation_db: float = 18.0
+    lines: dict[str, dict] = {}       # per-cue manual selection {template, strength, locked}
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -399,6 +501,7 @@ class ConfigModel(_Section):
     voicestudio: VoiceStudioModel = VoiceStudioModel()
     translate: TranslateModel = TranslateModel()
     transcribe: TranscribeModel = TranscribeModel()
+    speakers: SpeakersModel = SpeakersModel()
     separate: SeparateModel = SeparateModel()
     compute: ComputeModel = ComputeModel()
     dub: DubModel = DubModel()
@@ -411,6 +514,9 @@ class ConfigModel(_Section):
     treatments: TreatmentsModel = TreatmentsModel()
     delivery: DeliveryModel = DeliveryModel()
     decisions: DecisionsModel = DecisionsModel()
+    analysis: AnalysisModel = AnalysisModel()
+    vision: VisionModel = VisionModel()
+    adaptive: AdaptiveModel = AdaptiveModel()
 
 
 def validate_config(data: dict) -> None:

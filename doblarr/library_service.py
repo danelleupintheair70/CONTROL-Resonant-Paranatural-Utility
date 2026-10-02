@@ -4,7 +4,7 @@ import datetime as _dt
 import logging
 from typing import Any
 
-from . import discovery, plex_labels
+from . import discovery, plex_labels, plex_library
 from .cache import TTLCache
 from .clients.plex import PlexError
 from .clients.radarr import RadarrError
@@ -71,6 +71,20 @@ class LibraryService:
             pass  # Sonarr not configured
         except SonarrError as exc:
             warnings.append(f"Sonarr: {exc}")
+        if disc.get("plex", True):
+            try:
+                items += plex_library.scan_plex(
+                    self.services.plex, targets,
+                    known_tvdb={i.tvdb_id for i in items if i.tvdb_id},
+                    known_tmdb={i.tmdb_id for i in items if i.tmdb_id},
+                    known_paths={i.path for i in items if i.path},
+                    cache=self.plex_cache(),
+                    include_unmatched=disc.get("plex_unmatched", False),
+                    treat_undefined_as=undefined)
+            except ConfigError:
+                pass  # Plex not configured
+            except PlexError as exc:
+                warnings.append(f"Plex: {exc}")
         discovery.sort_items(items)
         self.state["last_scan"] = _dt.datetime.now().isoformat(timespec="seconds")
         self.state["counts"] = discovery.summarize(items)
@@ -79,6 +93,9 @@ class LibraryService:
         result = (items, warnings)
         self.cache.set("library", result)
         return result
+
+    def plex_cache(self) -> plex_library.AudioCache:
+        return plex_library.AudioCache(self.config.work_dir / plex_library.CACHE_FILE)
 
     def scan_and_label(self):
         items, _ = self.scan(force=True)  # a scheduled rescan refreshes the cache

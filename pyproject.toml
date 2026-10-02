@@ -19,6 +19,7 @@ dependencies = [
     "uvicorn>=0.27",
     "pydantic>=2",
     "prompture[anthropic]>=1.12.0",  # shared structured AI translation for every provider
+    "scikit-learn>=1.3",             # groups an episode's lines into voices (doblarr/speakers.py)
 ]
 
 [project.optional-dependencies]
@@ -28,7 +29,18 @@ dependencies = [
 real = [
     "demucs>=4.0",          # music/vocal source separation
     "whisperx",             # transcription + word-level alignment
-    "pyannote.audio>=3.1",  # speaker diarization (needs a HuggingFace token)
+    "pyannote.audio>=3.1",  # voice model (ungated); full diarization needs a HuggingFace token
+    "sherpa-onnx>=1.12",    # 3D-Speaker and NeMo voice models (doblarr/voice_models.py)
+]
+# Optional visual analysis (doblarr/vision): shots, faces, tracks, active speaker.
+# OpenCV 5 dropped the cascade classifier the anime detector needs, so stay on 4.
+vision = [
+    "opencv-python-headless>=4.8,<5",
+]
+# Optional: how each line sounds (doblarr/emotion.py) with emotion2vec. The
+# picture side needs only a model that sees (analysis.emotion_model).
+emotion = [
+    "funasr>=1.2",
 ]
 dev = [
     "pytest>=8",
@@ -49,9 +61,10 @@ Issues = "https://github.com/jhd3197/Doblarr/issues"
 
 [tool.setuptools]
 packages = ["doblarr", "doblarr.clients", "doblarr.knowledge", "doblarr.stages", "doblarr.routes",
-            "doblarr.studio"]
+            "doblarr.studio", "doblarr.vision"]
 
 [tool.setuptools.package-data]
+"doblarr" = ["data/*.json"]
 "doblarr.knowledge" = ["data/*.json"]
 
 [tool.setuptools.dynamic]

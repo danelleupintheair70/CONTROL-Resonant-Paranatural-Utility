@@ -118,11 +118,12 @@ export function createLibrary({ goTitle }) {
     }
   }
 
-  async function loadLibrary() {
+  // `refresh` asks Sonarr and Radarr again; a plain load may serve the last scan.
+  async function loadLibrary(refresh = false) {
     const grid = document.getElementById("libraryGrid");
-    grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">Scanning Radarr…</div>`;
+    grid.innerHTML = `<div style="padding:22px 10px;color:var(--muted);">${refresh ? 'Rescanning Sonarr and Radarr…' : 'Loading the library…'}</div>`;
     try {
-      const data = await api("library");
+      const data = await api(refresh === true ? "library?refresh=true" : "library");
       library.items = data.items || [];
       library.targets = data.target_languages || ["en"];
       library.loaded = true;

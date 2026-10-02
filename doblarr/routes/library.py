@@ -3,10 +3,12 @@
 import datetime as _dt
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .. import discovery, plex_labels
+from ..clients.plex import PlexError
 from ..config import Config
 from ..errors import ConfigError
 from ..jobs import Worker
@@ -41,6 +43,32 @@ def build_router(config: Config, library: LibraryService, services: Services,
             "queue_paused": worker.paused,
         }
 
+    @api.get("/api/plex/thumb")
+    def plex_thumb(path: str):
+        """A Plex poster fetched with Doblarr's token, which never reaches the browser."""
+        if not path.startswith("/library/metadata/") or ".." in path:
+            raise HTTPException(422, "Only Plex artwork paths are served")
+        try:
+            content, media_type = services.plex.image(path)
+        except (ConfigError, PlexError) as exc:
+            raise HTTPException(502, f"Plex artwork unavailable: {exc}") from exc
+        return Response(content=content, media_type=media_type,
+                        headers={"Cache-Control": "max-age=86400"})
+
+    def with_known_originals(rows: list[dict]) -> list[dict]:
+        """Fill "??" with what a show's or film's files showed (kept, never probed here)."""
+        from .. import original_language
+
+        for row in rows:
+            if row.get("original") not in ("??", "", None):
+                continue
+            key = original_language.cache_key(row.get("media_type") or "", row.get("tvdb_id"),
+                                              row.get("tmdb_id"))
+            lang = original_language.remembered(worker.store.db, key).get("lang") if key else ""
+            if lang:
+                row["original"] = lang
+        return rows
+
     @api.get("/api/library")
     def list_library(refresh: bool = False):
         items, warnings = library.scan(force=refresh)
@@ -52,7 +80,7 @@ def build_router(config: Config, library: LibraryService, services: Services,
             "target_languages": config["general"]["target_languages"],
             "counts": discovery.summarize(items),
             "warnings": warnings,
-            "items": discovery.to_dicts(items),
+            "items": with_known_originals(discovery.to_dicts(items)),
         }
 
     @api.post("/api/plex/labels")

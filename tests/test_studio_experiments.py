@@ -142,7 +142,7 @@ def test_a_contaminated_reference_is_blocked_before_it_is_sent(db, tmp_path, mon
 def test_shared_context_cannot_smuggle_dialogue_or_the_answer(db, tmp_path, monkeypatch):
     ja, en, es, aligned = scene(db, tmp_path)
     bad = {**DEFINITION["shared"],
-           "scene_notes": {"x1": "Naruto says: " + ENGLISH[0]["text"]}}
+           "scene_notes": {"x1": "Kaito says: " + ENGLISH[0]["text"]}}
     experiment = define(db, ja, en, es, aligned, shared=bad)
     driver = RecordingDriver(echo_answer())
     install_driver(monkeypatch, driver)

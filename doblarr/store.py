@@ -290,6 +290,15 @@ class Database:
             "updated_at": row["updated_at"],
         }
 
+    def list_casts(self) -> list[dict]:
+        """Every saved voice cast, keyed by title, newest first."""
+        rows = self.query(
+            "SELECT title_key, title, cast_data, updated_at FROM voice_casts "
+            "ORDER BY updated_at DESC")
+        return [{"title_key": r["title_key"], "title": r["title"],
+                 "cast": json.loads(r["cast_data"]), "updated_at": r["updated_at"]}
+                for r in rows]
+
     # -- per-title dub plans (config overrides, one row per title) ----------
     def save_plan(self, title_key: str, title: str, plan: dict) -> None:
         self.execute(

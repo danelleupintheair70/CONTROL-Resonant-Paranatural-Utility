@@ -89,7 +89,11 @@ class Candidate(Record):
     # Assigned by reconciliation, retained across reruns; alternatives have distinct keys.
     key: Text
     kind: Literal["character", "alias", "term", "relationship", "summary", "delivery",
-                  "localized_name", "terminology", "register", "honorific", "pronunciation"]
+                  "localized_name", "terminology", "register", "honorific", "pronunciation",
+                  # Narrative knowledge (doblarr.knowledge.narrative): what happens,
+                  # where, to whom a line is said, how a character behaves.
+                  "event", "scene_intent", "addressee", "behavior", "location",
+                  "speech_mode"]
     statement: Text
     subjects: tuple[Text, ...] = ()  # stable entity keys, never diarization speaker IDs
     applicability: Applicability

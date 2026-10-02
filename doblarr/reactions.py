@@ -60,6 +60,24 @@ MAX_EVENT_SECONDS = 6.0
 # sound is called still present in the bed. Below it, "maybe" is the answer.
 PRESENT_DB = 8.0
 
+# Finding reactions nobody typed. A fansub rarely writes "[laughs]", and the
+# laugh is still on screen; separation moved it into the vocal stem, where
+# nothing but the dialogue cues ever reads. Voice in that stem outside every
+# line is the evidence. It is audio, not a label, so retaining it keeps the
+# original actor's own performance rather than inventing one.
+UNCOVERED = "uncovered-voice/1"
+UNCOVERED_FRAME = 0.02
+# Subtitle timing is loose: sound this close to a line is that line's speech.
+UNCOVERED_MARGIN = 0.25
+# Quieter gaps inside one sound stay one sound; shorter bursts are clicks.
+UNCOVERED_BRIDGE = 0.22
+UNCOVERED_SHORTEST = 0.2
+# Levels relative to the loud end (99th percentile) of the whole stem: frames
+# below FLOOR are silence, and a region must peak within PEAK of the loud end,
+# so separation bleed under an explosion is not taken for a voice.
+UNCOVERED_FLOOR_DB = 30.0
+UNCOVERED_PEAK_DB = 20.0
+
 
 def settings(options: dict | None) -> dict:
     """Normalize the `coverage` config section. Everything defaults to off."""
@@ -83,6 +101,11 @@ def settings(options: dict | None) -> dict:
         "events": dict(values.get("events") or {}),
         "assets": dict(values.get("assets") or {}),
         "extra": list(values.get("extra") or []),
+        # Look for voice in the separated dialogue stem that no line covers.
+        "detect": bool(values.get("detect", False)),
+        # Retain every vocal event nobody reviewed, where its window is clean.
+        # A reviewer's decision on the event still wins.
+        "auto_retain": bool(values.get("auto_retain", False)),
     }
 
 
@@ -215,7 +238,16 @@ def _apply_decision(event: NonverbalEvent, config: dict) -> None:
     if not isinstance(entry, dict):
         if config["mode"] == "off":
             event.decision = "unresolved"
+        elif (config["auto_retain"] and _auto_retainable(event, config)
+              and (event.decision == "unresolved" or event.checks.get("auto_decision"))):
+            event.decision = "retain"
+            event.checks = {**event.checks, "auto_decision": True}
+        elif event.checks.get("auto_decision"):
+            # The policy that chose this is off now, and nobody else chose it.
+            event.decision = "unresolved"
+            event.checks = {k: v for k, v in event.checks.items() if k != "auto_decision"}
         return
+    event.checks = {k: v for k, v in event.checks.items() if k != "auto_decision"}
     wanted = str(entry.get("decision") or "").strip()
     if wanted in ("retain", "replace", "omit", "covered", "unresolved"):
         event.decision = wanted
@@ -232,6 +264,113 @@ def _apply_decision(event: NonverbalEvent, config: dict) -> None:
         event.asset = str(asset)
 
 
+def _auto_retainable(event: NonverbalEvent, config: dict) -> bool:
+    """Whether the auto-retain policy may keep this event's original sound.
+
+    Only a voice (a door belongs to the bed, which already has it), only with a
+    window of its own, and only one short enough to be a reaction: a long
+    uncovered stretch is as likely to be a line the subtitles left out, and
+    retaining that would put source-language speech in the dub.
+    """
+    span = event.span
+    return (event.category == "vocal"
+            and event.checks.get("position") in (None, "whole")
+            and span is not None and span.duration <= config["max_seconds"])
+
+
+def detect(job, config: dict) -> list[NonverbalEvent]:
+    """Register voice in the dialogue stem that no speaking line accounts for.
+
+    Returns the events added. Each is keyed by where it was found, so a rerun
+    over the same audio finds the same events and a reviewer's decision on one
+    survives. Needs numpy (the separation stack brings it); without it, or
+    without a separated stem, nothing is detected and that is logged.
+    """
+    stem = job.vocals
+    if stem is None or not Path(stem).is_file() or stem == job.source_audio:
+        log.info("coverage: no separated dialogue stem, so no uncovered voice detection")
+        return []
+    # Detector events are re-derived every run, so one that a later change
+    # (a cue moved to its speech onset) now explains goes away. An event a
+    # reviewer ruled on is kept whatever the detector finds.
+    job.nonverbal = [e for e in job.nonverbal
+                     if e.evidence != "detector" or e.event_id in config["events"]]
+    try:
+        regions = uncovered_voice(Path(stem), _covered_windows(job))
+    except ImportError:
+        log.info("coverage: numpy is unavailable, so no uncovered voice detection")
+        return []
+    known = {event.event_id for event in job.nonverbal}
+    added = []
+    for start, end, peak_db in regions:
+        found = event_id(f"{UNCOVERED}:{start:.2f}")
+        if found in known:
+            continue
+        added.append(NonverbalEvent(
+            event_id=found,
+            type="unknown",
+            category="vocal",
+            text=f"voice outside every line ({end - start:.1f} s)",
+            source=[Span(start, end, SOURCE)],
+            evidence="detector",
+            checks={"position": "whole", "parsed": False, "detected_by": UNCOVERED,
+                    "peak_db": peak_db},
+            at=now(),
+        ))
+        known.add(found)
+    job.nonverbal.extend(added)
+    if added:
+        log.info("coverage: %d uncovered voice region(s) in the dialogue stem", len(added))
+    return added
+
+
+def _covered_windows(job) -> list[tuple[float, float]]:
+    """Time a speaking line or an already known event accounts for."""
+    windows = []
+    for seg in job.segments:
+        spans = seg.source.spans or [Span(seg.start, seg.end, SOURCE)]
+        windows += [(span.start - UNCOVERED_MARGIN, span.end + UNCOVERED_MARGIN)
+                    for span in spans]
+        # A cue snapped to its speech onset starts before its subtitle did.
+        windows.append((seg.start - UNCOVERED_MARGIN, seg.end + UNCOVERED_MARGIN))
+    windows += [(e.span.start, e.span.end) for e in job.nonverbal if e.span is not None]
+    return windows
+
+
+def uncovered_voice(path: Path, covered: list[tuple[float, float]]
+                    ) -> list[tuple[float, float, float]]:
+    """(start, end, peak dBFS) of voiced stretches outside `covered`."""
+    import numpy as np
+
+    with wave.open(str(path), "rb") as audio:
+        rate, channels = audio.getframerate(), audio.getnchannels()
+        if audio.getsampwidth() != 2:
+            return []
+        raw = np.frombuffer(audio.readframes(audio.getnframes()), dtype=np.int16)
+    samples = raw.astype(np.float32).reshape(-1, channels).mean(axis=1)
+    step = max(1, int(rate * UNCOVERED_FRAME))
+    frames = len(samples) // step
+    if frames == 0:
+        return []
+    power = (samples[:frames * step].reshape(frames, step) ** 2).mean(axis=1)
+    level = 10 * np.log10(np.maximum(power, 1.0) / (32768.0 * 32768.0))
+    loud = float(np.percentile(level, 99))
+    free = level > max(loud - UNCOVERED_FLOOR_DB, -60.0)
+    times = np.arange(frames) * UNCOVERED_FRAME
+    for start, end in covered:
+        free &= ~((times >= start) & (times < end))
+    found: list[list[float]] = []
+    for index in np.flatnonzero(free):
+        start = float(index) * UNCOVERED_FRAME
+        if found and start - found[-1][1] <= UNCOVERED_BRIDGE:
+            found[-1][1] = start + UNCOVERED_FRAME
+            found[-1][2] = max(found[-1][2], float(level[index]))
+        else:
+            found.append([start, start + UNCOVERED_FRAME, float(level[index])])
+    return [(round(a, 2), round(b, 2), round(peak, 1)) for a, b, peak in found
+            if b - a >= UNCOVERED_SHORTEST and peak >= loud - UNCOVERED_PEAK_DB]
+
+
 # --------------------------------------------------------------------------
 # Coverage
 # --------------------------------------------------------------------------
@@ -240,6 +379,8 @@ def process(job, options: dict | None = None, cancel=None, dry_run: bool = False
             vb=None, budget=None, engine: str = "", work_dir: Path | None = None) -> dict:
     """Resolve every event's coverage and render the audio a decision asks for."""
     config = settings(options)
+    if config["detect"] and not dry_run:
+        detect(job, config)
     inventory(job, options)
     if dry_run:
         return {}

@@ -1,0 +1,174 @@
+/* Media player popup (web/js/media-player.js), after ClutchCut's player.
+   Always dark, whatever the app theme: it is a screen. --mp-accent is the
+   colour of whoever the reel is about. */
+.mp {
+  --mp-accent: var(--color-accent);
+  --mp-ink: #f4f4f5;
+  --mp-muted: #a1a1aa;
+  --mp-panel: #141417;
+  --mp-card: #1f1f23;
+
+  width: min(1280px, 96vw); max-height: 94vh;
+  padding: 0; border: 0; border-radius: 14px; overflow: hidden;
+  background: #0b0b0d; color: var(--mp-ink);
+
+  &::backdrop { background: rgba(0, 0, 0, .72); }
+}
+
+.mp-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  padding: 14px 16px 10px;
+
+  & .mp-title { margin: 0; font-size: 17px; }
+  & .mp-sub { margin: 2px 0 0; color: var(--mp-muted); }
+}
+
+.mp-stage {
+  display: flex; min-height: 0; background: #000;
+
+  &:fullscreen {
+    & .mp-video { max-height: 100vh; height: 100vh; }
+    & .mp-panel { max-height: 100vh; }
+  }
+}
+
+.mp-screen {
+  position: relative; flex: 1; min-width: 0;
+  display: flex; align-items: center; justify-content: center; background: #000;
+}
+
+.mp-video {
+  display: block; width: 100%; max-height: calc(94vh - 70px);
+  aspect-ratio: 16 / 9; object-fit: contain; background: #000;
+}
+
+.mp-caption {
+  position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%);
+  max-width: 86%; margin: 0; padding: 4px 10px; border-radius: 6px;
+  background: rgba(0, 0, 0, .55); color: #fff; font-size: 16px; text-align: center; text-shadow: 0 1px 2px #000;
+
+  &:empty { display: none; }
+}
+
+.mp-loading {
+  position: absolute; top: 12px; left: 12px; margin: 0; padding: 3px 9px; border-radius: 6px;
+  background: rgba(0, 0, 0, .6); color: #e4e4e7;
+}
+
+.mp-bar {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .85) 40%);
+}
+
+.mp-icon {
+  display: inline-grid; place-items: center; flex: none;
+  width: 34px; height: 34px; border: 0; border-radius: 50%;
+  background: transparent; color: inherit; cursor: pointer;
+
+  & svg { width: 22px; height: 22px; fill: currentColor; }
+  &:hover, &:focus-visible { background: rgba(255, 255, 255, .14); }
+  &[aria-pressed="true"] { color: var(--mp-accent); }
+}
+
+.mp-time { font-size: 12.5px; white-space: nowrap; color: #e4e4e7; }
+
+.mp-track {
+  position: relative; flex: 1; min-width: 80px; height: 26px;
+  display: flex; align-items: center; margin: 0 6px;
+}
+
+.mp-marks { position: absolute; inset: 0; pointer-events: none; }
+
+.mp-mark {
+  position: absolute; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%; background: var(--mp-accent); opacity: .85;
+}
+
+.mp-seek {
+  position: relative; width: 100%; margin: 0; appearance: none; background: transparent; cursor: pointer;
+
+  &::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 2px;
+    background: linear-gradient(to right, var(--mp-accent) var(--mp-fill, 0%), rgba(255, 255, 255, .28) var(--mp-fill, 0%));
+  }
+  &::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .28); }
+  &::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--mp-accent); }
+  &::-webkit-slider-thumb {
+    appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
+    background: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--mp-accent) 35%, transparent);
+  }
+  &::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #fff; }
+}
+
+.mp-lang {
+  max-width: 180px; padding: 4px 6px; border: 1px solid rgba(255, 255, 255, .3); border-radius: 6px;
+  background: rgba(0, 0, 0, .6); color: #fff; font-size: 12.5px;
+}
+
+/* The side list: one row per clip, a dot that fills as the reel passes it. */
+.mp-panel {
+  flex: none; width: 340px; max-height: calc(94vh - 70px); overflow-y: auto;
+  margin: 0; padding: 12px; list-style: none; background: var(--mp-panel);
+
+  &[hidden] { display: none; }
+}
+
+.mp-row {
+  position: relative; display: flex; align-items: flex-start; gap: 2px; margin: 0 0 10px;
+
+  & .mp-more { width: 28px; height: 28px; margin-top: 4px; color: var(--mp-muted);
+    & svg { width: 18px; height: 18px; }
+  }
+}
+
+.mp-item {
+  display: flex; gap: 12px; flex: 1; min-width: 0;
+  padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer;
+
+  & .mp-dot {
+    flex: none; width: 14px; height: 14px; margin-top: 8px;
+    border: 2px solid var(--mp-accent); border-radius: 50%; background: transparent;
+  }
+  & .mp-card {
+    display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0;
+    padding: 6px 9px; border-radius: 6px; background: var(--mp-card);
+  }
+  &.is-passed {
+    & .mp-dot { background: var(--mp-accent); }
+    & .mp-card { opacity: .6; }
+  }
+  &.is-active {
+    & .mp-dot { background: var(--mp-accent); }
+    & .mp-card { background: var(--mp-accent); color: #111; }
+  }
+  &:focus-visible .mp-card { outline: 2px solid var(--mp-accent); outline-offset: 2px; }
+}
+
+.mp-card-label { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mp-card-text { font-size: 13.5px; }
+.mp-card-detail { font-size: 12px; opacity: .75; }
+.mp-tag {
+  margin-left: 4px; padding: 0 6px; border-radius: 999px;
+  background: rgba(255, 255, 255, .16); font-weight: 600;
+}
+
+/* "⋯" on a clip: whatever the page needs to do with that one moment. */
+.mp-menu {
+  position: absolute; z-index: 5; top: 36px; right: 0; width: 290px;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  border: 1px solid rgba(255, 255, 255, .16); border-radius: 10px;
+  background: #26262b; box-shadow: 0 14px 30px rgba(0, 0, 0, .5);
+
+  /* Pages put app components in here; give them the dark screen's colours. */
+  --panel: #26262b; --line: rgba(255, 255, 255, .16); --muted: var(--mp-muted); --color-text: var(--mp-ink);
+  & .input { background: #1a1a1e; color: var(--mp-ink); border-color: var(--line); }
+  & .cp { flex: 1 1 auto; }
+  & .cp-list { min-width: 100%; }
+}
+
+@media (max-width: 760px) {
+  .mp-stage { flex-direction: column; }
+  .mp-panel { width: auto; max-height: 34vh; }
+  .mp-time { display: none; }
+}

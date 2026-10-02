@@ -173,3 +173,10 @@ def test_scan_state_survives_restart(tmp_path, monkeypatch):
         r = c.get("/api/library", headers=HEADERS)
         assert r.json()["items"][0]["title"] == "KoreanFilm"
     assert calls["n"] == 1
+
+
+def test_ui_files_are_revalidated_so_an_update_is_never_run_from_cache(client):
+    for path in ("/js/app.js", "/voices/character:chr-1"):
+        found = client.get(path)
+        assert found.status_code == 200
+        assert found.headers["cache-control"] == "no-cache"

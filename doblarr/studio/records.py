@@ -17,7 +17,13 @@ from typing import Any
 from ..errors import DoblarrError
 
 KINDS = ("session", "reference", "alignment", "experiment", "variant", "audition",
-         "annotation", "evaluation", "casting", "import")
+         "annotation", "evaluation", "casting", "import",
+         # Media knowledge and adaptive audio (docs: media-knowledge.md). The
+         # same revision, conflict and freeze rules hold: a character, a voice
+         # profile or an accepted narrative revision is never edited in place.
+         "series", "media", "character", "profile", "voice_asset", "assignment",
+         "association", "claim", "narrative", "snapshot", "visual", "template",
+         "decision", "feedback", "example", "migration")
 # A document larger than this is a sign that media or a whole transcript is
 # being stored as state. Structured state stays small; artifacts go to disk.
 MAX_DOCUMENT_BYTES = 4 * 1024 * 1024

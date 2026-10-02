@@ -1,0 +1,95 @@
+/* ---- Voices: the catalogue as a cast, one voice with its orb ---- */
+.voices-head { display:flex; align-items:flex-end; gap:20px; justify-content:space-between; flex-wrap:wrap; }
+.voices-head h2 { margin:0 0 4px; font-size:22px; }
+.voices-head .hint { margin:0; max-width:62ch; }
+.voices-search { width:min(320px,100%); }
+.voices-filter { margin:18px 0 22px; }
+.voices-filter .m { color:var(--muted); font-size:12px; margin-left:4px; }
+.voices-empty { padding:18px 22px; }
+.voices-group { margin-bottom:26px; }
+.voices-group h3 { font-size:16px; margin:0 0 12px; display:flex; gap:10px; align-items:baseline; }
+.voice-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; }
+.voice-tile { display:flex; gap:14px; align-items:center; text-align:left; padding:14px 16px; border:1px solid var(--line);
+  border-radius:var(--radius-lg); background:var(--color-surface); color:var(--color-text); font:inherit; cursor:pointer; }
+.voice-tile:hover, .voice-tile:focus-visible { border-color:var(--line-strong); box-shadow:var(--shadow-sm); }
+.voice-tile-body { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.voice-tile-body strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.voice-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+.voice-dot { display:inline-block; width:18px; height:18px; border-radius:50%; vertical-align:middle; margin-right:10px; flex:none; }
+.voice-dot-lg { width:44px; height:44px; margin:0; }
+.voice-dot-xl { width:220px; height:220px; margin:0; background:radial-gradient(circle at 35% 30%, #fff, #CADCFC 40%, #A0B9D1); }
+.voices-table { padding:6px 18px 10px; }
+.voices-table tbody tr { cursor:pointer; }
+.voice-hero { display:flex; gap:32px; align-items:center; flex-wrap:wrap; margin:6px 0 24px; }
+.voice-orb-wrap { width:240px; height:240px; flex:none; }
+.voice-orb { width:100%; height:100%; display:block; }
+.voice-hero-body { min-width:min(100%,280px); flex:1; }
+.voice-hero-body h2 { margin:4px 0 6px; font-size:28px; letter-spacing:-.01em; }
+.voice-panel { padding:20px 24px 22px; margin-bottom:16px; }
+.voice-panel h3 { font-size:17px; margin:0 0 12px; }
+.voice-preview-row { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
+.voice-text { flex:1; min-width:min(100%,320px); resize:vertical; }
+.voice-audio { width:100%; margin-top:12px; }
+.voice-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+.voice-notes { grid-column:1 / -1; }
+
+/* A show's characters by share of dialogue */
+.cast-share { display:flex; flex-direction:column; gap:2px; margin-top:12px; }
+.cast-share-row { display:grid; grid-template-columns:minmax(150px,1.1fr) minmax(160px,2fr) minmax(120px,1.2fr) minmax(110px,.9fr);
+  gap:14px; align-items:center; padding:10px 0; border-top:1px solid var(--line); }
+.cast-share-who { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.cast-share-bar { position:relative; display:flex; align-items:center; gap:10px; }
+.cast-share-fill { height:10px; border-radius:999px; background:var(--color-accent); min-width:4px; }
+.cast-share-pct { font-weight:600; font-size:13px; }
+.cast-bands { display:flex; height:20px; border-radius:6px; overflow:hidden; font-size:11px; }
+.cast-band { display:flex; align-items:center; justify-content:center; color:var(--color-text); white-space:nowrap; overflow:hidden; }
+.cast-band-quiet { background:color-mix(in srgb, #6b8fd6 30%, transparent); }
+.cast-band-calm { background:color-mix(in srgb, var(--color-text) 10%, transparent); }
+.cast-band-intense { background:color-mix(in srgb, var(--color-accent) 40%, transparent); }
+.cast-band-unmeasured { background:repeating-linear-gradient(45deg, var(--line) 0 4px, transparent 4px 8px); color:var(--muted); }
+.cast-highlights { grid-column:1 / -1; }
+.cast-highlights ul { margin:6px 0 0; padding-left:18px; font-size:13px; display:grid; gap:4px; }
+@media (max-width: 760px) {
+  .cast-share-row { grid-template-columns:1fr; gap:6px; }
+  .voice-orb-wrap { width:180px; height:180px; }
+}
+.voice-color-row { display:flex; align-items:center; gap:10px; }
+.voice-color-input { width:44px; height:34px; padding:2px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--color-surface); cursor:pointer; }
+
+/* Character voice profiles. */
+.profile-lock { display:inline-flex; gap:4px; align-items:center; margin-left:6px; font-size:11.5px; }
+.profile-proposal { display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-top:1px solid var(--line); font-size:13.5px; }
+.profile-proposal span { display:flex; flex-direction:column; gap:2px; }
+
+/* One character: who they are, the voice they speak with, where they talk. */
+.voice-orb-empty { display:block; width:100%; height:100%; border-radius:50%; border:2px dashed var(--line-strong); }
+.voice-tile-silent .voice-dot { background:transparent; border:2px dashed var(--line-strong); }
+.character-voice-line { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; margin:6px 0; }
+.character-rename { display:flex; gap:8px; margin:4px 0 8px; }
+.character-rename-open { padding:2px 8px; font-size:12px; margin-top:6px; }
+.voice-subhead { margin:18px 0 8px; font-size:14px; }
+.voice-cast-as { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;
+  & .cp { flex:0 1 280px; }
+}
+.profile-facts { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 8px; margin:0 0 10px;
+  & > .hint { flex-basis:100%; font-size:12px; }
+}
+.profile-fact { padding:3px 10px; border-radius:999px; font-size:13px; background:color-mix(in srgb, var(--color-text) 6%, transparent); }
+.profile-fact-locked { box-shadow:inset 0 0 0 1px var(--line-strong); }
+.profile-edit { margin-top:8px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--radius-md);
+  & > summary { cursor:pointer; font-weight:600; font-size:13.5px; }
+}
+.appear-episode { display:flex; flex-direction:column; gap:8px; padding:12px 0; border-top:1px solid var(--line); }
+.appear-head { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+  & strong { font-size:14px; }
+  & .btn { margin-left:auto; padding:4px 10px; font-size:12.5px; }
+}
+.appear-episode .cast-frames { grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); }
+.appear-lines { font-size:13px;
+  & summary { cursor:pointer; color:var(--muted); }
+  & ol { margin:6px 0 0; padding-left:18px; display:grid; gap:4px; }
+}
+.voice-assign { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-top:10px;
+  & .review-field { flex:1 1 180px; }
+  & .btn { flex:none; }
+}

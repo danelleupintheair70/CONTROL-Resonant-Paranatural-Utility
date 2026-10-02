@@ -18,6 +18,17 @@ class Choice(BaseModel):
 class Traits(Choice):
     age: Literal["unknown", "child", "young", "adult", "older"] = "unknown"
     gender: Literal["unknown", "male", "female", "neutral"] = "unknown"
+    # Who this voice is. A clone made from a scene is named after the scene
+    # and a hash; a person gives it the name it is known by, and the show and
+    # character it belongs to, so the catalogue reads as a cast, not a list of ids.
+    display_name: str = Field(default="", max_length=80)
+    character: str = Field(default="", max_length=80)
+    show: str = Field(default="", max_length=200)          # a library title key
+    show_name: str = Field(default="", max_length=200)
+    notes: str = Field(default="", max_length=500)
+    # The character's colour in the app (orb, dots, charts). App-only: it is
+    # never sent to the speech service. "" lets the app pick one.
+    color: str = Field(default="", pattern=r"^(#[0-9a-fA-F]{6})?$")
 
 
 class Preview(Choice):
@@ -111,11 +122,38 @@ def build_router(config, services, db):
             voices.append({**voice, **traits})
         return {**data, "voices": voices}
 
+    @api.get("/api/voice-catalog/voice")
+    def voice_detail(key: str):
+        """One voice with its identity and everywhere it is cast."""
+        voice = next((v for v in catalog()["voices"] if v["key"] == key), None)
+        if voice is None:
+            raise HTTPException(404, "Voice not found; refresh the catalog")
+        traits = (db.load_plan("voice-traits:" + key) or {}).get("plan", {})
+        profile = voice.get("profile_id")
+        used = []
+        for saved in db.list_casts() if profile else []:
+            for entry in saved["cast"]:
+                if entry.get("voice") != profile:
+                    continue
+                used.append({
+                    "title_key": saved["title_key"], "title": saved["title"],
+                    "speaker": entry.get("speaker_id"), "label": entry.get("label"),
+                    "pitch_semitones": entry.get("pitch_semitones") or 0,
+                    "formant_semitones": entry.get("formant_semitones") or 0,
+                    "updated_at": saved["updated_at"],
+                })
+        return {"voice": {**voice, **traits}, "used_in": used}
+
     @api.put("/api/voice-catalog/traits")
     def save_traits(body: Traits):
         if not any(v["key"] == body.key for v in catalog()["voices"]):
             raise HTTPException(404, "Voice not found")
-        db.save_plan("voice-traits:" + body.key, "Voice traits", body.model_dump(exclude={"key"}))
+        # Only the fields this request set change. An older form that does not
+        # know a field must not erase it, so the saved traits are merged, never
+        # replaced. (The rich character profile lives apart, doblarr.profiles.)
+        existing = (db.load_plan("voice-traits:" + body.key) or {}).get("plan", {})
+        db.save_plan("voice-traits:" + body.key, "Voice traits",
+                     {**existing, **body.model_dump(exclude={"key"}, exclude_unset=True)})
         return {"ok": True}
 
     @api.post("/api/voice-catalog/select")

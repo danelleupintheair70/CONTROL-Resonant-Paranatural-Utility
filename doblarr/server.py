@@ -22,15 +22,20 @@ from .events import EventBus
 from .jobs import JobStore, Worker, import_legacy_json
 from .library_service import LibraryService
 from .logging_setup import attach_log_stream
+from .routes import adaptive as adaptive_routes
+from .routes import analysis as analysis_routes
+from .routes import characters as character_routes
 from .routes import configuration as configuration_routes
 from .routes import jobs as job_routes
 from .routes import knowledge as knowledge_routes
 from .routes import languages as language_routes
 from .routes import library as library_routes
 from .routes import memory as memory_routes
+from .routes import narrative as narrative_routes
 from .routes import packs as pack_routes
 from .routes import series as series_routes
 from .routes import studio as studio_routes
+from .routes import templates as template_routes
 from .routes import titles as title_routes
 from .routes import voice_catalog as catalog_routes
 from .scheduler import Scheduler
@@ -160,9 +165,20 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(job_routes.build_router(config, store, worker, bus))
     api.include_router(title_routes.build_router(config, db, bus, services))
     api.include_router(series_routes.build_router(config, services, store, bus))
+    api.include_router(analysis_routes.build_router(config, store))
     api.include_router(studio_routes.build_router(config, store, worker, bus))
     api.include_router(catalog_routes.build_router(config, services, db))
+    api.include_router(character_routes.build_router(config, services, db))
+    api.include_router(narrative_routes.build_router(config, store))
+    api.include_router(template_routes.build_router(config, db))
+    api.include_router(adaptive_routes.build_router(config, store, bus))
     app.include_router(api)
+
+    # The UI has no build step, so its files keep their names across updates.
+    # Without this a browser reuses imported modules from its heuristic cache
+    # and runs an older page against a newer server; "no-cache" still answers
+    # unchanged files with a 304 from their ETag.
+    REVALIDATE = {"Cache-Control": "no-cache"}
 
     # SPA fallback (History API routing): any GET that isn't /api/* and doesn't
     # name a real file gets index.html. Registered before the catch-all mount;
@@ -176,12 +192,12 @@ def create_app(config: Config | None = None) -> FastAPI:
             try:
                 if candidate.is_file() and candidate.resolve().is_relative_to(
                         WEB_DIR.resolve()):
-                    return FileResponse(candidate)  # real asset (favicon, logo…)
+                    return FileResponse(candidate, headers=REVALIDATE)  # a real asset
             except OSError:
                 pass
             if "." in full_path.rsplit("/", 1)[-1]:
                 raise NotFoundError(f"no such file: /{full_path}")
-        return FileResponse(WEB_DIR / "index.html")
+        return FileResponse(WEB_DIR / "index.html", headers=REVALIDATE)
 
     # Static mount last (HEAD requests, anything the fallback didn't take).
     if WEB_DIR.exists():

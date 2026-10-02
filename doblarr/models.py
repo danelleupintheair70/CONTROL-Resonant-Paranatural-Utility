@@ -8,6 +8,7 @@ from pathlib import Path
 from .cues import (
     CueAudio,
     CueLineage,
+    EnvelopeDecision,
     Finding,
     LevelDecision,
     NonverbalEvent,
@@ -88,6 +89,11 @@ class Segment:
     # build could actually do it. Its empty state means dry dialogue.
     treatment: Treatment = field(default_factory=Treatment)
 
+    # Adaptive audio. Which voice envelope template this line uses and what its
+    # render measured (doblarr.envelopes). Empty means no envelope was chosen:
+    # the level owner renders exactly as before.
+    envelope: EnvelopeDecision = field(default_factory=EnvelopeDecision)
+
     @property
     def duration(self) -> float:
         return max(0.0, self.end - self.start)
@@ -139,6 +145,7 @@ class DubJob:
     version_name: str = ""
     version_file: Path | None = None
     knowledge_snapshot: dict | None = None   # frozen entry/revision pins for this run
+    narrative_snapshot: dict | None = None   # frozen accepted narrative revision ({} = none)
     show_ref: str = ""                     # stable series id for show-scope rules
 
     # Plan 01 identity. `source_reference` records which media/stream the source
@@ -177,6 +184,12 @@ class DubJob:
     # the manual gains and timing edits are — a resume must honour a decision
     # a person made about this run without it becoming a config edit.
     treatment_edits: dict[str, dict] = field(default_factory=dict)
+
+    # Per-cue voice envelope a reviewer chose by hand ({template, version,
+    # strength, params} or {clear: true}). Kept with the job for the same
+    # reason as the other edits: a resume honours a person's decision without
+    # it becoming a config edit, and it is merged over `adaptive.lines`.
+    envelope_edits: dict[str, dict] = field(default_factory=dict)
 
     # What the exported track was measured to be, bound to the output hash and
     # the delivery profile revision that produced it. Written by the export

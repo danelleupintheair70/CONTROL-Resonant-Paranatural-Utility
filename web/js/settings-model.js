@@ -51,6 +51,9 @@ const TABS = [
   tab("speech", "Transcript", [{ ...group("Transcription", [
     C("transcribe.source", "Transcript from", ["subtitles", "whisper"]),
     T("transcribe.whisper_model", "Whisper model"), B("transcribe.diarize", "Speaker diarization"),
+    C("transcribe.diarizer", "Who speaks, found by", ["auto", "local", "pyannote"], "Local groups the lines by voice on this machine, no account. Pyannote needs a HuggingFace token. Auto uses pyannote only when a token is set."),
+    L("speakers.models", "Voice models", "Comma-separated; several are combined. Built in: wespeaker-resnet34, 3dspeaker-campplus, 3dspeaker-eres2netv2, nemo-titanet-large, nemo-titanet-small, wespeaker-cnceleb-resnet34. Each episode's Analysis tab can also regroup with any of them."),
+    J("speakers.custom", "Your own voice models", 'Any sherpa-onnx speaker-embedding ONNX, for example [{"id": "my-model", "name": "My model", "url": "https://…/model.onnx", "threshold": 0.6}].'),
     B("transcribe.clean_cues", "Remove nonspoken cues"),
     B("transcribe.align_subtitles", "Align source-language subtitles to speech"),
     N("transcribe.batch_size", "Transcription batch size"),
@@ -171,6 +174,21 @@ const TABS = [
     C("boundaries.edge_fade_curve", "Ease shape", ["hsin", "qsin", "tri"], "hsin is an S-curve, the softest start and finish; tri is linear."),
     N("boundaries.edge_fade_ms", "Edge fade (ms)", "The older single short linear fade at both ends. When above 0 it replaces the two eases above."),
     N("boundaries.edge_threshold_db", "Edge already smooth below (dB)"),
+  ])]),
+  tab("adaptive", "Envelopes", [{ ...group("Voice envelopes and background", [
+    C("adaptive.mode", "Envelopes", ["off", "suggest", "apply"], "Off renders exactly as before. Suggest records a recommended envelope per line for review. Apply renders it; it needs a dialogue level approach other than legacy."),
+    T("adaptive.judge", "Chosen by", "retrieval (a rule), kev/<model>, laya/<model> or llm:<model>, for example llm:ollama/gemma3:12b."),
+    N("adaptive.envelope_strength", "Envelope strength", "Scales every envelope, 0 to 1.5."),
+    N("adaptive.max_envelope_db", "Largest envelope move (dB)"),
+    T("adaptive.background_policy", "Background policy", "A background template such as background/strong-ducking. Empty keeps the current sidechain ducking; a policy replaces it, never adds to it."),
+    N("adaptive.max_bed_attenuation_db", "Deepest background dip (dB)"),
+  ]), desc: "Templates are edited under Knowledge → Audio templates. Changing an envelope reprocesses existing takes; it never generates speech." },
+  group("Episode analysis", [
+    B("analysis.features", "Measure energy curves"),
+    B("analysis.visual", "Analyse the picture", "Faces and mouth movement as evidence for you to check. Needs the vision extra and model files."),
+    B("analysis.verify_tracks", "Check dub tracks line up before using them"),
+    B("analysis.knowledge", "Extract title knowledge", "Reads the lines with a language model. Proposals are only used after you review them."),
+    T("analysis.knowledge_model", "Knowledge model", "A Prompture model, for example ollama/gemma3:12b."),
   ])]),
   tab("hardware", "Hardware", [group("This machine", [
     I("hardware", "Detected hardware", "What this Doblarr process can use for separation, diarization and transcription. voicebox is a separate program and picks its own device."),

@@ -12,6 +12,7 @@ import { TABS } from './settings-model.js';
 import { jobsFor } from './identity.js';
 import { loadLanguages } from './languages.js';
 import { createKnowledge } from './knowledge.js';
+import { createVoices } from './voices.js';
 import { initStar } from './star.js';
 import { loadHardware } from './hardware.js';
 
@@ -44,6 +45,14 @@ async function openStudio({ path, title, jobId = '', seriesRef = '' }) {
 }
 window.addEventListener('doblarr-open-studio', e => openStudio(e.detail).catch(error => window.alert(error.message)));
 const { renderKnowledge } = createKnowledge();
+const { renderVoices } = createVoices({ goVoice });
+
+// One voice lives at /voices/<catalog key>; '' goes back to the list.
+function goVoice(key) {
+  const target = key ? `/voices/${encodeURIComponent(key)}` : '/voices';
+  if (location.pathname !== target) history.pushState({}, '', target);
+  applyRoute();
+}
 
 // ---- App state + rendering (vanilla, no framework) ----
 const app = document.getElementById("app");
@@ -66,8 +75,13 @@ function routeFromPath() {
   return {
     page,
     tab: page === "Settings" ? (parts[1] || null) : null,
+    voiceKey: page === "Voices" ? decodePart(parts[1]) : '',
     ...(page === 'Title' ? parseTitlePath(location.pathname) : {}),
   };
+}
+
+function decodePart(part) {
+  try { return decodeURIComponent(part || ''); } catch { return ''; }
 }
 
 function setPage(page, tab) {
@@ -96,8 +110,8 @@ function goTitle(item, dtab) {
   applyRoute();
 }
 
-function goEpisode(item, episode) {
-  const target=titlePath(itemKey(item), episode.id, 'voices');
+function goEpisode(item, episode, tab = 'analysis') {
+  const target=titlePath(itemKey(item), episode.id, tab);
   if(location.pathname !== target) history.pushState({}, '', target);
   applyRoute();
 }
@@ -152,7 +166,7 @@ function renderTitle() {
 }
 
 function applyRoute() {
-  const { page, tab, titleKey, episodeId, titleTab, invalid } = routeFromPath();
+  const { page, tab, titleKey, episodeId, titleTab, invalid, voiceKey } = routeFromPath();
   if(page !== "Title") { episodeRequest++; episodePending = ""; }
   // Leaving the studio stops its player and hands the editor back.
   if (page !== "Studio" && studio.sid) studio.close();
@@ -189,7 +203,14 @@ function applyRoute() {
     else studio.open(sid, parts[2]);
   }
   if (page === "Library" && !library.loaded) loadLibrary();
-  if (page === "Knowledge") renderKnowledge();
+  if (page === "Knowledge") {
+    // Title knowledge picks a show or film from the library.
+    if (!library.loaded) loadLibrary().catch(() => {}).finally(renderKnowledge); else renderKnowledge();
+  }
+  if (page === "Voices") {
+    if (!library.loaded) loadLibrary();   // the show list a voice can be tied to
+    renderVoices(voiceKey);
+  }
   if (page === "Overview") { loadOverview(); loadHardware(); }
   if (page === "Dubs") loadJobs();
 }
@@ -219,7 +240,7 @@ document.querySelectorAll(".opts[data-single]").forEach(group => {
     if (btn.dataset.sort) { library.sort = btn.dataset.sort; renderLibrary(); }
   });
 });
-document.getElementById("rescanBtn").addEventListener("click", loadLibrary);
+document.getElementById("rescanBtn").addEventListener("click", () => loadLibrary(true));
 document.getElementById("saveSettings").addEventListener("click", saveSettings);
 
 async function syncPlexLabels(apply) {

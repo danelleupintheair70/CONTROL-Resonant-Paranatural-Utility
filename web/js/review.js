@@ -1,6 +1,7 @@
 import { api } from './api.js';
 import { escapeHtml as esc } from './dom.js';
 import { openCorrection } from './knowledge-correction.js';
+import { envelopePanel } from './review-envelope.js';
 import { FILTERS, createSceneSection, matchesFilter } from './review-scene.js';
 import { ORDERS, defaultOrder, orderRows } from './review-order.js';
 
@@ -86,6 +87,7 @@ export function createReview({ onQueued, onSelect }) {
       <p class="hint">${provenance(row)}</p>
       <p class="hint">${preparation(row)}</p>
       <div id="reviewScene"></div>
+      <div id="reviewEnvelope"></div>
       <div id="reviewCorrection" class="review-correction"></div>`;
     editor.querySelectorAll('input,textarea,select').forEach(f => { f.disabled = !data.editable; });
     // The scene panel is appended rather than inlined so its audio element
@@ -93,6 +95,7 @@ export function createReview({ onQueued, onSelect }) {
     const host = editor.querySelector('#reviewScene');
     host.replaceWith(sceneHost);
     scene.load(row);
+    envelopePanel(editor.querySelector('#reviewEnvelope'), { jobId, row });
     wireCorrection(row);
     renderList();
     onSelect?.(row, data);

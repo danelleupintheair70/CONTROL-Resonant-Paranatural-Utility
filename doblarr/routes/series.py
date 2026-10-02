@@ -1,5 +1,6 @@
 """Episode inventory and explicit per-file queueing for Sonarr series."""
 
+import json
 import threading
 from pathlib import Path
 from typing import Annotated, Literal
@@ -7,13 +8,17 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import AfterValidator, BaseModel, Field
 
+from .. import analysis, original_language, plex_library, speaking
 from ..artifacts import read_json
 from ..cache import TTLCache
+from ..clients.plex import PlexError
 from ..discovery import _audio_iso2, _name_to_iso2
+from ..errors import ConfigError
 from ..knowledge import snapshot as knowledge_snapshot
 from ..languages import base_language, normalize
 from ..languages import parse as parse_language_tag
 from ..voices import cast_key
+from .analysis import identify, load_names
 
 
 def normalized(path):
@@ -39,8 +44,12 @@ def job_locale(job) -> str:
 class EpisodeQueueIn(BaseModel):
     episode_ids: list[int] = Field(min_length=1, max_length=2000)
     target_lang: LanguageTag
-    kind: Literal["full", "tease", "audition"] = "full"
+    kind: Literal["full", "tease", "audition", "analyze"] = "full"
     missing_only: bool = True
+
+
+class OriginalIn(BaseModel):
+    lang: str = Field(default="", pattern=r"^([a-z]{2})?$")
 
 
 def build_router(config, services, store, bus):
@@ -52,11 +61,25 @@ def build_router(config, services, store, bus):
         cached = cache.get(tvdb_id, ttl=60) if not refresh else None
         if cached is not None:
             return cached
-        client = services.sonarr
-        show = next((s for s in client.list_series() if s.get("tvdbId") == tvdb_id), None)
-        if not show:
-            raise HTTPException(404, "Show not found in Sonarr")
-        result = (show, client.episodes(show["id"]), client.episode_files(show["id"]))
+        result = None
+        try:
+            client = services.sonarr
+            show = next((s for s in client.list_series() if s.get("tvdbId") == tvdb_id), None)
+            if show:
+                result = (show, client.episodes(show["id"]),
+                          client.episode_files(show["id"]))
+        except ConfigError:
+            pass  # no Sonarr; Plex may still have the show
+        if result is None:
+            # A show only Plex has: the same shape, with Plex rating keys as ids.
+            try:
+                result = plex_library.show_inventory(
+                    services.plex, tvdb_id,
+                    plex_library.AudioCache(config.work_dir / plex_library.CACHE_FILE))
+            except (ConfigError, PlexError):
+                result = None
+        if result is None:
+            raise HTTPException(404, "Show not found in Sonarr or Plex")
         cache.set(tvdb_id, result)
         return result
 
@@ -76,7 +99,13 @@ def build_router(config, services, store, bus):
     def detail(tvdb_id, target, refresh=False):
         show, episodes, files = inventory(tvdb_id, refresh)
         indexed = {f["id"]: f for f in files}
-        original = _name_to_iso2((show.get("originalLanguage") or {}).get("name"))
+        metadata = _name_to_iso2((show.get("originalLanguage") or {}).get("name"))
+        # A show only Plex has carries no original language: the episode files
+        # tell (doblarr.original_language), probed once and kept for the show.
+        spoken = original_language.for_title(
+            store.db, original_language.cache_key("show", tvdb_id),
+            [f.get("path") for f in files], metadata)
+        original = spoken.get("lang") or metadata
         base = base_language(target)  # media audio tags are base-language only
         jobs = store.list()
         rows = []
@@ -134,8 +163,11 @@ def build_router(config, services, store, bus):
             )
         return {
             "title": show["title"],
+            "source": "Plex · Shows" if show.get("source") == "Plex" else "Sonarr · Shows",
             "path": show.get("path"),
             "original": original,
+            "original_from": {k: spoken.get(k) for k in ("source", "confidence", "evidence",
+                                                         "candidates", "probed")},
             "media_type": "show",
             "target_lang": target,
             "episodes": rows,
@@ -144,6 +176,68 @@ def build_router(config, services, store, bus):
             "total": len(rows),
         }
 
+    def named_voices(title_key: str) -> dict[str, dict]:
+        """Catalogue voices a person tied to this show, by character."""
+        found = {}
+        for row in store.db.query("SELECT title_key, plan FROM title_plans "
+                                  "WHERE title_key LIKE 'voice-traits:%'"):
+            traits = json.loads(row["plan"] or "{}")
+            if traits.get("show") == title_key and traits.get("character"):
+                found[traits["character"].upper()] = {
+                    **traits, "key": row["title_key"].removeprefix("voice-traits:")}
+        return found
+
+    @api.get("/api/series/{tvdb_id}/voices")
+    def get_voices(tvdb_id: int, refresh: bool = False):
+        """Every character in the show's run scripts: share of talk, range, voice."""
+        show, episodes, files = inventory(tvdb_id, refresh)
+        indexed = {f["id"]: f for f in files}
+        seen: list[dict] = []
+        casts: dict[str, dict] = {}
+        counted: set[str] = set()
+        for ep in sorted(episodes, key=lambda e: (e.get("seasonNumber", 0),
+                                                  e.get("episodeNumber", 0))):
+            path = (indexed.get(ep.get("episodeFileId")) or {}).get("path")
+            # A double episode is one file listed twice; its talk counts once.
+            if not path or normalized(path) in counted:
+                continue
+            script = speaking.find_script(config.work_dir, path)
+            if script is None:
+                continue
+            counted.add(normalized(path))
+            label = f"S{ep.get('seasonNumber', 0):02d}E{ep.get('episodeNumber', 0):02d}"
+            # Voice groups are per episode; a name a person gave one is what
+            # makes SPEAKER_03 here and SPEAKER_01 there the same character.
+            names = load_names(store.db, path)
+            segments = [{**s, "speaker": names.get(s.get("speaker") or "") or s.get("speaker")}
+                        for s in speaking.load_segments(script)]
+            seen.append({"id": ep["id"], "label": label, "title": ep.get("title", ""),
+                         "segments": segments})
+            # A cast is keyed by the path the run used, which may be a copy of the
+            # episode elsewhere; the file name is what they share.
+            name = Path(str(path).replace("\\", "/")).name.casefold()
+            for saved in store.db.list_casts():
+                if Path(saved["title_key"].replace("\\", "/")).name.casefold() != name:
+                    continue
+                for entry in saved["cast"]:
+                    if entry.get("voice"):
+                        casts.setdefault(entry.get("speaker_id"), entry)
+        result = speaking.talk_share(seen)
+        named = named_voices(f"tvdb-{tvdb_id}")
+        for row in result["speakers"]:
+            entry = casts.get(row["speaker"]) or {}
+            identity = named.get(row["speaker"].upper())
+            row["label"] = entry.get("label") or row["speaker"]
+            row["voice"] = ({"key": identity["key"], "name": identity.get("display_name")
+                             or row["speaker"], "gender": identity.get("gender"),
+                             "age": identity.get("age"), "color": identity.get("color") or ""}
+                            if identity else
+                            {"key": f"profile:{entry['voice']}", "name": None}
+                            if entry.get("voice") else None)
+        return {**result, "title": show["title"],
+                "analysed": [{k: e[k] for k in ("id", "label", "title")} for e in seen],
+                "episode_count": len(episodes)}
+
     @api.get("/api/series/{tvdb_id}/episodes")
     def get_episodes(
         tvdb_id: int,
@@ -151,6 +245,17 @@ def build_router(config, services, store, bus):
         refresh: bool = False,
     ):
         return detail(tvdb_id, target_lang, refresh)
+
+    @api.put("/api/series/{tvdb_id}/original-language")
+    def set_original(tvdb_id: int, body: OriginalIn):
+        """A person says what the show was made in; it outranks any detection."""
+        key = original_language.cache_key("show", tvdb_id)
+        if not body.lang:
+            store.db.save_plan(key, "Original language", {})
+            return {"lang": "", "source": "cleared"}
+        return original_language.remember(store.db, key, {
+            "lang": body.lang, "confidence": "manual", "evidence": ["set by hand"]},
+            source="manual")
 
     @api.post("/api/series/{tvdb_id}/queue")
     def queue_episodes(tvdb_id: int, body: EpisodeQueueIn):
@@ -172,7 +277,7 @@ def build_router(config, services, store, bus):
                     else "Already queued or running"
                     if row["job_id"]
                     else "Target audio already available"
-                    if body.missing_only and row["dubbed"]
+                    if body.missing_only and row["dubbed"] and body.kind != "analyze"
                     else "Shares a queued episode file"
                     if normalized(path) in paths
                     else "File is not accessible to Doblarr"
@@ -186,15 +291,21 @@ def build_router(config, services, store, bus):
                 episode_plan = (store.db.load_plan(cast_key(path=path)) or {}).get("plan", {})
                 overrides = {**plan, **episode_plan}
                 overrides.pop("target_lang", None)
+                run = {"source_lang": data["original"] or "auto", "target_lang": base,
+                       "target_locale": locale, "input_file": path}
+                if body.kind == "analyze":
+                    # Analysing again runs the way the earlier analysis did:
+                    # another target would read other subtitles and cut and
+                    # group the lines anew.
+                    run = analysis.earlier_run(
+                        store.db, config.work_dir, path,
+                        identify(store.db, path, Path(config.work_dir) / "cache")) or run
                 job = store.add(
                     title=(
                         f"{data['title']} S{row['season']:02}E{row['episode']:02} — {row['title']}"
                     ),
-                    source="Sonarr · Shows",
-                    source_lang=data["original"] or "auto",
-                    target_lang=base,
-                    target_locale=locale,
-                    input_file=path,
+                    source=data.get("source") or "Sonarr · Shows",
+                    **run,
                     kind=body.kind,
                     overrides=overrides,
                     knowledge_snapshot=knowledge_snapshot(store.db),

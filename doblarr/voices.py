@@ -102,6 +102,56 @@ def assign_default_cast(speakers, existing: list[dict] | None = None) -> list[di
     return existing
 
 
+def merge_cast(own: list[dict] | None, inherited: list[dict]) -> list[dict]:
+    """The title's cast over the series voices it inherits.
+
+    A title entry with its own voice wins. One without a voice does not blank an
+    inherited voice, but is otherwise kept: in clone mode its reference choice
+    and fallback voice are the whole point of the entry.
+    """
+    assigned = {e["speaker_id"]: e for e in inherited}
+    for entry in own or []:
+        if entry.get("voice") or entry["speaker_id"] not in assigned:
+            assigned[entry["speaker_id"]] = entry
+    return list(assigned.values())
+
+
+def assigned_cast(job, db, revision_id: str | None, series_id: str | None) -> list[dict]:
+    """Voices cast for the characters this run's speakers were identified as.
+
+    A speaker whose lines an analysis identified as a character (through the
+    cues they share, doblarr.speaker_memory) inherits that character's series
+    casting choice for the run's locale, or its "any" choice. Speakers nobody
+    identified inherit nothing: a diarization number is not an identity.
+    """
+    if not revision_id or not series_id:
+        return []
+    from . import speaker_memory
+    from .studio import casting, records
+
+    labels = speaker_memory.characters_for_labels(db, revision_id, job.segments)
+    if not labels:
+        return []
+    series_ref = ("series:" + series_id.rsplit(":", 1)[-1]
+                  if series_id.startswith("show:tvdb:") else series_id)
+    choices = (records.get(db, "casting", casting.record_id("series", series_ref))
+               or {}).get("characters") or {}
+    out = []
+    for label, character in sorted(labels.items()):
+        choice = casting.pick(choices, character["name"], locale=job.target_locale or "")
+        if not choice or not choice.get("voice"):
+            continue
+        out.append({"speaker_id": label, "label": character["name"], "category": "speaker",
+                    "voice": choice["voice"], "previewed": True,
+                    "character_id": character["id"],
+                    **{k: choice[k] for k in ("engine", "pitch_semitones", "formant_semitones")
+                       if choice.get(k)}})
+    return casting.to_voice_cast([], {"speakers": [
+        {"speaker": e["speaker_id"], "character": e["label"], "source": "series",
+         **{k: v for k, v in e.items() if k not in ("speaker_id", "label")}}
+        for e in out]}) if out else []
+
+
 def character_cast(job, db, group, mapping):
     """Reuse only explicitly mapped characters; diarization numbers are not identities."""
     if not group or not mapping:

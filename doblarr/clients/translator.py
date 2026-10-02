@@ -126,6 +126,7 @@ class PromptureTranslator:
         glossary: dict | None = None,
         instruction: str = "",
         synopsis: str | None = None,
+        knowledge: list[dict] | None = None,
     ) -> list[str]:
         prompture = _prompture()
         from prompture.exceptions import ExtractionError
@@ -150,6 +151,11 @@ class PromptureTranslator:
             + ("The synopsis is a machine-written summary of the episode: background for "
                "understanding only, never text to translate, and it may be wrong. "
                if synopsis else "")
+            + ("title_knowledge lists facts a person reviewed and accepted for this title "
+               "(who is who, relationships, how characters speak): background for "
+               "understanding, never text to translate. It outranks the synopsis; the "
+               "glossary still decides wording. "
+               if knowledge else "")
             + ("Set delivery to reaction only for a segment that is nothing but a vocal "
                "reaction sound (a laugh, gasp, sigh, scream or interjection such as "
                "'えっ' or '¡Uf!') with no words at all; still translate it. Name its "
@@ -168,6 +174,8 @@ class PromptureTranslator:
         }
         if synopsis:
             request["synopsis"] = {"text": synopsis, "generated": True}
+        if knowledge:
+            request["title_knowledge"] = knowledge
         content = json.dumps(request, ensure_ascii=False)
         schema = TranslationBatch.model_json_schema()
         schema["properties"]["translations"].update(minItems=len(lines), maxItems=len(lines))
@@ -226,6 +234,7 @@ class PromptureTranslator:
         context: list[dict] | None = None,
         glossary: dict | None = None,
         synopsis: str | None = None,
+        knowledge: list[dict] | None = None,
     ) -> list[str]:
         self.last_usage = []
         self.last_flags = []
@@ -233,7 +242,7 @@ class PromptureTranslator:
         try:
             return self._translate_lines(
                 texts, source_lang, target_lang, None, segments, context, glossary,
-                synopsis=synopsis,
+                synopsis=synopsis, knowledge=knowledge,
             )
         except _InvalidTranslation:
             self.last_flags = []
@@ -241,7 +250,7 @@ class PromptureTranslator:
                 return [
                     self._translate_lines(
                         [text], source_lang, target_lang, None, [meta], context, glossary,
-                        synopsis=synopsis,
+                        synopsis=synopsis, knowledge=knowledge,
                     )[0]
                     for text, meta in zip(texts, segments, strict=True)
                 ]
