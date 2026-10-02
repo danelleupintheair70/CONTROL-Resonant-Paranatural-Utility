@@ -59,7 +59,8 @@ def _clearest(lines: list[dict]) -> dict:
 
 
 def queue(lines: list[dict], names: dict[str, str], *, dialogue: dict | None = None,
-          suggestions: dict | None = None, voices: int = 6, per_line: int = 6) -> list[dict]:
+          suggestions: dict | None = None, reader: dict | None = None, voices: int = 6,
+          per_line: int = 6) -> list[dict]:
     """Questions, most useful first: {kind: voice|line, ...}."""
     by_voice: dict[str, list[dict]] = {}
     for line in lines:
@@ -83,12 +84,21 @@ def queue(lines: list[dict], names: dict[str, str], *, dialogue: dict | None = N
         if line.get("locked") or not line.get("speaker"):
             continue
         score, reasons = line_doubt(line)
+        said = (reader or {}).get(line.get("cue")) or {}
+        now = names.get(line["speaker"], "")
+        disputed = bool(said.get("speaker")) and said.get("confidence") in ("high", "medium")
+        if disputed and now and said["speaker"].casefold() != now.casefold():
+            score += 3.0
+            reasons.append(f"the script reader says {said['speaker']} ({said.get('clue', '')})")
         if score >= LINE_THRESHOLD:
             doubtful.append((score, line, reasons))
     doubtful.sort(key=lambda row: -row[0])
     for score, line, reasons in doubtful[:per_line]:
         candidates = [c["label"] for c in (line.get("why") or {}).get("candidates") or []]
         options = []
+        said = (reader or {}).get(line.get("cue")) or {}
+        if said.get("speaker") and said.get("confidence") in ("high", "medium"):
+            options.append(said["speaker"])
         for label in candidates:
             name = names.get(label)
             if name and name not in options:

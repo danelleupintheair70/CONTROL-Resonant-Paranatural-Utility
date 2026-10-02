@@ -12,7 +12,7 @@ const STATE = { done: 'done', stale: 'needs a rerun', failed: 'failed', unsuppor
   skipped: 'off', missing: 'not run', running: 'running' };
 const STAGE = { probe: 'Read the file', separate: 'Separate dialogue', transcribe: 'Lines', diarize: 'Group voices',
   measure: 'Levels', baselines: 'Speaker baselines', analyze: 'Pitch and words', features: 'Energy curves',
-  speaker_memory: 'Teach the show', shots: 'Shots', faces: 'Faces', tracks: 'Face tracks',
+  speaker_memory: 'Teach the show', emotion: 'How lines are said', shots: 'Shots', faces: 'Faces', tracks: 'Face tracks',
   active_speaker: 'Mouth movement', association: 'Who speaks (visual)', scenes: 'Scenes', knowledge: 'Title knowledge' };
 const SCREEN = { 'onscreen-speaking': 'speaking on screen', 'onscreen-silent': 'face on screen, not speaking',
   offscreen: 'nobody on screen', unknown: 'not analysed' };
@@ -41,7 +41,7 @@ export function mountEvidence(box, data, { path, target, reload, say, visual = n
   const top = box.querySelector('[data-evidence-top]');
   const coverage = data.coverage || [];
   const rerunnable = data.rerunnable || [];
-  const groups = [['audio', 'Audio'], ['visual', 'Picture'], ['knowledge', 'Knowledge']];
+  const groups = [['audio', 'Audio'], ['visual', 'Picture'], ['emotion', 'Emotion'], ['knowledge', 'Knowledge']];
   top.innerHTML = `<details class="analysis-coverage" ${rerunnable.length || data.names_from === 'legacy' ? 'open' : ''}>
     <summary>What has been analysed <span class="hint">${coverage.filter(c => c.state === 'done').length} of ${coverage.length} stages done${rerunnable.length ? ` · ${rerunnable.length} to rerun` : ''}</span></summary>
     ${data.identity ? '' : '<p class="hint">This file cannot be read from here, so it cannot be identified by its content. Names are read the older way, by file name, until it is reachable.</p>'}
@@ -51,6 +51,7 @@ export function mountEvidence(box, data, { path, target, reload, say, visual = n
     <div class="studio-actions">
       ${rerunnable.length ? `<button type="button" class="btn btn-secondary" data-rerun>Rerun ${rerunnable.length} stage${rerunnable.length === 1 ? '' : 's'}</button>` : ''}
       <button type="button" class="btn btn-ghost" data-visual-run>Analyse the picture</button>
+      <button type="button" class="btn btn-ghost" data-emotion-run>Read the emotions</button>
       <button type="button" class="btn btn-ghost" data-knowledge-run>Extract title knowledge</button>
       ${data.names_from === 'legacy' ? '<button type="button" class="btn btn-ghost" data-migrate>Move older names onto this episode</button>' : ''}
     </div>
@@ -67,6 +68,8 @@ export function mountEvidence(box, data, { path, target, reload, say, visual = n
     queue({ stages: rerunnable }, `Rerunning ${rerunnable.join(', ')}. Earlier stages are reused.`));
   top.querySelector('[data-visual-run]').onclick = () => queue({ stages: ['shots', 'faces', 'tracks', 'active_speaker', 'association', 'scenes'], visual: true },
     'Analysing the picture. Faces are evidence for you to check, never names on their own.');
+  top.querySelector('[data-emotion-run]').onclick = () => queue({ stages: ['emotion'] },
+    'Reading how each line is said: a still of every line with its words, and the voice. Takes about half a minute per minute of dialogue.');
   top.querySelector('[data-knowledge-run]').onclick = async () => {
     try {
       const result = await api('narrative/extract', { method: 'POST', json: { path, target_lang: target } });

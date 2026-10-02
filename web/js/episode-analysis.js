@@ -283,20 +283,22 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     const clue = label => {
       const said = data.dialogue?.[label] || { answers: [], calls: [], suggests: '' };
       const auto = data.named_by?.[label];
-      if (!auto && !said.answers.length && !said.calls.length) return '';
+      if (!auto && !said.answers.length && !said.calls.length && !data.reader?.voices?.[label]) return '';
       const name = data.names[label] || '';
       const parts = [said.answers.length ? `answers to ${said.answers.slice(0, 2).map(a => `“${esc(a.name)}” ${a.count}×`).join(', ')}` : '',
         said.calls.length ? `calls ${said.calls.slice(0, 3).map(a => esc(a.name)).join(', ')}` : ''].filter(Boolean);
       const clash = said.suggests && !(name && sameName(name, said.suggests));
+      const read = data.reader?.voices?.[label];
+      const reader = read ? `<p class="cast-clue" title="Read from the script by ${esc(data.reader.model || 'a model')}">The script reader says <strong>${esc(read.leading)}</strong> (${Math.round(read.share * 100)}% of its lines)${name && !sameName(name, read.leading) ? ', not the name it has' : ''}.</p>` : '';
       if (auto) {
         const how = auto.kind === 'voice-memory'
           ? `Recognised from earlier episodes: sounds like ${esc(name)} (${Math.round(auto.similarity * 100)}%, ${auto.episodes} episode${auto.episodes === 1 ? '' : 's'} heard)`
           : `Named by the dialogue: it answers when ${esc(name)} is called (${auto.answers}×)`;
         return `<p class="cast-clue cast-clue-auto">${how}${auto.replaced ? `, was ${esc(auto.replaced)}` : ''}.
           <button type="button" class="btn btn-ghost" data-undo-dialogue="${esc(label)}" data-was="${esc(auto.replaced || '')}">${auto.replaced ? `Keep ${esc(auto.replaced)}` : 'Undo'}</button></p>
-          ${parts.length ? `<p class="cast-clue">In the dialogue: ${parts.join(' · ')}</p>` : ''}`;
+          ${parts.length ? `<p class="cast-clue">In the dialogue: ${parts.join(' · ')}</p>` : ''}${reader}`;
       }
-      return `<p class="cast-clue" title="A line that calls a name is spoken to that person; the next line in another voice is usually theirs.">In the dialogue: ${parts.join(' · ')}</p>
+      return `${reader}<p class="cast-clue" title="A line that calls a name is spoken to that person; the next line in another voice is usually theirs.">In the dialogue: ${parts.join(' · ')}</p>
         ${clash ? `<p class="cast-clue-warn">${name ? `Named ${esc(name)}, but the` : 'The'} dialogue says this is <strong>${esc(said.suggests)}</strong>: it answers when ${esc(said.suggests)} is called (${said.answers[0].count}×).
           <button type="button" class="btn btn-ghost" data-suggest="${esc(label)}" data-suggest-name="${esc(said.suggests)}">Name it ${esc(said.suggests)}</button></p>` : ''}`;
     };
@@ -322,6 +324,10 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
           title="${clock(l.start)} · ${esc(keyOf(l.speaker))}: ${esc(l.text)}"></span>`).join('')}
         ${Array.from({ length: Math.floor(length / 300) }, (_, i) => `<span class="analysis-minute m" style="left:${((i + 1) * 300 / length * 100).toFixed(2)}%">${(i + 1) * 5}:00</span>`).join('')}
       </div>
+      ${(data.on_screen || []).length ? `<p class="analysis-onscreen"><span class="hint">On screen:</span> ${data.on_screen.map(o => {
+        const l = data.lines.find(x => x.cue === o.cue);
+        return l ? `<button type="button" class="analysis-suggest analysis-suggest-alt" data-watch="${esc(l.speaker)}" data-watch-line="${l.index}" title="Text drawn on the picture at ${clock(l.start)}">${esc(o.text)} <span class="m">${clock(l.start)}</span></button>` : '';
+      }).join('')}</p>` : ''}
       ${(data.doubts || []).length ? `<section class="asks" aria-label="Questions about the voices">
         <h4>Who says this? <span class="hint">${data.doubts.length} question${data.doubts.length === 1 ? '' : 's'} · each answer is kept for the show and teaches the next episodes</span></h4>
         <div class="asks-list">${data.doubts.map((q, n) => `<article class="ask" data-ask="${n}" style="--tint:${tint(q.voice)}">
@@ -379,7 +385,7 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
           <span role="cell"><span class="analysis-who" style="border-color:${tint(l.speaker)}" title="${esc(whyText(l.why))}">${esc(keyOf(l.speaker))}</span>${l.uncertain || weak(l.why) ? `<span class="hint" title="${esc(whyText(l.why) || 'Too short to be sure of the voice')}">?</span>` : ''}${l.locked ? `<button type="button" class="analysis-lock" data-unlock="${esc(l.cue)}" title="You assigned this line; it stays with this character when voices are regrouped. Click to let the grouping decide again.">assigned</button>` : ''}
             <span class="hint analysis-screen" data-screen-cue="${esc(l.cue)}"></span></span>
           <span role="cell" class="analysis-text">${esc(l.text)}${l.original_text ? `<span class="analysis-original">${esc(l.original_text)}</span>` : ''}</span>
-          <span role="cell"><span class="cast-band cast-band-${l.band} analysis-band">${BANDS[l.band]}</span></span>
+          <span role="cell"><span class="cast-band cast-band-${l.band} analysis-band">${BANDS[l.band]}</span>${l.emotion ? `<span class="emo emo-${esc(l.emotion.confidence)}" title="${esc([l.emotion.expression && `face: ${l.emotion.expression}`, l.emotion.voice && `voice: ${l.emotion.voice}`, l.emotion.agree === true ? 'face and voice agree' : l.emotion.agree === false ? 'the voice disagrees' : '', `read from the ${l.emotion.from}`].filter(Boolean).join(' · '))}">${esc(l.emotion.feeling)}</span>` : ''}</span>
           <span role="cell" class="m hint">${l.pitch_hz ? `${Math.round(l.pitch_hz)} Hz` : ''}${l.movement_st ? ` · ${l.movement_st} st` : ''}${l.features?.quality && l.features.quality !== 'ok' ? `<br><span title="${esc((l.features.reasons || []).join('; '))}">curve ${esc(l.features.quality)}</span>` : ''}</span>
           <span role="cell" class="analysis-play">
             <button type="button" class="btn btn-ghost" data-watch-line="${l.index}" data-watch="${esc(l.speaker)}" title="This line on screen, then the rest of this voice’s lines">Watch</button>

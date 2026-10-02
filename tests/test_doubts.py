@@ -23,3 +23,12 @@ def test_unnamed_voices_come_first_then_the_lines_decided_on_little_evidence():
     assert asks[0]["hints"][0]["name"] == "Mina"
     assert asks[1]["line"]["cue"] == "c6" and asks[1]["now"] == "Kaito"   # c7 was answered
     assert "joined the closest voice" in " ".join(asks[1]["reasons"])
+
+
+def test_a_line_the_script_reader_disputes_moves_up_the_queue():
+    lines = [line(0, "V1", 0), line(1, "V1", 3), line(2, "V1", 6)]
+    asks = doubts.queue(lines, {"V1": "Kaito"}, reader={
+        "c1": {"speaker": "Mina", "confidence": "high", "clue": "answers when Mina is called"}})
+    [ask] = asks
+    assert ask["line"]["cue"] == "c1" and ask["options"][0] == "Mina"
+    assert "the script reader says Mina" in ask["reasons"][0]

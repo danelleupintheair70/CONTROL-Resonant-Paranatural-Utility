@@ -439,6 +439,14 @@ class AnalysisModel(_Section):
     knowledge: bool = False
     knowledge_model: str = ""
     knowledge_endpoint: str | None = None
+    # How each line is said (doblarr.emotion): a still per line read by a
+    # model that sees, plus the voice. Off unless asked; local by default.
+    emotion: bool = False
+    emotion_model: str = "ollama/qwen3-vl:8b"
+    # Who speaks each line, read from the script by a strong model
+    # (doblarr.dialogue_reader). Empty: off. A cloud model sends the subtitle
+    # text out of this machine; local 8-12B models were not good enough.
+    reader_model: str = ""
     # A dub track only helps tell voices apart when it is the same cut: its
     # speech has to line up with the original before it is used as evidence.
     verify_tracks: bool = True

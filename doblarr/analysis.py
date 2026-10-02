@@ -189,6 +189,8 @@ def stage_inputs(job, stage: str):
         "measure": lambda: [[seg.cue_id, seg.measurement.inputs] for seg in job.segments],
         "baselines": lambda: [job.dialogue_baseline, labels],
         "analyze": lambda: [DETECTOR, spans],
+        "emotion": lambda: spans,
+        "reader": lambda: labels,
         "features": lambda: features_request(job, Path(job.vocals or job.source_audio
                                                          or "")),
     }[stage]()

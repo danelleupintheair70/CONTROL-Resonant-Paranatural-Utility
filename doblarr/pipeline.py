@@ -624,6 +624,59 @@ def run_job(
         vision_pipeline.run(job, work, config, db=db, cancel=cancel_event,
                             progress=_report("visual"))
 
+    def _emotion():
+        """How each line is said, from the voice and the picture (doblarr.emotion)."""
+        if not job.segments:
+            return
+        from . import emotion, identity, llm, speaker_memory
+
+        ident = job.metrics.get("identity") or {}
+        names: dict[str, str] = {}
+        if db is not None and ident.get("revision_id") and ident.get("series_id"):
+            spelled = {c["id"]: c["name"] for c in identity.characters(
+                db, ident["series_id"], include_retired=True)}
+            names = {label: spelled.get(cid, "") for label, cid in
+                     speaker_memory.labels_to_characters(db, ident["revision_id"]).items()}
+        model = str(analysis_options.get("emotion_model") or "ollama/qwen3-vl:8b")
+        device = resolve_device("transcribe", compute).torch
+        try:
+            path, reused = emotion.run(job, work, model, names=names, device=device,
+                                       cancel=cancel_event, progress=_report("emotion"))
+        except llm.ModelUnavailable as exc:
+            analysis.record(db, job, "emotion", "failed", error=str(exc))
+            return
+        job.metrics["emotion"] = {"path": str(path), "reused": reused}
+        analysis.record(db, job, "emotion", "done", outputs={"emotion": str(path)},
+                        version=emotion.READER)
+
+    def _reader():
+        """Who speaks each line as a strong model reads the script (evidence only)."""
+        model = str(analysis_options.get("reader_model") or "")
+        if not job.segments:
+            return
+        if not model:
+            analysis.record(db, job, "reader", "unsupported",
+                            error="no reader model is configured (analysis.reader_model)")
+            return
+        from . import dialogue_reader, identity, llm
+        from .artifacts import read_json
+        from .stages.common import work_stem
+
+        ident = job.metrics.get("identity") or {}
+        cast = [n for c in (identity.characters(db, ident["series_id"])
+                            if db is not None and ident.get("series_id") else [])
+                for n in [c["name"], *(c.get("aliases") or [])]]
+        original = {r.get("cue"): r.get("original_text") or "" for r in read_json(
+            Path(work) / f"{work_stem(job)}.analysis.json").get("lines") or []}
+        try:
+            path = dialogue_reader.run(job, work, model, cast, original=original,
+                                       cancel=cancel_event, progress=_report("reader"))
+        except (llm.ModelUnavailable, llm.InvalidReply) as exc:
+            analysis.record(db, job, "reader", "failed", error=str(exc))
+            return
+        analysis.record(db, job, "reader", "done", outputs={"reader": str(path)},
+                        version=dialogue_reader.READER)
+
     def _knowledge():
         """Narrative extraction into a reviewable draft (never active knowledge)."""
         ident = job.metrics.get("identity") or {}
@@ -997,6 +1050,10 @@ def run_job(
             optional.append(("visual", _visual))
         if analysis_options.get("knowledge"):
             optional.append(("knowledge", _knowledge))
+        if analysis_options.get("emotion"):
+            optional.append(("emotion", _emotion))
+        if analysis_options.get("reader_model"):
+            optional.append(("reader", _reader))
         chosen = [str(x) for x in analysis_options.get("stages") or []]
         if chosen:
             # A targeted rerun: the earlier stages run from their checkpoints
@@ -1006,7 +1063,7 @@ def run_job(
             wanted = {("visual" if c in visual else c) for c in chosen}
             available = {"analyze": _analyze, "features": _features,
                          "speaker_memory": _speaker_memory, "visual": _visual,
-                         "knowledge": _knowledge}
+                         "knowledge": _knowledge, "emotion": _emotion, "reader": _reader}
             optional = [(name, available[name]) for name in available if name in wanted]
             if "features" in wanted:
                 force_features["on"] = True

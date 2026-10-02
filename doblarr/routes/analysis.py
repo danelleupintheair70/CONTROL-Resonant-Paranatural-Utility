@@ -124,6 +124,17 @@ def load_plan(db, path: str) -> dict:
     return ((db.load_plan(names_key(path)) or {}).get("plan") or {})
 
 
+def _feeling(row: dict | None) -> dict | None:
+    """A line's feeling for the page: the fused answer and what each reader said."""
+    if not row or not row.get("feeling"):
+        return None
+    seen, heard = row.get("picture") or {}, row.get("voice") or {}
+    return {"feeling": row["feeling"], "confidence": row.get("confidence"),
+            "agree": row.get("agree"), "from": row.get("from"),
+            "intensity": row.get("intensity"), "expression": seen.get("expression") or "",
+            "voice": heard.get("feeling") or ""}
+
+
 def identify(db, path: str, cache_dir: Path | None = None) -> dict | None:
     """The canonical identity of an episode path, or None when it cannot be told.
 
@@ -314,6 +325,10 @@ def build_router(config, store) -> APIRouter:
         data = _read(script)
         extra = _read(sidecar(script, "analysis.json"))
         feats = _read(sidecar(script, "features.json"))
+        felt = {row.get("cue"): row for row in _read(sidecar(script, "emotion.json")).get(
+            "lines") or []}
+        reading = _read(sidecar(script, "reader.json"))
+        read_lines = {row.get("cue"): row for row in reading.get("lines") or []}
         by_cue = {row["cue"]: row for row in extra.get("lines") or []}
         feature_rows = {row.get("cue"): row for row in feats.get("lines") or []}
         grouped = voice_tags.read_sidecar(sidecar(script, "speakers.json")) or {}
@@ -343,6 +358,7 @@ def build_router(config, store) -> APIRouter:
                 "pitch_hz": row.get("pitch_hz"), "movement_st": row.get("movement_st"),
                 "uncertain": "speaker_uncertain" in (seg.get("issues") or []),
                 "why": why.get(cue_id),
+                "emotion": _feeling(felt.get(cue_id)),
                 "features": {k: feature.get(k) for k in (
                     "quality", "active_seconds", "range_db", "mean_db", "reasons")}
                 if feature else None,
@@ -383,8 +399,18 @@ def build_router(config, store) -> APIRouter:
                 "cast": cast,
                 "suggestions": suggestions,
                 "named_by": named_by_dialogue(ident),
+                # Text drawn on the picture (title cards, captions naming someone),
+                # read with the emotions: names on screen are evidence of who is who.
+                "on_screen": [{"cue": cue, "text": row["picture"]["text_on_screen"].strip()}
+                              for cue, row in felt.items()
+                              if len(((row.get("picture") or {}).get("text_on_screen")
+                                      or "").strip()) > 1],
                 # The few questions worth a person's time (doblarr.doubts).
-                "doubts": doubts.queue(lines, names, dialogue=clues, suggestions=suggestions),
+                "doubts": doubts.queue(lines, names, dialogue=clues, suggestions=suggestions,
+                                       reader=read_lines),
+                # A strong model's reading of the script, when one is configured.
+                "reader": {"model": reading.get("model"), "voices": reading.get("voices") or {}}
+                if reading else None,
                 # What the lines themselves say about each voice (names it
                 # answers to, names it calls): catches a misnamed group.
                 "dialogue": clues,

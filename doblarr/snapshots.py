@@ -41,6 +41,8 @@ STAGES: dict[str, tuple[str, ...]] = {
     "association": ("active_speaker", "diarize"),
     "scenes": ("shots", "transcribe"),
     "knowledge": ("transcribe",),
+    "emotion": ("transcribe",),
+    "reader": ("diarize",),
 }
 AUDIO_STAGES = ("probe", "separate", "transcribe", "diarize", "measure", "baselines",
                 "analyze", "features", "speaker_memory")
@@ -138,7 +140,8 @@ def coverage(snapshot: dict | None, unsupported: dict[str, str] | None = None) -
         out.append({"stage": name, "state": state, "reason": reason,
                     "version": entry.get("version", ""), "at": entry.get("at", ""),
                     "group": "visual" if name in VISUAL_STAGES else
-                    "knowledge" if name == "knowledge" else "audio",
+                    "knowledge" if name in ("knowledge", "reader") else
+                    "emotion" if name == "emotion" else "audio",
                     "metrics": entry.get("metrics") or {}})
     return out
 

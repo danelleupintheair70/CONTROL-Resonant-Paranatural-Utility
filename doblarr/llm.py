@@ -40,8 +40,12 @@ class Client:
     """A lazily initialised Prompture driver for one model string."""
 
     def __init__(self, model: str, *, endpoint: str | None = None, guard=None,
-                 budget=None, budget_kind: str = "llm", timeout: int = 300):
+                 budget=None, budget_kind: str = "llm", timeout: int = 300,
+                 think: bool | None = None):
         self.model = model
+        # A reasoning model's thinking counts against the reply length; a quick
+        # reading (a still's expression) asks it not to think at all.
+        self.think = think
         self.endpoint = endpoint
         self.guard = guard
         self.budget = budget
@@ -76,8 +80,11 @@ class Client:
         return driver
 
     def ask(self, schema: type[BaseModel], system: str, payload: dict, *,
-            max_tokens: int = 4096, retries: int = 1) -> BaseModel:
-        """A validated instance of `schema`, or InvalidReply/ModelUnavailable."""
+            max_tokens: int = 4096, retries: int = 1, images: list | None = None) -> BaseModel:
+        """A validated instance of `schema`, or InvalidReply/ModelUnavailable.
+
+        `images` (bytes, paths or data URLs) go with the request to a model
+        that can see; Prompture converts them for the provider."""
         import prompture
         from prompture.exceptions import ExtractionError
 
@@ -95,8 +102,9 @@ class Client:
                     driver=driver, content_prompt=content + feedback,
                     json_schema=schema.model_json_schema(), system_prompt=system,
                     model_name=self.model.split("/", 1)[-1],
-                    options={"timeout": self.timeout, "max_tokens": max_tokens},
-                    ai_cleanup=False, cache=False)
+                    options={"timeout": self.timeout, "max_tokens": max_tokens,
+                             **({"think": self.think} if self.think is not None else {})},
+                    ai_cleanup=False, cache=False, **({"images": images} if images else {}))
                 self.usage.append(result.get("usage", {}))
                 return schema.model_validate(result["json_object"])
             except (ExtractionError, ValidationError, KeyError, TypeError) as exc:

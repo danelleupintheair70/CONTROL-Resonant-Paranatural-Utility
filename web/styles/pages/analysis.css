@@ -132,3 +132,8 @@
 }
 .ask-skip { padding:2px 8px; font-size:12px; }
 @media (max-width: 560px) { .ask { flex-direction:column; } .ask-frame { width:100%; } }
+.emo { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:6px; font-size:11.5px;
+  border:1px solid var(--line-strong); }
+.emo-high { background:color-mix(in srgb, var(--color-accent) 14%, transparent); border-color:transparent; }
+.emo-low, .emo-none { color:var(--muted); border-style:dashed; }
+.analysis-onscreen { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 14px; font-size:12.5px; }
