@@ -606,20 +606,11 @@ def build_router(config, store) -> APIRouter:
                 "rerunnable": snapshots.rerunnable(snapshot)}
 
     def earlier_run(path: str, ident: dict | None, target: str) -> dict:
-        """The input path and languages an earlier analysis of this content used,
-        so a rerun reuses its separation, lines and voice groups instead of
-        starting over. Work folders are keyed by input, source language and
-        target locale, and the subtitles a run reads depend on the target: a
-        rerun under another target cuts the lines again and regroups them."""
-        script, _how = find(path, ident)
-        recorded = (_read(script).get("identity") or {}) if script else {}
-        source = str(recorded.get("input") or "")
-        folder = script.parent.name if script else ""
-        return {"input_file": source if source and Path(source).is_file() else path,
-                "source_lang": str(recorded.get("source_lang") or "auto"),
-                "target_lang": str(recorded.get("target_lang") or target_of(target)),
-                "target_locale": folder if script and "-" in folder
-                and folder.split("-")[0] == str(recorded.get("target_lang") or "") else ""}
+        from ..analysis import earlier_run as recorded_run
+
+        return recorded_run(db, config.work_dir, path, ident) or {
+            "input_file": path, "source_lang": "auto", "target_lang": target_of(target),
+            "target_locale": ""}
 
     def target_of(target: str) -> str:
         from ..languages import base_language

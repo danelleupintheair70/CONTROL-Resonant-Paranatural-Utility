@@ -209,3 +209,37 @@ def record(db, job, stage: str, state: str = "done", *, outputs: dict | None = N
     snapshots.record_stage(db, ident["revision_id"], job.source_lang or "", stage, state,
                            inputs=inputs, outputs=outputs, version=version, metrics=metrics,
                            error=error, identity=ident)
+
+
+def earlier_run(db, work_dir: Path, path: str, ident: dict | None = None) -> dict | None:
+    """How an earlier analysis of this content ran: its input path, languages
+    and target locale, or None when it was never analysed.
+
+    Every later analysis of the file (a rerun of some stages, "analyze
+    again") must run the same way. Work folders are keyed by input, source
+    language and target locale, and the subtitles a run reads depend on the
+    target: under another target the lines are cut and grouped again.
+    """
+    from .speaking import locate_script
+    from .studio import records
+
+    script = None
+    if ident and db is not None:
+        for snap in records.list_latest(db, "snapshot", scope=ident["revision_id"]):
+            found = ((snap.get("stages") or {}).get("transcribe") or {}).get(
+                "outputs", {}).get("script")
+            if found and Path(found).is_file():
+                script = Path(found)
+                break
+    if script is None:
+        script, how = locate_script(work_dir, path)
+        if script is None or how == "ambiguous":
+            return None
+    recorded = json.loads(script.read_text(encoding="utf-8")).get("identity") or {}
+    source = str(recorded.get("input") or "")
+    target = str(recorded.get("target_lang") or "")
+    folder = script.parent.name
+    return {"input_file": source if source and Path(source).is_file() else str(path),
+            "source_lang": str(recorded.get("source_lang") or "auto"),
+            "target_lang": target or "es",
+            "target_locale": folder if "-" in folder and folder.split("-")[0] == target else ""}

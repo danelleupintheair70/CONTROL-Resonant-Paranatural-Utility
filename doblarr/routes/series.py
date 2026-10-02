@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import AfterValidator, BaseModel, Field
 
-from .. import plex_library, speaking
+from .. import analysis, plex_library, speaking
 from ..artifacts import read_json
 from ..cache import TTLCache
 from ..clients.plex import PlexError
@@ -18,7 +18,7 @@ from ..knowledge import snapshot as knowledge_snapshot
 from ..languages import base_language, normalize
 from ..languages import parse as parse_language_tag
 from ..voices import cast_key
-from .analysis import load_names
+from .analysis import identify, load_names
 
 
 def normalized(path):
@@ -268,15 +268,21 @@ def build_router(config, services, store, bus):
                 episode_plan = (store.db.load_plan(cast_key(path=path)) or {}).get("plan", {})
                 overrides = {**plan, **episode_plan}
                 overrides.pop("target_lang", None)
+                run = {"source_lang": data["original"] or "auto", "target_lang": base,
+                       "target_locale": locale, "input_file": path}
+                if body.kind == "analyze":
+                    # Analysing again runs the way the earlier analysis did:
+                    # another target would read other subtitles and cut and
+                    # group the lines anew.
+                    run = analysis.earlier_run(
+                        store.db, config.work_dir, path,
+                        identify(store.db, path, Path(config.work_dir) / "cache")) or run
                 job = store.add(
                     title=(
                         f"{data['title']} S{row['season']:02}E{row['episode']:02} — {row['title']}"
                     ),
                     source=data.get("source") or "Sonarr · Shows",
-                    source_lang=data["original"] or "auto",
-                    target_lang=base,
-                    target_locale=locale,
-                    input_file=path,
+                    **run,
                     kind=body.kind,
                     overrides=overrides,
                     knowledge_snapshot=knowledge_snapshot(store.db),

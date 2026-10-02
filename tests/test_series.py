@@ -161,3 +161,22 @@ def test_show_voices_share_talk_across_episodes_and_link_named_voices(client_fac
     assert rows["TAMAKI"]["voice"]["key"] == "profile:vb-t"
     assert rows["MINA"]["voice"] is None
     assert [e["label"] for e in data["analysed"]] == ["S01E01", "S01E02"]   # E03 shares a file
+
+
+def test_analysing_an_episode_again_runs_the_way_its_first_analysis_did(client_factory, tmp_path):
+    import json
+
+    client = client_factory()
+    first, _second = setup_series(client, tmp_path)
+    work = client.app.state.worker.config.work_dir
+    folder = work / "media" / "abc" / "es-419"
+    folder.mkdir(parents=True)
+    (folder / "first.script.json").write_text(json.dumps({"identity": {
+        "input": str(first), "source_lang": "ja", "target_lang": "es"}, "segments": []}),
+        encoding="utf-8")
+    # The page's dub goes to English; the analysis was made under es-419.
+    queued = client.post("/api/series/79214/queue", json={
+        "episode_ids": [1], "target_lang": "en", "kind": "analyze", "missing_only": False}).json()
+    job = client.app.state.jobs.get(queued["queued"][0]["job_id"])
+    assert (job.kind, job.source_lang, job.target_lang, job.target_locale) == (
+        "analyze", "ja", "es", "es-419")
