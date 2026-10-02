@@ -133,9 +133,9 @@ def build_router(config, services, db) -> APIRouter:
             rows.append({**found, "profile_revision": profile["revision"],
                          "references": profiles.coverage(profile),
                          "assignments": len(chosen),
-                         "voices": sorted({c.get("voice") for c in chosen if c.get("voice")})})
+                         "voices": sorted({str(c["voice"]) for c in chosen if c.get("voice")})})
         return {"series_id": series_id, "characters": sorted(
-            rows, key=lambda r: (r["series_id"], r["name"].casefold()))}
+            rows, key=lambda r: (str(r.get("series_id") or ""), r["name"].casefold()))}
 
     @api.post("/api/characters")
     def create_character(body: CharacterIn):

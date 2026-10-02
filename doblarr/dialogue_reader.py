@@ -100,7 +100,7 @@ def by_voice(voices: list[str], calls: list[dict]) -> dict:
         if call.get("speaker"):
             bucket = tally.setdefault(voice, {})
             bucket[call["speaker"]] = bucket.get(call["speaker"], 0.0) + WEIGHT.get(
-                call.get("confidence"), 0.25)
+                str(call.get("confidence") or ""), 0.25)
     out = {}
     for voice, names in tally.items():
         ranked = sorted(names.items(), key=lambda kv: -kv[1])

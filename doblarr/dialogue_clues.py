@@ -47,7 +47,7 @@ def _cue(seg) -> str:
 
 def candidates(lines: list[dict], cast: list[str] | None = None) -> dict[str, str]:
     """Folded name -> spelling, for names this episode can be talking about."""
-    known = {}
+    known: dict[str, str] = {}
     for name in cast or []:
         for part in str(name).split():
             if len(part) > 1:

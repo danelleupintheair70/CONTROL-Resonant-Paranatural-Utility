@@ -104,7 +104,7 @@ class Client:
                     model_name=self.model.split("/", 1)[-1],
                     options={"timeout": self.timeout, "max_tokens": max_tokens,
                              **({"think": self.think} if self.think is not None else {})},
-                    ai_cleanup=False, cache=False, **({"images": images} if images else {}))
+                    ai_cleanup=False, cache=False, images=images or None)
                 self.usage.append(result.get("usage", {}))
                 return schema.model_validate(result["json_object"])
             except (ExtractionError, ValidationError, KeyError, TypeError) as exc:

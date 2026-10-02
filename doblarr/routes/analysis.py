@@ -453,10 +453,11 @@ def build_router(config, store) -> APIRouter:
             row = current.get(label)
             if name:
                 character = identity.ensure_character(db, ident["series_id"], name)
-                same = bool(row) and row.get("character_id") == character["id"]
+                known = row or {}
+                same = known.get("character_id") == character["id"]
                 kept = label in body.keep or (not same and any(
-                    e.get("kind") == "dialogue" for e in (row or {}).get("evidence") or []))
-                if same and not kept and row.get("state") in ("manual", "accepted"):
+                    e.get("kind") == "dialogue" for e in known.get("evidence") or []))
+                if same and not kept and known.get("state") in ("manual", "accepted"):
                     continue
                 # A name chosen over the dialogue's is a person's answer to it.
                 identity.associate(db, ident["revision_id"], "cluster", label, character["id"],
