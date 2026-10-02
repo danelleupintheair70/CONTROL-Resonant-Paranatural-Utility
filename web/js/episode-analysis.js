@@ -275,6 +275,22 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     const joined = named.filter(c => c.labels.length > 1);
     const length = Math.max(...data.lines.map(l => l.end), 1);
     const frames = (labels, count) => pickFrames(data.lines.filter(l => labels.includes(l.speaker)), screen, count);
+    // What the lines say about one voice group, and a warning when its name disagrees.
+    const sameName = (a, b) => {
+      const row = (data.cast || []).find(r => fold(r.name) === fold(a));
+      return [a, ...(row?.aliases || [])].some(n => fold(n) === fold(b));
+    };
+    const clue = label => {
+      const said = data.dialogue?.[label];
+      if (!said || (!said.answers.length && !said.calls.length)) return '';
+      const name = data.names[label] || '';
+      const parts = [said.answers.length ? `answers to ${said.answers.slice(0, 2).map(a => `“${esc(a.name)}” ${a.count}×`).join(', ')}` : '',
+        said.calls.length ? `calls ${said.calls.slice(0, 3).map(a => esc(a.name)).join(', ')}` : ''].filter(Boolean);
+      const clash = said.suggests && !(name && sameName(name, said.suggests));
+      return `<p class="cast-clue" title="A line that calls a name is spoken to that person; the next line in another voice is usually theirs.">In the dialogue: ${parts.join(' · ')}</p>
+        ${clash ? `<p class="cast-clue-warn">${name ? `Named ${esc(name)}, but the` : 'The'} dialogue says this is <strong>${esc(said.suggests)}</strong>: it answers when ${esc(said.suggests)} is called (${said.answers[0].count}×).
+          <button type="button" class="btn btn-ghost" data-suggest="${esc(label)}" data-suggest-name="${esc(said.suggests)}">Name it ${esc(said.suggests)}</button></p>` : ''}`;
+    };
     const strip = (labels, count, colourOf) => `<div class="cast-frames">${frames(labels, count).map(l => `
       <button type="button" class="cast-frame" data-watch="${esc(labels.join('|'))}" data-watch-line="${l.index}"
         title="${clock(l.start)} · ${esc(l.text)}${screen[l.cue] ? ` · ${esc(SCREEN_NOTE[screen[l.cue]] || '')}` : ''}" style="--tint:${colourOf}">
@@ -313,8 +329,8 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
               ${c.groups.map(g => `<div class="cast-group">
                 <div class="cast-group-head"><span class="hint"><span class="m">${g.lines}</span> lines · <span class="m">${clock(g.seconds)}</span></span>
                   <span data-picker="${esc(g.label)}" data-group-picker></span></div>
-                ${strip([g.label], 4, colour[c.key])}</div>`).join('')}`
-              : strip(c.labels, 5, colour[c.key])}
+                ${clue(g.label)}${strip([g.label], 4, colour[c.key])}</div>`).join('')}`
+              : `${clue(c.labels[0])}${strip(c.labels, 5, colour[c.key])}`}
             ${c.sample ? `<p class="cast-card-line">“${esc(c.sample.text)}”${c.sample.original_text ? ` <span class="hint">${esc(c.sample.original_text)}</span>` : ''}</p>` : ''}
           </article>`;
         }).join('')}

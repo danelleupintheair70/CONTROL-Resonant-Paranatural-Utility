@@ -168,3 +168,20 @@ test('a watched line can be given to another character from its menu', async ({ 
   await expect(player.locator('.mp-menu')).toHaveCount(0);
   await expect(player).toBeVisible();                                   // the reel keeps playing
 });
+
+test('a voice whose name the dialogue contradicts says so and can be renamed in one click', async ({ page }) => {
+  await show(page);
+  let names;
+  await page.route('**/api/analysis?*', route => route.fulfill({ json: { ...ANALYSED,
+    names: { SPEAKER_00: 'Kaito' }, cast: [{ name: 'Kaito', lines: 43, episodes: 3 }],
+    dialogue: { SPEAKER_00: { answers: [{ name: 'Ren', count: 3, cues: ['c0'] }], calls: [{ name: 'Mina', count: 1 }], suggests: 'Ren' } } } }));
+  await page.route('**/api/analysis/names', route => {
+    names = route.request().postDataJSON().names;
+    return route.fulfill({ json: { names } });
+  });
+  await page.goto('/title/tvdb-81234/episode/2/analysis');
+  await expect(page.locator('.cast-clue').first()).toContainText('answers to “Ren” 3× · calls Mina');
+  await expect(page.locator('.cast-clue-warn')).toContainText('Named Kaito, but the dialogue says this is Ren');
+  await page.getByRole('button', { name: 'Name it Ren' }).click();
+  await expect.poll(() => names?.SPEAKER_00).toBe('Ren');
+});

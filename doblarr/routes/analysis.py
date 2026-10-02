@@ -34,6 +34,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from .. import (
+    dialogue_clues,
     identity,
     identity_migration,
     snapshots,
@@ -349,6 +350,7 @@ def build_router(config, store) -> APIRouter:
                                       for p in picks if p["character_id"] in by_id]
         else:
             suggestions = voice_tags.suggest(db, path, grouped, names)
+        cast = cast_rows(ident.get("series_id") if ident else None, names)
         snapshot = None
         if ident:
             snapshot = snapshots.get(db, ident["revision_id"], language)
@@ -361,8 +363,15 @@ def build_router(config, store) -> APIRouter:
                 "grouped_tracks": grouped.get("tracks") or [],
                 "track_evidence": grouped.get("track_evidence") or [],
                 "grouping": grouped.get("diagnostics") or {},
-                "cast": cast_rows(ident.get("series_id") if ident else None, names),
+                "cast": cast,
                 "suggestions": suggestions,
+                # What the lines themselves say about each voice (names it
+                # answers to, names it calls): catches a misnamed group.
+                "dialogue": dialogue_clues.read(
+                    [{"speaker": line["speaker"], "start": line["start"], "end": line["end"],
+                      "text": line["text"], "cue": line["cue"]} for line in lines],
+                    [n for row in cast for n in [row["name"], *(row.get("aliases") or [])]],
+                )["groups"],
                 "speakers": summary["speakers"], "total_seconds": summary["total_seconds"],
                 "languages": {"text": data.get("script_lang"),
                               "original": extra.get("source_lang"),
