@@ -202,3 +202,17 @@ test('the episode asks who says the doubtful lines, and an answer names the voic
   await page.locator('.ask').getByRole('button', { name: 'Kaito' }).click();
   await expect.poll(() => names?.SPEAKER_00).toBe('Kaito');
 });
+
+test('lines show their kind from the subtitle styles, and on-screen text is listed once', async ({ page }) => {
+  await show(page);
+  const lines = ANALYSED.lines.map((l, i) => ({ ...l, role: i === 1 ? 'inner' : 'dialogue' }));
+  await page.route('**/api/analysis?*', route => route.fulfill({ json: { ...ANALYSED, lines,
+    roles: { dialogue: 1, inner: 1, preview: 0, narration: 0, flashback: 0, extra: 0 },
+    on_screen: [{ cue: lines[0].cue, at: 1, text: 'Harbor Gate', kind: 'sign', from: 'subtitles' }] } }));
+  await page.goto('/title/tvdb-81234/episode/2/analysis');
+  await expect(page.locator('.analysis-tally')).toContainText('1 voice-over');
+  await expect(page.locator('.analysis-line').nth(1).locator('.role')).toHaveText('voice-over');
+  await expect(page.locator('.analysis-onscreen summary')).toContainText('Harbor Gate');
+  await page.locator('[data-filter-role]').selectOption('inner');
+  await expect(page.locator('.analysis-line')).toHaveCount(1);
+});

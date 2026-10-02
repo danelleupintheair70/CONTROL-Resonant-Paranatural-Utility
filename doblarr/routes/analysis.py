@@ -27,6 +27,7 @@ import hashlib
 import json
 import subprocess
 import threading
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -42,6 +43,7 @@ from .. import (
     speaker_memory,
     speakers,
     speaking,
+    subtitle_roles,
     track_alignment,
     voice_models,
     voice_tags,
@@ -135,21 +137,53 @@ def _feeling(row: dict | None) -> dict | None:
             "voice": heard.get("feeling") or ""}
 
 
-def on_screen(felt: dict, lines: list[dict]) -> list[dict]:
-    """Text drawn on the picture, without the subtitles a reader copied anyway."""
+_NOT_TEXT = {"", "null", "none", "n/a", "na", "unknown"}
+_QUOTES = "\"'「」『』"
+_COMMENTARY = ("note:", "the line", "original japanese", "subtitle")
+
+
+def _picture_text(text: str, spoken: set[str]) -> str:
+    """Text a seeing model said was on the picture, or "" when it is not usable:
+    empty answers, its own commentary, a run of one repeated word, or the
+    dialogue's subtitles copied back."""
+    text = " ".join(str(text or "").split()).strip().strip(_QUOTES)
+    key = "".join(ch for ch in text.casefold() if ch.isalnum())
+    if key in _NOT_TEXT or len(key) < 2 or len(text) > 60:
+        return ""
+    if any(word in text.casefold() for word in _COMMENTARY):
+        return ""
+    if len(key) > 12 and len(set(key)) <= len(key) // 6:
+        return ""                                # one word repeated across the frame
+    if any(key in said or (len(said) > 6 and said in key) for said in spoken):
+        return ""
+    return text
+
+
+def on_screen(felt: dict, lines: list[dict], signs: list[dict]) -> list[dict]:
+    """Text drawn on the picture: the subtitle track's signs and title cards
+    (translated and timed), then what the picture reader saw that they lack."""
     def fold(text: str) -> str:
         return "".join(ch for ch in text.casefold() if ch.isalnum())
 
-    spoken = {fold(line.get("text") or "") for line in lines} - {""}
+    by_start = sorted(lines, key=lambda line: line["start"])
     found, seen = [], set()
+    for sign in signs:
+        near = min(by_start, key=lambda line: abs(line["start"] - sign["start"]), default=None)
+        seen.add(fold(sign["text"]))
+        found.append({"cue": near["cue"] if near else None, "at": round(sign["start"], 2),
+                      "text": sign["text"], "kind": sign["kind"], "from": "subtitles"})
+    spoken = {fold(line.get("text") or "") for line in lines} - {""}
+    at = {line["cue"]: line["start"] for line in lines}
     for cue, row in felt.items():
-        text = str((row.get("picture") or {}).get("text_on_screen") or "").strip().strip('"')
-        key = fold(text)
-        if len(key) < 2 or key in seen or any(key in said or said in key for said in spoken):
+        text = _picture_text(str((row.get("picture") or {}).get("text_on_screen") or ""), spoken)
+        # The same banner read a little differently on each frame is one text.
+        if not text or fold(text) in seen or any(
+                SequenceMatcher(None, fold(text), other).ratio() > 0.6 for other in seen):
             continue
-        seen.add(key)
-        found.append({"cue": cue, "text": text})
-    return found
+        seen.add(fold(text))
+        found.append({"cue": cue, "at": round(float(at.get(cue) or 0.0), 2), "text": text,
+                      "kind": "picture", "from": "picture"})
+    return sorted(found, key=lambda row: row["at"])
 
 
 def identify(db, path: str, cache_dir: Path | None = None) -> dict | None:
@@ -380,6 +414,17 @@ def build_router(config, store) -> APIRouter:
                     "quality", "active_seconds", "range_db", "mean_db", "reasons")}
                 if feature else None,
             })
+        # Each line's role from the subtitle track's styles (doblarr.subtitle_roles).
+        styled: list[dict] = []
+        if (data.get("segments") or [{}])[0].get("cue", {}).get("source", {}).get(
+                "method") != "asr":
+            kept = subtitle_roles.ensure_styled(
+                script, Path(str((data.get("identity") or {}).get("input") or "")),
+                str(data.get("script_lang") or ""))
+            styled = subtitle_roles.events(kept) if kept else []
+        roles = subtitle_roles.annotate(lines, styled)
+        for line in lines:
+            line.update(roles.get(str(line["cue"])) or {"role": "dialogue", "italic": False})
         summary = speaking.talk_share([{"id": 0, "label": "", "segments": [
             {**s, "speaker": names.get(s.get("speaker") or "", "") or s.get("speaker")}
             for s in data.get("segments") or []]}])
@@ -418,7 +463,9 @@ def build_router(config, store) -> APIRouter:
                 "named_by": named_by_dialogue(ident),
                 # Text drawn on the picture (title cards, captions naming someone),
                 # read with the emotions: names on screen are evidence of who is who.
-                "on_screen": on_screen(felt, lines),
+                "on_screen": on_screen(felt, lines, subtitle_roles.on_screen(styled)),
+                "roles": {r: sum(1 for line in lines if line.get("role") == r)
+                          for r in subtitle_roles.SPOKEN_ROLES},
                 # The few questions worth a person's time (doblarr.doubts).
                 "doubts": doubts.queue(lines, names, dialogue=clues, suggestions=suggestions,
                                        reader=read_lines),

@@ -136,4 +136,13 @@
   border:1px solid var(--line-strong); }
 .emo-high { background:color-mix(in srgb, var(--color-accent) 14%, transparent); border-color:transparent; }
 .emo-low, .emo-none { color:var(--muted); border-style:dashed; }
-.analysis-onscreen { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 14px; font-size:12.5px; }
+.analysis-onscreen { margin:0 0 14px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; font-size:12.5px;
+  & summary { cursor:pointer; font-weight:600; font-size:13px; }
+  & summary .hint { font-weight:400; }
+  & .hint { margin:6px 0 0; }
+}
+.analysis-onscreen-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.role { display:inline-block; align-self:flex-start; margin-right:6px; padding:0 6px; border-radius:5px; font-size:11px; vertical-align:1px;
+  background:color-mix(in srgb, var(--color-text) 8%, transparent); color:var(--muted); }
+.role-inner { font-style:italic; }
+.role-preview, .role-narration { background:color-mix(in srgb, var(--color-accent) 12%, transparent); color:var(--color-text); }
