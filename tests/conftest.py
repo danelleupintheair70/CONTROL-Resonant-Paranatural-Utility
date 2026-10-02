@@ -1,5 +1,6 @@
 """Shared isolated API clients; workers start only in explicit lifespan tests."""
 
+import contextlib
 import sys
 
 import pytest
@@ -9,6 +10,13 @@ from fastapi.testclient import TestClient
 from doblarr import hardware
 from doblarr.config import Config
 from doblarr.server import create_app
+
+# The offline fixture below hides torch as sys.modules["torch"] = None. Newer
+# SciPy inspects that entry while it is first imported (scikit-learn imports
+# it to group voices) and fails on the None; importing it first, while torch
+# is still only absent, keeps the hiding from reaching it.
+with contextlib.suppress(ImportError):
+    import sklearn.cluster  # noqa: F401
 
 
 @pytest.fixture(scope="session", autouse=True)
