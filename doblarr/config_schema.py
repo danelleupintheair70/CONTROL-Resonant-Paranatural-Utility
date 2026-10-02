@@ -157,6 +157,10 @@ class SpeakersModel(_Section):
     # Also hear the video's other audio tracks (the dubs): "all", a list of
     # languages or stream numbers, or [] for the original dialogue alone.
     tracks: str | list[str] = "all"
+    # A dub kept as an evaluation reference (to compare a Doblarr dub with)
+    # may still help tell the voices apart: hearing who speaks is not
+    # learning how to perform. false keeps such tracks out of grouping too.
+    evaluation_tracks: bool = True
 
 
 class ComputeModel(_Section):

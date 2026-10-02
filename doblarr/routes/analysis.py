@@ -517,7 +517,8 @@ def build_router(config, store) -> APIRouter:
         evidence = track_alignment.check_tracks(
             reference, [{"stream": s, "path": p, "lang": described.get(s, {}).get("lang", ""),
                          "title": described.get(s, {}).get("title", "")} for s, p in found],
-            evaluation_streams=speaker_memory.evaluation_streams(db, source),
+            evaluation_streams=set() if (config.get("speakers") or {}).get(
+                "evaluation_tracks", True) else speaker_memory.evaluation_streams(db, source),
             max_offset=float(checks.get("max_track_offset", 2.0)),
             min_correlation=float(checks.get("min_track_correlation", 0.45)),
             verify=bool(checks.get("verify_tracks", True)))
@@ -595,16 +596,21 @@ def build_router(config, store) -> APIRouter:
                                                vision_capability.unsupported_stages(config)),
                 "rerunnable": snapshots.rerunnable(snapshot)}
 
-    def earlier_run(path: str, ident: dict | None) -> tuple[str, str]:
-        """The input path and language an earlier analysis of this content used,
-        so a rerun reuses its separation and lines instead of starting over
-        (work folders are keyed by the input path and the source language)."""
+    def earlier_run(path: str, ident: dict | None, target: str) -> dict:
+        """The input path and languages an earlier analysis of this content used,
+        so a rerun reuses its separation, lines and voice groups instead of
+        starting over. Work folders are keyed by input, source language and
+        target locale, and the subtitles a run reads depend on the target: a
+        rerun under another target cuts the lines again and regroups them."""
         script, _how = find(path, ident)
         recorded = (_read(script).get("identity") or {}) if script else {}
         source = str(recorded.get("input") or "")
-        if source and Path(source).is_file():
-            return source, str(recorded.get("source_lang") or "auto")
-        return path, str(recorded.get("source_lang") or "auto")
+        folder = script.parent.name if script else ""
+        return {"input_file": source if source and Path(source).is_file() else path,
+                "source_lang": str(recorded.get("source_lang") or "auto"),
+                "target_lang": str(recorded.get("target_lang") or target_of(target)),
+                "target_locale": folder if script and "-" in folder
+                and folder.split("-")[0] == str(recorded.get("target_lang") or "") else ""}
 
     def target_of(target: str) -> str:
         from ..languages import base_language
@@ -626,11 +632,10 @@ def build_router(config, store) -> APIRouter:
         overrides: dict = {"analysis.stages": body.stages}
         if body.visual is not None:
             overrides["analysis.visual"] = body.visual
-        input_file, source_lang = earlier_run(body.path, ident)
+        earlier = earlier_run(body.path, ident, body.target_lang)
 
         job = store.add(title=f"Analysis · {Path(body.path).name}", source="analysis",
-                        source_lang=source_lang, target_lang=target_of(body.target_lang),
-                        input_file=input_file, kind="analyze", overrides=overrides,
+                        **earlier, kind="analyze", overrides=overrides,
                         show_ref=(f"series:{ident['series_id'].rsplit(':', 1)[-1]}"
                                   if ident and str(ident.get("series_id", "")).startswith(
                                       "show:tvdb:") else ""))

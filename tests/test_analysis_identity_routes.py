@@ -22,7 +22,8 @@ def _episode(tmp_path, work, payload=b"harbor-lights-e02" * 400):
     rows = [("SPEAKER_00", 0.0, 3.0, -18.0), ("SPEAKER_01", 4.0, 6.0, -20.0),
             ("SPEAKER_00", 7.0, 9.0, -12.0)]
     (locale / "e02.script.json").write_text(json.dumps({
-        "script_lang": "en", "identity": {"input": str(media_file), "source_lang": "ja"},
+        "script_lang": "en", "identity": {"input": str(media_file), "source_lang": "ja",
+                                            "target_lang": "es"},
         "segments": [{"index": i, "speaker": spk, "start": a, "end": b, "text_src": "line",
                       "issues": [], "cue": {
                           "cue_id": f"c{i}",
@@ -105,10 +106,13 @@ def test_coverage_and_the_rerun_request_never_queue_a_dub(client_factory, tmp_pa
     assert {r["stage"] for r in coverage["coverage"]} >= {"features", "faces"}
     bad = client.post("/api/analysis/rerun", json={"path": str(episode), "stages": ["dub"]})
     assert bad.status_code == 422
-    queued = client.post("/api/analysis/rerun", json={"path": str(episode),
+    # Asked from a page whose dub goes to English: the rerun still runs under the
+    # earlier analysis' target, or it would cut and group the lines again.
+    queued = client.post("/api/analysis/rerun", json={"path": str(episode), "target_lang": "en",
                                                      "stages": ["features"]}).json()
     job = client.app.state.jobs.get(queued["job_id"])
     assert job.kind == "analyze" and job.overrides == {"analysis.stages": ["features"]}
+    assert (job.source_lang, job.target_lang, job.target_locale) == ("ja", "es", "es-419")
 
 
 def test_visual_tracks_can_be_named_and_the_evidence_is_fused_again(client_factory, tmp_path):

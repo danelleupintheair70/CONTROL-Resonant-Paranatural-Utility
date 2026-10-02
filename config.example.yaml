@@ -115,6 +115,7 @@ speakers:
   models_dir: ""                # blank: <work_dir>/models/speakers
   custom: []                    # your own: [{id: my-model, name: My model, url: https://.../x.onnx, threshold: 0.6}]
   tracks: all                   # also hear the dub tracks: all | [en, es] | [] (original only)
+  evaluation_tracks: true       # dubs kept as evaluation references still help group voices
 
 # Where the local model stages run: Demucs separation, pyannote diarization and
 # whisper transcription. voicebox is a separate process with its own device.

@@ -218,3 +218,30 @@ def test_a_local_series_joins_a_provider_series_only_when_confirmed(db, tmp_path
     linked = identity.cluster_characters(db, now["revision_id"])
     assert linked["SPEAKER_00"]["id"] == kaito["id"]
     assert identity.find_character(db, "show:tvdb:555", "Mina") is not None
+
+
+def test_a_fresh_grouping_keeps_names_on_the_lines_not_on_the_group_numbers(db):
+    from doblarr import speaker_memory
+    from doblarr.models import Segment
+
+    ident = {"revision_id": "rev-n", "series_id": "show:tvdb:9"}
+    kaito = identity.ensure_character(db, "show:tvdb:9", "Kaito")
+    mina = identity.ensure_character(db, "show:tvdb:9", "Mina")
+    identity.associate(db, "rev-n", "cluster", "SPEAKER_00", kaito["id"], state="manual")
+    identity.associate(db, "rev-n", "cluster", "SPEAKER_01", mina["id"], state="manual")
+    before = [{"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00"},
+              {"start": 3.0, "end": 5.0, "speaker": "SPEAKER_01"},
+              {"start": 6.0, "end": 9.0, "speaker": "SPEAKER_00"}]
+    # Cut a little differently and numbered the other way round.
+    after = [Segment(0, 0.1, 2.0, "a", speaker="SPEAKER_01", cue_id="x0"),
+             Segment(1, 3.0, 4.0, "b", speaker="SPEAKER_00", cue_id="x1"),
+             Segment(2, 4.0, 5.0, "c", speaker="SPEAKER_00", cue_id="x2"),
+             Segment(3, 6.0, 9.0, "d", speaker="SPEAKER_01", cue_id="x3")]
+    carried = speaker_memory.carry_by_time(db, ident, before, after)
+    assert carried == {"SPEAKER_01": kaito["id"], "SPEAKER_00": mina["id"]}
+    assert speaker_memory.labels_to_characters(db, "rev-n") == {
+        "SPEAKER_01": kaito["id"], "SPEAKER_00": mina["id"]}
+    # The same grouping again changes nothing.
+    same = [Segment(0, 0.0, 2.0, "a", speaker="SPEAKER_01", cue_id="x0")]
+    assert speaker_memory.carry_by_time(
+        db, ident, [{"start": 0.0, "end": 2.0, "speaker": "SPEAKER_01"}], same) is None

@@ -183,6 +183,47 @@ def carry_identities(db, ident: dict, before: list[str], after: list[str],
     return carried
 
 
+def prior_segments(db, revision_id: str) -> list[dict]:
+    """The lines (time, group label) of the analysis this revision has now."""
+
+    for snap in records.list_latest(db, "snapshot", scope=revision_id):
+        script = ((snap.get("stages") or {}).get("transcribe") or {}).get(
+            "outputs", {}).get("script")
+        if script and Path(script).is_file():
+            data = json.loads(Path(script).read_text(encoding="utf-8"))
+            return [{"start": float(s["start"]), "end": float(s["end"]),
+                     "speaker": s.get("speaker") or ""} for s in data.get("segments") or []]
+    return []
+
+
+def carry_by_time(db, ident: dict, before: list[dict], segments) -> dict[str, str] | None:
+    """Names onto a fresh grouping, by where in time each named group spoke.
+
+    Each new line takes the earlier group it overlaps most (the lines may have
+    been cut differently), then each new group takes the character most of
+    its time had (`carry_identities`). Nothing changes when the grouping is
+    the one already named. Returns new label -> character id, or None.
+    """
+    if not ident.get("revision_id") or not before or not segments:
+        return None
+    if not labels_to_characters(db, ident["revision_id"]):
+        return None
+    old, new, seconds, cues = [], [], [], []
+    for seg in segments:
+        best, best_overlap = "", 0.0
+        for row in before:
+            overlap = min(seg.end, row["end"]) - max(seg.start, row["start"])
+            if overlap > best_overlap:
+                best, best_overlap = row["speaker"], overlap
+        old.append(best)
+        new.append(seg.speaker or "")
+        seconds.append(max(0.0, seg.end - seg.start))
+        cues.append(str(getattr(seg, "cue_id", "") or ""))
+    if old == new:
+        return None
+    return carry_identities(db, ident, old, new, seconds, cues)
+
+
 def line_locks(db, revision_id: str) -> dict[str, str | None]:
     """Lines a person assigned by hand: cue -> character id (None: a new voice)."""
     return {r["ref"]: r.get("character_id")

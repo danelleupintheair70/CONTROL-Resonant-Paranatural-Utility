@@ -162,9 +162,15 @@ def build_router(config, store) -> APIRouter:
             recorded = _json.loads(script.read_text(encoding="utf-8")).get("identity") or {}
         source = str(recorded.get("input") or "")
         input_file = source if source and Path(source).is_file() else body.path
+        # The earlier run's target too: another target reads other subtitles
+        # and would cut and group the lines again.
+        folder = script.parent.name if script is not None else ""
+        target = str(recorded.get("target_lang") or base_language(body.target_lang) or "es")
         job = store.add(title=f"Knowledge · {Path(body.path).name}", source="analysis",
                         source_lang=str(recorded.get("source_lang") or "auto"),
-                        target_lang=base_language(body.target_lang) or "es",
+                        target_lang=target,
+                        target_locale=folder if folder.split("-")[0] == target and "-" in folder
+                        else "",
                         input_file=input_file, kind="analyze", overrides={
                             "analysis.stages": ["knowledge"], "analysis.knowledge": True,
                             "analysis.knowledge_model": model})

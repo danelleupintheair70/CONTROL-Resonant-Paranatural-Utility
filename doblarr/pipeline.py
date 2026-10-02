@@ -258,7 +258,7 @@ def run_job(
         picked = voice_models.resolve(voice_models.chosen(config), config)
         checks = dict(config.get("analysis", {}) or {})
         evaluation = set()
-        if db is not None:
+        if db is not None and not (config.get("speakers") or {}).get("evaluation_tracks", True):
             from . import speaker_memory
 
             evaluation = speaker_memory.evaluation_streams(db, job.input_file)
@@ -276,6 +276,8 @@ def run_job(
                         compute=compute,
                         method=config["transcribe"].get("diarizer", "auto"),
                         voices=_voices())
+        if not dry_run and job.segments and prior_groups.get("segments"):
+            _carry_names()
         if not dry_run and job.segments:
             prepare.run(job, enabled=config["transcribe"].get("clean_cues", True),
                         interjections=config["transcribe"].get(
@@ -550,6 +552,28 @@ def run_job(
         except OSError as exc:
             log.warning("analysis: could not identify %s (%s); results stay keyed by the "
                         "script only", job.input_file.name, exc)
+        _remember_groups()
+
+    # The voice groups an earlier analysis of this revision had, read before
+    # this run rewrites the script. Names are kept per group label, and a
+    # fresh grouping numbers its groups anew: without this, SPEAKER_01's name
+    # lands on whoever is SPEAKER_01 now.
+    prior_groups: dict = {}
+
+    def _remember_groups():
+        from . import speaker_memory
+
+        ident = job.metrics.get("identity") or {}
+        if db is not None and ident.get("revision_id"):
+            prior_groups["segments"] = speaker_memory.prior_segments(db, ident["revision_id"])
+
+    def _carry_names():
+        from . import speaker_memory
+
+        carried = speaker_memory.carry_by_time(db, job.metrics.get("identity") or {},
+                                               prior_groups["segments"], job.segments)
+        if carried is not None:
+            job.metrics["names_carried"] = carried
 
     force_features: dict[str, bool] = {"on": False}
 
