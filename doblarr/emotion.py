@@ -151,13 +151,16 @@ def picture(video: Path, lines: list[dict], client, *, cancel=None,
 def fuse(heard: dict | None, seen: dict | None) -> dict:
     """One feeling per line, with how sure and whether the readers agree.
 
-    Only a face gives a feeling: without one the line stays unknown, with the
+    Only the speaker's face gives a feeling: without it the line stays unknown, with the
     voice's and the words' readings kept as hints (on the test episode the
     voice alone was wrong three times in four)."""
     hints = {"voice": (heard or {}).get("feeling") or "",
              "words": (seen or {}).get("feeling") or "" if seen and not seen.get("face_visible")
              else ""}
-    if seen and seen.get("face_visible") and seen.get("confidence") != "low":
+    # The face on screen is often someone else's (a reaction shot): only the
+    # speaker's own face says how the line is said.
+    speaking = (seen or {}).get("speaker_on_screen") is True
+    if seen and seen.get("face_visible") and speaking and seen.get("confidence") != "low":
         feeling = seen["feeling"]
         agree = None
         if heard and heard.get("feeling"):

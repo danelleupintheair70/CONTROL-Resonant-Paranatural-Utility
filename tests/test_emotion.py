@@ -34,3 +34,8 @@ def test_the_script_reader_tallies_what_it_says_about_each_voice():
     assert found["V1"]["leading"] == "Ren" and found["V1"]["share"] == 0.86
     assert "V2" not in found
     assert dialogue_reader.windows(70) == [(0, 30), (22, 52), (44, 70)]
+
+
+def test_a_face_that_is_not_the_speakers_gives_no_feeling():
+    other = {**seen("smug"), "speaker_on_screen": False}
+    assert emotion.fuse(None, other)["feeling"] == ""

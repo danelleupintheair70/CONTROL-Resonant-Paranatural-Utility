@@ -135,6 +135,23 @@ def _feeling(row: dict | None) -> dict | None:
             "voice": heard.get("feeling") or ""}
 
 
+def on_screen(felt: dict, lines: list[dict]) -> list[dict]:
+    """Text drawn on the picture, without the subtitles a reader copied anyway."""
+    def fold(text: str) -> str:
+        return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+    spoken = {fold(line.get("text") or "") for line in lines} - {""}
+    found, seen = [], set()
+    for cue, row in felt.items():
+        text = str((row.get("picture") or {}).get("text_on_screen") or "").strip().strip('"')
+        key = fold(text)
+        if len(key) < 2 or key in seen or any(key in said or said in key for said in spoken):
+            continue
+        seen.add(key)
+        found.append({"cue": cue, "text": text})
+    return found
+
+
 def identify(db, path: str, cache_dir: Path | None = None) -> dict | None:
     """The canonical identity of an episode path, or None when it cannot be told.
 
@@ -401,10 +418,7 @@ def build_router(config, store) -> APIRouter:
                 "named_by": named_by_dialogue(ident),
                 # Text drawn on the picture (title cards, captions naming someone),
                 # read with the emotions: names on screen are evidence of who is who.
-                "on_screen": [{"cue": cue, "text": row["picture"]["text_on_screen"].strip()}
-                              for cue, row in felt.items()
-                              if len(((row.get("picture") or {}).get("text_on_screen")
-                                      or "").strip()) > 1],
+                "on_screen": on_screen(felt, lines),
                 # The few questions worth a person's time (doblarr.doubts).
                 "doubts": doubts.queue(lines, names, dialogue=clues, suggestions=suggestions,
                                        reader=read_lines),
