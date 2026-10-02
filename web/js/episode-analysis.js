@@ -319,6 +319,26 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
           title="${clock(l.start)} · ${esc(keyOf(l.speaker))}: ${esc(l.text)}"></span>`).join('')}
         ${Array.from({ length: Math.floor(length / 300) }, (_, i) => `<span class="analysis-minute m" style="left:${((i + 1) * 300 / length * 100).toFixed(2)}%">${(i + 1) * 5}:00</span>`).join('')}
       </div>
+      ${(data.doubts || []).length ? `<section class="asks" aria-label="Questions about the voices">
+        <h4>Who says this? <span class="hint">${data.doubts.length} question${data.doubts.length === 1 ? '' : 's'} · each answer is kept for the show and teaches the next episodes</span></h4>
+        <div class="asks-list">${data.doubts.map((q, n) => `<article class="ask" data-ask="${n}" style="--tint:${tint(q.voice)}">
+          <button type="button" class="cast-frame ask-frame" data-watch="${esc(q.voice)}" data-watch-line="${q.line.index}" title="Watch this line">
+            <img src="${frameUrl(path, (q.line.start + q.line.end) / 2)}" alt="The picture at ${clock(q.line.start)}" width="160" height="90" decoding="async">
+            <span class="cast-frame-time m">${clock(q.line.start)}</span></button>
+          <div class="ask-body">
+            <p class="ask-q">${q.kind === 'voice' ? `Who is this voice? <span class="hint">${q.lines} lines, unnamed</span>`
+              : `Who says this line? <span class="hint">filed under ${esc(q.now || q.voice)}</span>`}</p>
+            <p class="ask-line">“${esc(q.line.text)}”${q.line.original_text ? ` <span class="hint">${esc(q.line.original_text)}</span>` : ''}</p>
+            ${q.kind === 'line' ? `<p class="hint ask-why">${q.reasons.map(esc).join(' · ')}</p>` : ''}
+            <div class="ask-answers">
+              ${q.kind === 'voice' ? q.hints.map(h => `<button type="button" class="analysis-suggest" data-ask-name="${esc(h.name)}" title="${esc(h.why)}">${esc(h.name)}</button>`).join('')
+                : `${q.now ? `<button type="button" class="analysis-suggest" data-ask-name="${esc(q.now)}">${esc(q.now)} is right</button>` : ''}
+                   ${q.options.filter(o => o !== q.now).map(o => `<button type="button" class="analysis-suggest analysis-suggest-alt" data-ask-name="${esc(o)}">${esc(o)}</button>`).join('')}`}
+              <span data-ask-picker></span>
+              <button type="button" class="btn btn-ghost ask-skip" data-ask-skip>Not sure</button>
+            </div>
+          </div></article>`).join('')}</div>
+      </section>` : ''}
       <section class="cast-grid" aria-label="Who speaks in this episode">
         ${cast.map(c => {
           const multi = c.labels.length > 1;
@@ -408,6 +428,28 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     mountSelection(box, data, { path, reload: load, say });
     const regroupButton = box.querySelector('[data-regroup]');
     if (regroupButton) regroupButton.onclick = () => regroup(models, found);
+    // Answers: a voice question names the whole group; a line question assigns
+    // that one line (kept even when the voices are regrouped).
+    const answer = async (q, name) => {
+      if (!name) return;
+      if (q.kind === 'voice') {
+        await saveNames(data, { ...data.names, [q.voice]: name }, `${q.voice} is ${name}: ${q.lines} lines named, and the show will recognise the voice.`);
+        return;
+      }
+      try {
+        await api('analysis/line', { method: 'PUT', json: { path, cue: q.line.cue, character: name } });
+        await load();
+        say(`“${q.line.text.slice(0, 40)}” is ${name}'s. Kept even if the voices are regrouped.`);
+      } catch (error) { say(error.message); }
+    };
+    box.querySelectorAll('[data-ask]').forEach(card => {
+      const q = data.doubts[Number(card.dataset.ask)];
+      card.querySelectorAll('[data-ask-name]').forEach(b => b.onclick = () => answer(q, b.dataset.askName));
+      card.querySelector('[data-ask-skip]').onclick = () => card.remove();
+      card.querySelector('[data-ask-picker]').replaceWith(characterPicker({
+        label: q.kind === 'voice' ? `Who is ${q.voice}` : 'Who says this line', value: '',
+        placeholder: 'Someone else', cast: data.cast || [], suggestions: [], onPick: name => answer(q, name) }));
+    });
     box.querySelectorAll('[data-undo-dialogue]').forEach(b => b.onclick = () => {
       const label = b.dataset.undoDialogue;
       const names = { ...data.names };

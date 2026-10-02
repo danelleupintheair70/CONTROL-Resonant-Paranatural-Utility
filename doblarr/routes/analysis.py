@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 
 from .. import (
     dialogue_clues,
+    doubts,
     identity,
     identity_migration,
     snapshots,
@@ -362,6 +363,10 @@ def build_router(config, store) -> APIRouter:
         else:
             suggestions = voice_tags.suggest(db, path, grouped, names)
         cast = cast_rows(ident.get("series_id") if ident else None, names)
+        clues = dialogue_clues.read(
+            [{"speaker": line["speaker"], "start": line["start"], "end": line["end"],
+              "text": line["text"], "cue": line["cue"]} for line in lines],
+            [n for row in cast for n in [row["name"], *(row.get("aliases") or [])]])["groups"]
         snapshot = None
         if ident:
             snapshot = snapshots.get(db, ident["revision_id"], language)
@@ -377,13 +382,11 @@ def build_router(config, store) -> APIRouter:
                 "cast": cast,
                 "suggestions": suggestions,
                 "named_by": named_by_dialogue(ident),
+                # The few questions worth a person's time (doblarr.doubts).
+                "doubts": doubts.queue(lines, names, dialogue=clues, suggestions=suggestions),
                 # What the lines themselves say about each voice (names it
                 # answers to, names it calls): catches a misnamed group.
-                "dialogue": dialogue_clues.read(
-                    [{"speaker": line["speaker"], "start": line["start"], "end": line["end"],
-                      "text": line["text"], "cue": line["cue"]} for line in lines],
-                    [n for row in cast for n in [row["name"], *(row.get("aliases") or [])]],
-                )["groups"],
+                "dialogue": clues,
                 "speakers": summary["speakers"], "total_seconds": summary["total_seconds"],
                 "languages": {"text": data.get("script_lang"),
                               "original": extra.get("source_lang"),

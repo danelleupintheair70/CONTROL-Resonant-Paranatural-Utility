@@ -185,3 +185,20 @@ test('a voice whose name the dialogue contradicts says so and can be renamed in 
   await page.getByRole('button', { name: 'Name it Ren' }).click();
   await expect.poll(() => names?.SPEAKER_00).toBe('Ren');
 });
+
+test('the episode asks who says the doubtful lines, and an answer names the voice', async ({ page }) => {
+  await show(page);
+  let names;
+  await page.route('**/api/analysis?*', route => route.fulfill({ json: { ...ANALYSED,
+    names: {}, cast: [{ name: 'Kaito', lines: 43, episodes: 3 }],
+    doubts: [{ kind: 'voice', voice: 'SPEAKER_00', lines: 1, line: ANALYSED.lines[0],
+      hints: [{ name: 'Kaito', why: 'answers when Kaito is called (3×)' }] }] } }));
+  await page.route('**/api/analysis/names', route => {
+    names = route.request().postDataJSON().names;
+    return route.fulfill({ json: { names } });
+  });
+  await page.goto('/title/tvdb-81234/episode/2/analysis');
+  await expect(page.locator('.ask')).toContainText('Who is this voice?');
+  await page.locator('.ask').getByRole('button', { name: 'Kaito' }).click();
+  await expect.poll(() => names?.SPEAKER_00).toBe('Kaito');
+});
