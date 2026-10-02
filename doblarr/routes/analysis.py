@@ -297,7 +297,8 @@ def build_router(config, store) -> APIRouter:
         """Groups the dialogue named, with the name each replaced (for an undo)."""
         found = {}
         for row in identity.associations(db, ident["revision_id"], "cluster") if ident else []:
-            said = next((e for e in row.get("evidence") or [] if e.get("kind") == "dialogue"), None)
+            said = next((e for e in row.get("evidence") or []
+                         if e.get("kind") in ("dialogue", "voice-memory")), None)
             if said and row.get("state") == "accepted":
                 found[row["ref"]] = said
         return found
@@ -608,6 +609,7 @@ def build_router(config, store) -> APIRouter:
             {"speaker": seg.get("speaker"), "start": seg["start"], "end": seg["end"],
              "text": seg.get("text_src") or "", "cue": (seg.get("cue") or {}).get("cue_id")}
             for seg in _read(script).get("segments") or []])
+        speaker_memory.name_from_memory(db, ident, grouped, language_of(script))
         changed = membership_changed(ident, script, "regrouped")
         names = load_names(db, body.path, ident)
         return {"model": voice_models.combined_id(models), "voices": len(set(after)),

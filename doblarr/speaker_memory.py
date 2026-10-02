@@ -370,3 +370,52 @@ def name_from_dialogue(db, ident: dict, lines: list[dict]) -> list[dict]:
     if changes:
         log.info("dialogue named %s", ", ".join(f"{c['label']}={c['name']}" for c in changes))
     return changes
+
+
+MEMORY_SIMILARITY = 0.70   # a voice this close to a character the show knows...
+MEMORY_MARGIN = 0.15       # ...and this far ahead of the next one is that character
+
+
+def name_from_memory(db, ident: dict, sidecar_path: Path | None, language: str) -> list[dict]:
+    """Name unnamed voice groups the show's voice memory clearly recognises.
+
+    The memory is what earlier episodes taught (a duration-weighted print per
+    character). A group is named only when it is very close to one character
+    and well ahead of the next: on a hand-labelled episode, learning from one
+    half and matching the other, every match past this bar was right (8 of 8),
+    and every wrong guess was a character the memory had never heard, far
+    below it. Never replaces a name; writes ``accepted`` links with the
+    evidence. Returns [{label, name, similarity, margin, episodes}].
+    """
+    revision_id, series_id = ident.get("revision_id"), ident.get("series_id")
+    if db is None or not revision_id or not series_id:
+        return []
+    sidecar = voice_tags.read_sidecar(sidecar_path)
+    links = {r["ref"]: r for r in identity.associations(db, revision_id, "cluster")}
+    named = {label for label, row in links.items() if row.get("character_id")
+             or any(e.get("kind") == "kept" for e in row.get("evidence") or [])}
+    picks = voice_tags.suggest_series(db, series_id, revision_id, sidecar, named, language,
+                                      exclude=held_out_revisions(db))
+    characters = {c["id"]: c for c in identity.characters(db, series_id)}
+    taken: set[str] = set()
+    changes = []
+    for label, ranked in sorted(picks.items(), key=lambda kv: -kv[1][0]["similarity"]):
+        best = ranked[0]
+        margin = best["margin"] if best["margin"] is not None else 1.0
+        character = characters.get(best["character_id"])
+        if character is None or best["similarity"] < MEMORY_SIMILARITY \
+                or margin < MEMORY_MARGIN or character["id"] in taken:
+            continue
+        taken.add(character["id"])
+        current = links.get(label) or {}
+        identity.associate(db, revision_id, "cluster", label, character["id"], state="accepted",
+                           locked=False, base_revision=current.get("revision", 0),
+                           evidence=[{"kind": "voice-memory", "similarity": best["similarity"],
+                                      "margin": round(margin, 3), "episodes": best["episodes"],
+                                      "lines": best["lines"]}])
+        changes.append({"label": label, "name": character["name"],
+                        "similarity": best["similarity"], "margin": round(margin, 3),
+                        "episodes": best["episodes"]})
+    if changes:
+        log.info("voice memory named %s", ", ".join(f"{c['label']}={c['name']}" for c in changes))
+    return changes

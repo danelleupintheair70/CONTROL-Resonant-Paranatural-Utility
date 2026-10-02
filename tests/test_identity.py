@@ -271,3 +271,31 @@ def test_the_dialogue_names_a_voice_it_clearly_identifies_and_respects_a_kept_na
     identity.associate(db, "rev-d", "cluster", "V2", kaito["id"], state="manual",
                        evidence=[{"kind": "kept"}], base_revision=current["revision"])
     assert speaker_memory.name_from_dialogue(db, ident, lines) == []
+
+
+def test_a_voice_the_show_already_knows_is_named_in_the_next_episode(db, tmp_path):
+    from doblarr import speaker_memory
+
+    def sidecar(path, rows):
+        path.write_text(json.dumps({"model": "test-model", "lines": [
+            {"cue": f"c{i}", "start": i * 3.0, "end": i * 3.0 + 2.0, "speaker": label,
+             "vector": vector} for i, (label, vector) in enumerate(rows)]}), encoding="utf-8")
+        return path
+
+    kaito = identity.ensure_character(db, "show:tvdb:9", "Kaito")
+    mina = identity.ensure_character(db, "show:tvdb:9", "Mina")
+    first = {"revision_id": "rev-e1", "series_id": "show:tvdb:9"}
+    identity.associate(db, "rev-e1", "cluster", "V0", kaito["id"], state="manual")
+    identity.associate(db, "rev-e1", "cluster", "V1", mina["id"], state="manual")
+    taught = sidecar(tmp_path / "e1.speakers.json",
+                     [("V0", [1, 0, 0, 0]), ("V0", [0.98, 0.1, 0, 0]), ("V0", [0.97, 0, 0.1, 0]),
+                      ("V1", [0, 1, 0, 0]), ("V1", [0.1, 0.97, 0, 0]), ("V1", [0, 0.98, 0.1, 0])])
+    speaker_memory.teach(db, first, taught, "ja")
+    # The next episode: one voice sounds like Kaito, another like nobody known.
+    second = {"revision_id": "rev-e2", "series_id": "show:tvdb:9"}
+    heard = sidecar(tmp_path / "e2.speakers.json",
+                    [("V7", [0.99, 0.05, 0, 0]), ("V7", [0.96, 0, 0.12, 0]),
+                     ("V3", [0, 0, 0, 1]), ("V3", [0, 0.1, 0, 0.99])])
+    changes = speaker_memory.name_from_memory(db, second, heard, "ja")
+    assert [(c["label"], c["name"]) for c in changes] == [("V7", "Kaito")]
+    assert speaker_memory.labels_to_characters(db, "rev-e2") == {"V7": kaito["id"]}

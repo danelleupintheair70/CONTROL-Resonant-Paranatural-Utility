@@ -300,6 +300,13 @@ def run_job(
                   "text": seg.text_src, "cue": seg.cue_id} for seg in job.segments])
             if named:
                 job.metrics["named_by_dialogue"] = named
+            from .stages.common import work_stem
+
+            recognised = speaker_memory.name_from_memory(
+                db, job.metrics.get("identity") or {},
+                Path(shared_work) / f"{work_stem(job)}.speakers.json", job.source_lang or "")
+            if recognised:
+                job.metrics["named_by_memory"] = recognised
         if not dry_run and job.segments:
             prepare.run(job, enabled=config["transcribe"].get("clean_cues", True),
                         interjections=config["transcribe"].get(

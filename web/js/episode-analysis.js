@@ -281,15 +281,18 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
       return [a, ...(row?.aliases || [])].some(n => fold(n) === fold(b));
     };
     const clue = label => {
-      const said = data.dialogue?.[label];
-      if (!said || (!said.answers.length && !said.calls.length)) return '';
+      const said = data.dialogue?.[label] || { answers: [], calls: [], suggests: '' };
+      const auto = data.named_by?.[label];
+      if (!auto && !said.answers.length && !said.calls.length) return '';
       const name = data.names[label] || '';
       const parts = [said.answers.length ? `answers to ${said.answers.slice(0, 2).map(a => `“${esc(a.name)}” ${a.count}×`).join(', ')}` : '',
         said.calls.length ? `calls ${said.calls.slice(0, 3).map(a => esc(a.name)).join(', ')}` : ''].filter(Boolean);
       const clash = said.suggests && !(name && sameName(name, said.suggests));
-      const auto = data.named_by?.[label];
       if (auto) {
-        return `<p class="cast-clue cast-clue-auto">Named by the dialogue: it answers when ${esc(name)} is called (${auto.answers}×)${auto.replaced ? `, was ${esc(auto.replaced)}` : ''}.
+        const how = auto.kind === 'voice-memory'
+          ? `Recognised from earlier episodes: sounds like ${esc(name)} (${Math.round(auto.similarity * 100)}%, ${auto.episodes} episode${auto.episodes === 1 ? '' : 's'} heard)`
+          : `Named by the dialogue: it answers when ${esc(name)} is called (${auto.answers}×)`;
+        return `<p class="cast-clue cast-clue-auto">${how}${auto.replaced ? `, was ${esc(auto.replaced)}` : ''}.
           <button type="button" class="btn btn-ghost" data-undo-dialogue="${esc(label)}" data-was="${esc(auto.replaced || '')}">${auto.replaced ? `Keep ${esc(auto.replaced)}` : 'Undo'}</button></p>
           ${parts.length ? `<p class="cast-clue">In the dialogue: ${parts.join(' · ')}</p>` : ''}`;
       }
