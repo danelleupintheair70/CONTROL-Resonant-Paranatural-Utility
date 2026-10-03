@@ -466,6 +466,10 @@ def build_router(config, store) -> APIRouter:
                 "on_screen": on_screen(felt, lines, subtitle_roles.on_screen(styled)),
                 "roles": {r: sum(1 for line in lines if line.get("role") == r)
                           for r in subtitle_roles.SPOKEN_ROLES},
+                # The episode's parts (cold open, opening, episode, ending, preview).
+                "structure": subtitle_roles.structure(
+                    styled, max((float(line["end"]) for line in lines), default=0.0))
+                if styled else [],
                 # The few questions worth a person's time (doblarr.doubts).
                 "doubts": doubts.queue(lines, names, dialogue=clues, suggestions=suggestions,
                                        reader=read_lines),

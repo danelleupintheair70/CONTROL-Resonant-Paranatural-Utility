@@ -129,11 +129,100 @@ def ensure_styled(script: Path, video: Path, lang: str) -> Path | None:
         return None
     chosen = subtitles.pick_stream(streams, lang) if lang else None
     if not chosen or chosen.get("codec") not in ("ass", "ssa"):
+        none.parent.mkdir(parents=True, exist_ok=True)
         none.write_text("", encoding="utf-8")
         return None
+    path.parent.mkdir(parents=True, exist_ok=True)
     try:
         run_ffmpeg(["-y", "-i", str(video), "-map", f"0:{chosen['index']}", str(path)])
     except Exception:  # noqa: BLE001 - styles are a bonus; the lines stand without them
         path.unlink(missing_ok=True)
         return None
     return path if path.is_file() else None
+
+
+# ---- what a role means for the dub ----
+
+PREVIEW_DIRECTION = ("narrating the next-episode preview to the audience: lively, announcing, "
+                     "clear")
+NARRATION_DIRECTION = "as a narrator speaking to the audience: clear, measured, unhurried"
+
+
+def direct(segments, roles: dict[str, dict]) -> dict[str, int]:
+    """Give lines the delivery their role asks for, where nobody said otherwise.
+
+    A voice-over line (italics: a thought, a flashback, an off-screen voice)
+    is asked for as an inner thought, close and unprojected; a preview or a
+    narration line as told to the audience. A line a person or a cast choice
+    already directed keeps its direction. Returns how many lines changed, per
+    role. Loudness and room are left to their owners (levels, treatments).
+    """
+    changed: dict[str, int] = {}
+    for seg in segments:
+        role = (roles.get(str(seg.cue_id)) or {}).get("role")
+        intent = seg.intent
+        if role not in ("inner", "preview", "narration") or seg.delivery \
+                or intent.origin not in ("unknown", "", "subtitles"):
+            continue
+        if role == "inner" and intent.mode in ("unknown", "normal"):
+            intent.mode = "thought"
+        elif role == "preview":
+            intent.direction = PREVIEW_DIRECTION
+        elif role == "narration":
+            intent.direction = NARRATION_DIRECTION
+        else:
+            continue
+        intent.origin = "subtitles"
+        changed[role] = changed.get(role, 0) + 1
+    return changed
+
+
+def _clusters(found: list[dict], role: str, gap: float) -> list[list[float]]:
+    spans: list[list[float]] = []
+    for e in sorted((e for e in found if e["role"] == role), key=lambda e: e["start"]):
+        if spans and e["start"] - spans[-1][1] <= gap:
+            spans[-1][1] = max(spans[-1][1], e["end"])
+        else:
+            spans.append([e["start"], e["end"]])
+    return spans
+
+
+def song_spans(found: list[dict], gap: float = 4.0, pad: float = 0.5) -> list[list[float]]:
+    """Where the songs are sung: lyric events joined across short gaps."""
+    return [[round(max(0.0, a - pad), 2), round(b + pad, 2)]
+            for a, b in _clusters(found, "song", gap)]
+
+
+def structure(found: list[dict], duration: float) -> list[dict]:
+    """The episode's parts: cold open, opening, episode, ending, preview, extra.
+
+    Songs near the start and end are the opening and ending; the preview and
+    the extra are the spans of their styled lines. What lies between the
+    opening and whatever comes after is the episode itself."""
+    duration = max(duration, max((e["end"] for e in found), default=0.0))
+    parts: list[dict] = []
+    songs = _clusters(found, "song", 12.0)
+    opening = next((s for s in songs if s[0] < duration * 0.35 and s[1] - s[0] > 30), None)
+    ending = next((s for s in reversed(songs) if s[0] > duration * 0.6 and s[1] - s[0] > 30
+                   and s is not opening), None)
+    preview = _clusters(found, "preview", 15.0)
+    extra = _clusters(found, "extra", 15.0)
+    if opening:
+        if opening[0] > 15:
+            parts.append({"kind": "cold-open", "start": 0.0, "end": opening[0]})
+        parts.append({"kind": "opening", "start": opening[0], "end": opening[1]})
+    body_start = opening[1] if opening else 0.0
+    later = [s[0] for s in (ending, *(preview[:1]), *(extra[:1])) if s]
+    body_end = min(later) if later else duration
+    parts.append({"kind": "episode", "start": body_start, "end": body_end})
+    if ending:
+        parts.append({"kind": "ending", "start": ending[0], "end": ending[1]})
+    for a, b in preview:
+        parts.append({"kind": "preview", "start": a, "end": b})
+    for a, b in extra:
+        parts.append({"kind": "extra", "start": a, "end": b})
+    for s in songs:
+        if s is not opening and s is not ending and s[1] - s[0] > 10:
+            parts.append({"kind": "song", "start": s[0], "end": s[1]})
+    return [{**p, "start": round(p["start"], 2), "end": round(p["end"], 2)}
+            for p in sorted(parts, key=lambda p: p["start"])]

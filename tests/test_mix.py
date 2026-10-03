@@ -78,3 +78,36 @@ def test_mix_ducks_bed_under_dialogue(tmp_path):
     during = _mean_volume_db(out, 2.2, 0.6)
     after = _mean_volume_db(out, 5.5, 1.0)   # bed alone, past the release tail
     assert during < after - 10               # bed ducked by at least 10 dB
+
+
+def test_the_original_singing_is_put_back_only_where_the_songs_are(tmp_path):
+    import shutil
+    import subprocess
+    from types import SimpleNamespace
+
+    import pytest
+
+    from doblarr.stages import mix
+
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg required")
+
+    def tone(path, freq, seconds=6):
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                        f"sine=frequency={freq}:duration={seconds}", "-ar", "48000", str(path)],
+                       check=True)
+        return path
+
+    bed, vocals = tone(tmp_path / "bed.wav", 220), tone(tmp_path / "vocals.wav", 880)
+    job = SimpleNamespace(input_file=tmp_path / "e.mkv", kind="full")
+    out = mix._with_songs(bed, vocals, [[2.0, 4.0]], tmp_path, job, None, False)
+
+    def level(start, length=1.0):
+        found = subprocess.run(
+            ["ffmpeg", "-v", "info", "-ss", str(start), "-t", str(length), "-i", str(out),
+             "-af", "volumedetect", "-f", "null", "-"], capture_output=True, text=True).stderr
+        return float(found.split("mean_volume:")[1].split("dB")[0])
+
+    assert level(2.5) > level(0.5) + 2          # the singing is in the song span
+    assert abs(level(5.0) - level(0.5)) < 1     # and nowhere else
+    assert mix._with_songs(bed, vocals, [[2.0, 4.0]], tmp_path, job, None, False) == out

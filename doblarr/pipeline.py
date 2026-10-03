@@ -237,6 +237,27 @@ def run_job(
                 force=force,
                 compute=compute,
             )
+        if not dry_run and job.segments and config["transcribe"]["source"] != "whisper":
+            _subtitle_roles()
+
+    def _subtitle_roles():
+        """What each line is, from the subtitle track's styles: voice-over and
+        preview lines are directed as such, and the songs are kept in the mix."""
+        from . import subtitle_roles
+        from .stages.common import script_path
+
+        kept = subtitle_roles.ensure_styled(script_path(job, work), Path(job.input_file),
+                                            job.script_lang or "")
+        if kept is None:
+            return
+        found = subtitle_roles.events(kept)
+        roles = subtitle_roles.annotate(
+            [{"cue": s.cue_id, "start": s.start, "end": s.end} for s in job.segments], found)
+        directed = subtitle_roles.direct(job.segments, roles)
+        job.metrics["subtitle_roles"] = {
+            "roles": {r: sum(1 for v in roles.values() if v["role"] == r)
+                      for r in subtitle_roles.SPOKEN_ROLES},
+            "directed": directed, "songs": subtitle_roles.song_spans(found)}
 
     def _ensure_cast():
         if db is None or dry_run:
@@ -1014,6 +1035,8 @@ def run_job(
                 cancel=cancel_event,
                 force=force,
                 bed_policy=_bed_policy(),
+                songs=(job.metrics.get("subtitle_roles") or {}).get("songs")
+                if config["dub"].get("keep_songs", True) else None,
             ),
         ),
         (

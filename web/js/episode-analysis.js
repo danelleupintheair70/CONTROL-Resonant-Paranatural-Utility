@@ -13,7 +13,10 @@ import { mountEvidence, mountSelection, weak, whyText } from './episode-evidence
 // and the episode's dub tracks in seconds.
 
 const BANDS = { quiet: 'quiet', calm: 'calm', intense: 'intense', unmeasured: '—' };
-// A line's role, from the subtitle track's styles (doblarr/subtitle_roles.py).
+// The episode's parts and a line's role, from the subtitle track's styles
+// (doblarr/subtitle_roles.py).
+const PARTS = { 'cold-open': 'Cold open', opening: 'Opening', episode: 'Episode', ending: 'Ending',
+  preview: 'Preview', extra: 'Extra', song: 'Song' };
 const ROLES = { inner: 'voice-over', preview: 'preview', narration: 'narrator', flashback: 'flashback', extra: 'extra' };
 const ROLE_HELP = { inner: 'In italics in the subtitles: a thought, a flashback or a voice from off screen',
   preview: 'The narrated preview of the next episode', narration: 'Narration over the picture',
@@ -278,7 +281,7 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     const heardDubs = new Set(data.grouped_tracks || []);
     const named = cast.filter(c => c.named);
     const joined = named.filter(c => c.labels.length > 1);
-    const length = Math.max(...data.lines.map(l => l.end), 1);
+    const length = Math.max(...data.lines.map(l => l.end), ...(data.structure || []).map(p => p.end), 1);
     const frames = (labels, count) => pickFrames(data.lines.filter(l => labels.includes(l.speaker)), screen, count);
     // What the lines say about one voice group, and a warning when its name disagrees.
     const sameName = (a, b) => {
@@ -329,6 +332,9 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
           title="${clock(l.start)} · ${esc(keyOf(l.speaker))}: ${esc(l.text)}"></span>`).join('')}
         ${Array.from({ length: Math.floor(length / 300) }, (_, i) => `<span class="analysis-minute m" style="left:${((i + 1) * 300 / length * 100).toFixed(2)}%">${(i + 1) * 5}:00</span>`).join('')}
       </div>
+      ${(data.structure || []).length ? `<div class="analysis-parts" aria-label="Parts of the episode">${data.structure.map(p => `<span class="analysis-part part-${esc(p.kind)}"
+        style="left:${(p.start / length * 100).toFixed(3)}%;width:${Math.max(0.4, (p.end - p.start) / length * 100).toFixed(3)}%"
+        title="${esc(PARTS[p.kind] || p.kind)} · ${clock(p.start)}–${clock(p.end)}">${esc(PARTS[p.kind] || p.kind)}</span>`).join('')}</div>` : ''}
       ${(data.on_screen || []).length ? `<details class="analysis-onscreen">
         <summary>Text on screen <span class="hint">${data.on_screen.length} · ${data.on_screen.filter(o => o.from === 'subtitles').slice(0, 3).map(o => esc(o.text)).join(' · ')}</span></summary>
         <div class="analysis-onscreen-list">${data.on_screen.map(o => {

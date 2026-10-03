@@ -201,6 +201,9 @@ class DubModel(_Section):
     duration_match: bool = True
     max_fit_attempts: int = 2
     ducking_ratio: str = "4:1"
+    # Keep the original singing in the opening, ending and insert songs (found
+    # from the subtitle track's lyric styles); separation removes it otherwise.
+    keep_songs: bool = True
     background_volume: float = 1.0
     fallback_volume: float = 0.2
     duck_threshold: float = 0.05

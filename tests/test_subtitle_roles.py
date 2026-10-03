@@ -40,3 +40,34 @@ def test_a_video_without_a_styled_track_gives_plain_dialogue(tmp_path):
     assert subtitle_roles.ensure_styled(script, tmp_path / "missing.mkv", "en") is None
     assert subtitle_roles.style_role("Default") == "dialogue"
     assert subtitle_roles.style_role("Narrator") == "narration"
+
+
+def test_voice_over_and_preview_lines_are_directed_unless_someone_already_did():
+    from doblarr.models import Segment
+
+    thought = Segment(0, 1.0, 3.0, "She never waits...", cue_id="b")
+    preview = Segment(1, 20.0, 23.0, "Next time!", cue_id="c")
+    directed = Segment(2, 30.0, 31.0, "Hm.", cue_id="d")
+    directed.delivery = "a tired sigh"
+    changed = subtitle_roles.direct([thought, preview, directed], {
+        "b": {"role": "inner"}, "c": {"role": "preview"}, "d": {"role": "inner"}})
+    assert changed == {"inner": 1, "preview": 1}
+    assert thought.intent.mode == "thought" and thought.intent.origin == "subtitles"
+    assert preview.intent.direction == subtitle_roles.PREVIEW_DIRECTION
+    assert directed.intent.mode == "unknown"
+
+
+def test_songs_and_the_episode_parts_come_from_the_styles():
+    found = ([{"start": s, "end": s + 4.0, "role": "song", "text": "la", "style": "Lyrics",
+               "italic": False} for s in range(60, 140, 5)]
+             + [{"start": 300.0, "end": 304.0, "role": "dialogue", "text": "hi", "style": "Default",
+                 "italic": False}]
+             + [{"start": s, "end": s + 4.0, "role": "song", "text": "la", "style": "Lyrics ED",
+                 "italic": False} for s in range(1200, 1290, 5)]
+             + [{"start": 1300.0, "end": 1320.0, "role": "preview", "text": "Next!",
+                 "style": "NEP", "italic": False}])
+    assert subtitle_roles.song_spans(found) == [[59.5, 139.5], [1199.5, 1289.5]]
+    parts = [(p["kind"], p["start"], p["end"]) for p in subtitle_roles.structure(found, 1330.0)]
+    assert parts == [("cold-open", 0.0, 60.0), ("opening", 60.0, 139.0),
+                     ("episode", 139.0, 1200.0), ("ending", 1200.0, 1289.0),
+                     ("preview", 1300.0, 1320.0)]
