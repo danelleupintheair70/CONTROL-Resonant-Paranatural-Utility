@@ -18,9 +18,10 @@ import { VoicesTab } from './VoicesTab.jsx';
 import { JobsTab } from './JobsTab.jsx';
 import { MetaTab } from './MetaTab.jsx';
 import { RecipesTab } from './RecipesTab.jsx';
+import { ResearchTab } from './ResearchTab.jsx';
 import './title.css';
 
-const TITLE_TABS = [['plan', 'Dub plan'], ['voices', 'Speakers & voices'], ['jobs', 'Jobs'], ['meta', 'Metadata'], ['recipes', 'Recipes']];
+const TITLE_TABS = [['plan', 'Dub plan'], ['voices', 'Speakers & voices'], ['jobs', 'Jobs'], ['meta', 'Metadata'], ['recipes', 'Recipes'], ['research', 'Research']];
 
 const samePath = (a, b) => {
   try { return decodeURIComponent(a) === decodeURIComponent(b); } catch { return a === b; }
@@ -164,6 +165,7 @@ function TabBody({ tab, item, targets, planState, goEpisode }) {
   if (tab === 'plan') body = <PlanTab item={item} targets={targets} planState={planState} />;
   else if (tab === 'voices') body = <VoicesTab item={item} targets={targets} planState={planState} />;
   else if (tab === 'jobs') body = <JobsTab item={item} />;
+  else if (tab === 'research') body = <ResearchTab item={item} targets={targets} />;
   else body = <MetaTab item={item} targets={targets} />;
   return <div id="titleTabBody">{body}</div>;
 }
@@ -173,7 +175,7 @@ function TitleView({ item, targets, tab, titleKey, episodeId }) {
   const planState = usePlan(item);
   const show = isShow(item);
   const tabs = show ? [['episodes', 'Episodes'], ...TITLE_TABS.filter(([k]) => k !== 'recipes')]
-    : item.episode_id ? [['analysis', 'Analysis'], ...TITLE_TABS] : TITLE_TABS;
+    : item.episode_id ? [['analysis', 'Analysis'], ...TITLE_TABS.filter(([k]) => k !== 'research')] : TITLE_TABS;
   const goTab = next => navigate(titlePath(titleKey, episodeId, next));
   const goEpisode = (episode, next = 'analysis') => navigate(titlePath(titleKey, episode.id, next));
   const back = () => navigate(item.parent ? titleHref(item.parent, 'episodes') : '/library');

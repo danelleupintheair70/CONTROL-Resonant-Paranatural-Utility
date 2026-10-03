@@ -24,6 +24,7 @@ class AskIn(BaseModel):
     series_id: str = Field(min_length=3, max_length=120)
     question: str = Field(min_length=3, max_length=agent.MAX_QUESTION)
     target_locale: str = Field(default="", max_length=16)
+    depth: Literal["", "quick", "standard", "deep"] = ""
 
 
 class LeadIn(BaseModel):
@@ -81,7 +82,7 @@ def build_router(config, store, bus) -> APIRouter:
         job = store.add(title=f"Research · {body.question[:60]}", source="research",
                         source_lang="und", target_lang="und", kind="studio_research",
                         task={"series_id": body.series_id, "question": body.question,
-                              "target_locale": body.target_locale})
+                              "target_locale": body.target_locale, "depth": body.depth})
         bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
         return {"job_id": job.id, "model": model, "sent": sent}
 

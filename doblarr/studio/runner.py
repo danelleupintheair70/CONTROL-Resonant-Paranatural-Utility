@@ -64,6 +64,8 @@ def _research(db, config, task, cancel, progress) -> str:
                                 season=task.get("season"), episode=task.get("episode"))
         skipped = "; ".join(f"{k}: {v}" for k, v in found["skipped"].items())
         return f"kept {found['saved']} script(s)" + (f" · skipped {skipped}" if skipped else "")
+    if task.get("depth"):
+        config = config.with_overrides({"research.depth": task["depth"]})
     run = agent.research_title(db, task["series_id"], task["question"], config=config,
                                target_locale=task.get("target_locale") or "",
                                on_event=on_event)

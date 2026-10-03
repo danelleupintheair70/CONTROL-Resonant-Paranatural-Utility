@@ -29,3 +29,9 @@ test('defaults and incompatible tabs resolve according to media type', () => {
   assert.equal(resolveTitleTab(episode, 'episodes'), 'analysis');
   assert.equal(resolveTitleTab(episode, 'jobs'), 'jobs');
 });
+
+test('research is a tab of shows and films, not of one episode', () => {
+  assert.equal(resolveTitleTab({ media_type: 'show' }, 'research'), 'research');
+  assert.equal(resolveTitleTab({ media_type: 'movie' }, 'research'), 'research');
+  assert.equal(resolveTitleTab({ media_type: 'episode', episode_id: 3 }, 'research'), 'analysis');
+});
