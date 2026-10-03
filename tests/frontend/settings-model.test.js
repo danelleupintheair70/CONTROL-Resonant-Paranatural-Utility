@@ -133,3 +133,13 @@ test('voices ease in and out, and each ease says when it applies', () => {
   const plan = PLAN_FIELDS.map(f => f.k);
   assert.ok(plan.includes('boundaries.edge_fade_in_ms') && plan.includes('boundaries.edge_fade_out_ms'));
 });
+
+test('title research is off by default and says what leaves the machine', () => {
+  const field = FIELD_BY_KEY['research.enabled'];
+  assert.ok(field, 'research.enabled has no settings field');
+  assert.match(field.h, /Only the title or your question leaves this machine/);
+  for (const key of ['research.model', 'research.depth', 'research.max_cost_usd',
+    'research.opensubtitles_api_key', 'research.tmdb_api_key', 'research.kitsunekko_mirror']) {
+    assert.ok(FIELD_BY_KEY[key], `${key} has no settings field`);
+  }
+});

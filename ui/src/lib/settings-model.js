@@ -223,6 +223,16 @@ const TABS = [
     B("decisions.treatments", "Suggest phone, radio or distant", "From the line's own words. Review suggestions only; nothing is applied."),
     B("decisions.review_order", "Review the likeliest problems first", "Orders review by how much each line's findings and uncertain decisions need a listen."),
   ])]),
+  tab("research", "Research", [{ ...group("Title research", [
+    B("research.enabled", "Allow title research", "Off by default. When on, a title's page can look up its cast, dubs and scripts in public catalogues. Only the title or your question leaves this machine, and only when you ask. Findings wait for your review."),
+    T("research.model", "Research model", "A Prompture model that plans searches and writes the cited answer, for example ollama/gemma3:12b. Blank uses the knowledge model."),
+    C("research.depth", "How deep to look", ["quick", "standard", "deep"], "Quick opens about 5 pages and costs least; deep reads more sources and takes longer."),
+    N("research.max_cost_usd", "Most to spend per question (USD)", "A run stops at this model cost. A local model costs nothing."),
+    N("research.cache_days", "Reuse catalogue answers for (days)"),
+    T("research.opensubtitles_api_key", "OpenSubtitles API key", "Optional. Without it, OpenSubtitles is skipped."),
+    T("research.tmdb_api_key", "TMDB API key", "Optional. Without it, TMDB titles and translations are skipped."),
+    T("research.kitsunekko_mirror", "Japanese subtitle mirror", "Path to a local clone of a Japanese subtitle archive. Read on this machine only."),
+  ]), desc: "Nothing found is used until you accept it: cast goes through import, notes through narrative review, terms through Knowledge." }]),
   tab("output", "Output", [group("Files", [
     T("dub.track_name_template", "New track name", "Use {language_name} for the language label."),
     B("dub.preserve_versions", "Keep completed dub versions", "Save independent copies so later generations cannot replace an earlier output."),

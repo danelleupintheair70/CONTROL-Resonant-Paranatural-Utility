@@ -59,7 +59,8 @@ def _prompture_search(query: str, **kwargs: Any) -> list[dict]:
     try:
         from prompture.tools.web import search_anilist
     except ImportError as exc:  # pragma: no cover - depends on the installed Prompture
-        raise RuntimeError("the published cast needs a Prompture with the AniList reader") from exc
+        raise RuntimeError("the published cast needs prompture>=1.13.6 (the AniList reader); "
+                           "reinstall Doblarr's requirements") from exc
     return search_anilist(query, **kwargs)
 
 

@@ -504,6 +504,24 @@ class AdaptiveModel(_Section):
     lines: dict[str, dict] = {}       # per-cue manual selection {template, strength, locked}
 
 
+class ResearchModel(_Section):
+    """Title research from public sources (docs/title-research.md).
+
+    Off by default. A search sends only a title or a question out of this
+    machine, and only when a person asks; whatever it finds lands for review
+    and is never applied on its own.
+    """
+
+    enabled: bool = False
+    model: str = ""                   # a Prompture model; blank uses analysis.knowledge_model
+    depth: Literal["quick", "standard", "deep"] = "quick"
+    max_cost_usd: float = 1.0         # hard cap on model spend per research run
+    cache_days: int = 30              # how long a catalogue answer is reused
+    opensubtitles_api_key: str = ""   # optional; without it OpenSubtitles is skipped
+    tmdb_api_key: str = ""            # optional; without it TMDB is skipped
+    kitsunekko_mirror: str = ""       # a local clone of a Japanese subtitle mirror
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -533,6 +551,7 @@ class ConfigModel(_Section):
     analysis: AnalysisModel = AnalysisModel()
     vision: VisionModel = VisionModel()
     adaptive: AdaptiveModel = AdaptiveModel()
+    research: ResearchModel = ResearchModel()
 
 
 def validate_config(data: dict) -> None:

@@ -381,6 +381,19 @@ vision:                         # needs: pip install "doblarr[vision]" and the m
   asd_fps: 8                    # frames per second read inside a line for mouth movement
   match_threshold: 0.55         # face-to-reference similarity to propose a name
 
+# ---- Title research from public sources (docs/title-research.md) ---------
+# Off by default. Only a title or a question leaves this machine, and only
+# when you ask; everything found lands for review, never applied on its own.
+research:
+  enabled: false
+  model: ""                     # a Prompture model; blank uses analysis.knowledge_model
+  depth: quick                  # quick | standard | deep
+  max_cost_usd: 1.0             # cap on model spend per research run
+  cache_days: 30                # reuse a catalogue answer this long
+  opensubtitles_api_key: ""     # optional (free key); without it OpenSubtitles is skipped
+  tmdb_api_key: ""              # optional (free key); without it TMDB is skipped
+  kitsunekko_mirror: ""         # path to a local clone of a Japanese subtitle mirror
+
 # ---- Voice envelopes and background policies (docs/adaptive-audio.md) ------
 adaptive:
   mode: off                     # off | suggest (record only) | apply (render)
