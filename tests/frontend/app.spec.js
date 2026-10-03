@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { FIELD_BY_KEY } from '../../web/js/settings-model.js';
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/library', route => route.fulfill({ json: {
@@ -65,14 +66,9 @@ test('failed manual enqueue keeps the form open and displays the server error', 
   await expect(page.locator('#ndQueue')).toBeEnabled();
 });
 
-test('every editable settings field has a backend config key', async ({ page, request }) => {
-  await page.goto('/settings');
+test('every editable settings field has a backend config key', async ({ request }) => {
   const config = await (await request.get('/api/config')).json();
-  const keys = await page.evaluate(async () => {
-    const { FIELD_BY_KEY } = await import('/js/settings-model.js');
-    return Object.keys(FIELD_BY_KEY);
-  });
-  for (const key of keys) {
+  for (const key of Object.keys(FIELD_BY_KEY)) {
     const [section, name] = key.split('.');
     expect(config[section], key).toHaveProperty(name);
   }

@@ -47,3 +47,6 @@ test-results/
 /docs/plan
 /docs/plans/
 /graphify-out
+
+# React UI build (docs/react-migration.md)
+ui/dist/
