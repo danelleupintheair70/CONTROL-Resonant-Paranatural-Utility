@@ -191,6 +191,7 @@ def stage_inputs(job, stage: str):
         "analyze": lambda: [DETECTOR, spans],
         "emotion": lambda: spans,
         "reader": lambda: labels,
+        "dub_text": lambda: [stamp(job.source_audio)],
         "features": lambda: features_request(job, Path(job.vocals or job.source_audio
                                                          or "")),
     }[stage]()

@@ -274,6 +274,15 @@ def _same(current: dict, document: dict) -> bool:
             == {k: v for k, v in document.items() if k not in skip})
 
 
+def show_ref(series_id: str | None) -> str:
+    """The key show-scoped rules are kept under: "series:<tvdb id>" for a
+    TVDB show (what queued jobs carry), else "series:<series id>"."""
+    series = str(series_id or "")
+    if series.startswith("show:tvdb:"):
+        return f"series:{series.rsplit(':', 1)[-1]}"
+    return f"series:{series}" if series.startswith("show:") else ""
+
+
 def canonical_series(db, series_id: str) -> str:
     """Follow a confirmed link from a local series to the one it really is."""
     seen = set()

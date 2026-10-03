@@ -3,6 +3,7 @@ import { escapeHtml as esc, safeGet } from './dom.js';
 import { openMediaPlayer } from './media-player.js';
 import { characterPicker } from './character-picker.js';
 import { mountEvidence, mountSelection, weak, whyText } from './episode-evidence.js';
+import { mountTerms, termsSection } from './episode-terms.js';
 
 // One episode broken down line by line: the voices found in it (with how much
 // each talks, and who they are once picked from the show's cast), then every
@@ -13,6 +14,14 @@ import { mountEvidence, mountSelection, weak, whyText } from './episode-evidence
 // and the episode's dub tracks in seconds.
 
 const BANDS = { quiet: 'quiet', calm: 'calm', intense: 'intense', unmeasured: '—' };
+// The episode's parts and a line's role, from the subtitle track's styles
+// (doblarr/subtitle_roles.py).
+const PARTS = { 'cold-open': 'Cold open', opening: 'Opening', episode: 'Episode', ending: 'Ending',
+  preview: 'Preview', extra: 'Extra', song: 'Song' };
+const ROLES = { inner: 'voice-over', preview: 'preview', narration: 'narrator', flashback: 'flashback', extra: 'extra' };
+const ROLE_HELP = { inner: 'In italics in the subtitles: a thought, a flashback or a voice from off screen',
+  preview: 'The narrated preview of the next episode', narration: 'Narration over the picture',
+  flashback: 'A line from a flashback', extra: 'A bonus segment after the episode (omake)' };
 const PALETTE = ['#F08A24', '#5B8DEF', '#E0567A', '#3BAA7C', '#9B6CD6', '#E8B33A', '#4FB6C9', '#B5674D', '#7A8F2E', '#D46FC4', '#2F6F8F', '#C7432B', '#6E7BD9', '#8C6B3F'];
 const PAD_BEFORE = 0.35, PAD_AFTER = 0.45;      // a breath of context around a watched line
 let audio = null;
@@ -103,7 +112,7 @@ const fold = s => String(s || '').toLowerCase();
 export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
   const path = item.path;
   const tvdb = item.parent?.tvdb_id || item.tvdb_id;
-  let speakerFilter = '', bandFilter = '', timer = null, tracks = null, chosen = {};
+  let speakerFilter = '', bandFilter = '', roleFilter = '', timer = null, tracks = null, chosen = {};
   box.innerHTML = '<p class="hint">Reading this episode’s analysis…</p>';
 
   async function start() {
@@ -266,14 +275,14 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     const total = totalTalk(data);
     const lead = Math.max(...cast.map(c => c.seconds), 1);
     const visible = data.lines.filter(l => (!speakerFilter || keyOf(l.speaker) === speakerFilter)
-      && (!bandFilter || l.band === bandFilter));
+      && (!bandFilter || l.band === bandFilter) && (!roleFilter || (l.role || 'dialogue') === roleFilter));
     const languages = [data.languages.text, data.languages.original_text ? data.languages.original : '']
       .filter(Boolean).map(l => l.toUpperCase()).join(' + ');
     const dubs = (found?.tracks || []).filter(t => t.stream !== found.default);
     const heardDubs = new Set(data.grouped_tracks || []);
     const named = cast.filter(c => c.named);
     const joined = named.filter(c => c.labels.length > 1);
-    const length = Math.max(...data.lines.map(l => l.end), 1);
+    const length = Math.max(...data.lines.map(l => l.end), ...(data.structure || []).map(p => p.end), 1);
     const frames = (labels, count) => pickFrames(data.lines.filter(l => labels.includes(l.speaker)), screen, count);
     // What the lines say about one voice group, and a warning when its name disagrees.
     const sameName = (a, b) => {
@@ -316,7 +325,7 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
       <p class="analysis-tally">
         <strong>${cast.length}</strong> ${cast.length === 1 ? 'character' : 'characters'} heard ·
         <strong>${named.length}</strong> named · <strong>${cast.length - named.length}</strong> to name${joined.length
-          ? ` · <strong>${joined.length}</strong> joined from several voices, check their pictures` : ''}</p>
+          ? ` · <strong>${joined.length}</strong> joined from several voices, check their pictures` : ''}${Object.keys(ROLES).filter(r => (data.roles || {})[r]).map(r => ` · <strong>${data.roles[r]}</strong> ${ROLES[r]}`).join('')}</p>
       <p class="hint" role="status" data-status></p>
       <div class="analysis-timeline" role="img" aria-label="Who talks when, across the episode">
         ${data.lines.map(l => `<span class="analysis-tick" data-watch="${esc(cast.find(c => c.key === keyOf(l.speaker))?.labels.join('|') || l.speaker)}" data-watch-line="${l.index}"
@@ -324,10 +333,19 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
           title="${clock(l.start)} · ${esc(keyOf(l.speaker))}: ${esc(l.text)}"></span>`).join('')}
         ${Array.from({ length: Math.floor(length / 300) }, (_, i) => `<span class="analysis-minute m" style="left:${((i + 1) * 300 / length * 100).toFixed(2)}%">${(i + 1) * 5}:00</span>`).join('')}
       </div>
-      ${(data.on_screen || []).length ? `<p class="analysis-onscreen"><span class="hint">On screen:</span> ${data.on_screen.map(o => {
-        const l = data.lines.find(x => x.cue === o.cue);
-        return l ? `<button type="button" class="analysis-suggest analysis-suggest-alt" data-watch="${esc(l.speaker)}" data-watch-line="${l.index}" title="Text drawn on the picture at ${clock(l.start)}">${esc(o.text)} <span class="m">${clock(l.start)}</span></button>` : '';
-      }).join('')}</p>` : ''}
+      ${(data.structure || []).length ? `<div class="analysis-parts" aria-label="Parts of the episode">${data.structure.map(p => `<span class="analysis-part part-${esc(p.kind)}"
+        style="left:${(p.start / length * 100).toFixed(3)}%;width:${Math.max(0.4, (p.end - p.start) / length * 100).toFixed(3)}%"
+        title="${esc(PARTS[p.kind] || p.kind)} · ${clock(p.start)}–${clock(p.end)}">${esc(PARTS[p.kind] || p.kind)}</span>`).join('')}</div>` : ''}
+      ${(data.on_screen || []).length ? `<details class="analysis-onscreen">
+        <summary>Text on screen <span class="hint">${data.on_screen.length} · ${data.on_screen.filter(o => o.from === 'subtitles').slice(0, 3).map(o => esc(o.text)).join(' · ')}</span></summary>
+        <div class="analysis-onscreen-list">${data.on_screen.map(o => {
+          const l = data.lines.find(x => x.cue === o.cue);
+          return `<button type="button" class="analysis-suggest${o.from === 'picture' ? ' analysis-suggest-alt' : ''}" ${l ? `data-watch="${esc(l.speaker)}" data-watch-line="${l.index}"` : 'disabled'}
+            title="${o.from === 'picture' ? 'Read from the picture by the vision model' : `From the subtitles: ${o.kind === 'title' ? 'a title card' : 'a sign'}`}">${esc(o.text)} <span class="m">${clock(o.at)}</span></button>`;
+        }).join('')}</div>
+        <p class="hint">Signs and title cards come from the subtitle track, already translated. Dimmed ones were read from the picture.</p>
+      </details>` : ''}
+      ${termsSection(data)}
       ${(data.doubts || []).length ? `<section class="asks" aria-label="Questions about the voices">
         <h4>Who says this? <span class="hint">${data.doubts.length} question${data.doubts.length === 1 ? '' : 's'} · each answer is kept for the show and teaches the next episodes</span></h4>
         <div class="asks-list">${data.doubts.map((q, n) => `<article class="ask" data-ask="${n}" style="--tint:${tint(q.voice)}">
@@ -376,6 +394,8 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
           ${cast.map(c => `<option value="${esc(c.key)}" ${c.key === speakerFilter ? 'selected' : ''}>${esc(c.key)}</option>`).join('')}</select></label>
         <label>How <select class="input" data-filter-band><option value="">Every line</option>
           ${['intense', 'calm', 'quiet'].map(b => `<option value="${b}" ${b === bandFilter ? 'selected' : ''}>${b}${b === 'intense' ? ' (training lines)' : ''}</option>`).join('')}</select></label>
+        ${Object.values(data.roles || {}).some((n, i) => i && n) ? `<label>Kind <select class="input" data-filter-role><option value="">Every kind</option>
+          ${['dialogue', ...Object.keys(ROLES)].filter(r => (data.roles || {})[r]).map(r => `<option value="${r}" ${r === roleFilter ? 'selected' : ''}>${r === 'dialogue' ? 'dialogue' : ROLES[r]} (${data.roles[r]})</option>`).join('')}</select></label>` : ''}
         <span class="hint">${visible.length} line${visible.length === 1 ? '' : 's'}</span>
       </div>
       <div class="analysis-selection" data-selection hidden><span class="hint" data-count></span><span data-selection-picker></span></div>
@@ -384,7 +404,7 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
           <span class="m" role="cell"><input type="checkbox" data-select-line="${esc(l.cue)}" aria-label="Select line at ${clock(l.start)}"> ${clock(l.start)}</span>
           <span role="cell"><span class="analysis-who" style="border-color:${tint(l.speaker)}" title="${esc(whyText(l.why))}">${esc(keyOf(l.speaker))}</span>${l.uncertain || weak(l.why) ? `<span class="hint" title="${esc(whyText(l.why) || 'Too short to be sure of the voice')}">?</span>` : ''}${l.locked ? `<button type="button" class="analysis-lock" data-unlock="${esc(l.cue)}" title="You assigned this line; it stays with this character when voices are regrouped. Click to let the grouping decide again.">assigned</button>` : ''}
             <span class="hint analysis-screen" data-screen-cue="${esc(l.cue)}"></span></span>
-          <span role="cell" class="analysis-text">${esc(l.text)}${l.original_text ? `<span class="analysis-original">${esc(l.original_text)}</span>` : ''}</span>
+          <span role="cell" class="analysis-text">${l.role && l.role !== 'dialogue' ? `<span class="role role-${esc(l.role)}" title="${esc(ROLE_HELP[l.role] || '')}">${esc(ROLES[l.role] || l.role)}</span>` : ''}${esc(l.text)}${l.original_text ? `<span class="analysis-original">${esc(l.original_text)}</span>` : ''}</span>
           <span role="cell"><span class="cast-band cast-band-${l.band} analysis-band">${BANDS[l.band]}</span>${l.emotion ? `<span class="emo emo-${esc(l.emotion.confidence)}" title="${esc([l.emotion.expression && `face: ${l.emotion.expression}`, l.emotion.voice && `voice: ${l.emotion.voice}`, l.emotion.agree === true ? 'face and voice agree' : l.emotion.agree === false ? 'the voice disagrees' : '', `read from the ${l.emotion.from}`].filter(Boolean).join(' · '))}">${esc(l.emotion.feeling)}</span>` : ''}</span>
           <span role="cell" class="m hint">${l.pitch_hz ? `${Math.round(l.pitch_hz)} Hz` : ''}${l.movement_st ? ` · ${l.movement_st} st` : ''}${l.features?.quality && l.features.quality !== 'ok' ? `<br><span title="${esc((l.features.reasons || []).join('; '))}">curve ${esc(l.features.quality)}</span>` : ''}</span>
           <span role="cell" class="analysis-play">
@@ -435,6 +455,7 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     box.querySelector('[data-analyze]').onclick = start;
     mountEvidence(box, data, { path, target, reload: load, say, visual });
     mountSelection(box, data, { path, reload: load, say });
+    mountTerms(box, data, { path, reload: load, say });
     const regroupButton = box.querySelector('[data-regroup]');
     if (regroupButton) regroupButton.onclick = () => regroup(models, found);
     // Answers: a voice question names the whole group; a line question assigns
@@ -473,6 +494,7 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     });
     box.querySelector('[data-filter-speaker]').onchange = e => { speakerFilter = e.target.value; draw(data, models, found, visual); };
     box.querySelector('[data-filter-band]').onchange = e => { bandFilter = e.target.value; draw(data, models, found, visual); };
+    box.querySelector('[data-filter-role]')?.addEventListener('change', e => { roleFilter = e.target.value; draw(data, models, found, visual); });
     box.querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
       const [s, e] = b.dataset.play.split(',').map(Number);
       play(path, s, e, b.dataset.track);

@@ -105,3 +105,32 @@ def test_translate_stage_runs_the_check():
     translate.run(job, Translator())
     assert job.metrics["spain_spanish_lines"] == 2
     assert {m["word"] for m in _open(job.segments[0])[0].evidence["markers"]} == {"os", "vale"}
+
+
+def test_vosotros_endings_and_imperatives_are_caught_without_nouns():
+    from doblarr import dialect
+
+    assert [h["word"] for h in dialect.markers("¡Pasad!")] == ["Pasad"]
+    assert [h["word"] for h in dialect.markers("¿Habéis comido?")] == ["Habéis"]
+    assert [h["word"] for h in dialect.markers("¿Lo visteis ayer?")] == ["visteis"]
+    assert [h["word"] for h in dialect.markers("Lo hicisteis bien.")] == ["hicisteis"]
+    assert dialect.markers("Es verdad, en la pared de la ciudad.") == []
+
+
+def test_flagged_lines_are_rewritten_only_when_the_rewrite_is_clean(monkeypatch):
+    from types import SimpleNamespace
+
+    from doblarr import dialect
+
+    class Translator:
+        def revise(self, text, language, instruction):
+            return {"¡Pasad!": "¡Pasen!", "Me has pillado.": "Me has pillado otra vez."}[text]
+
+    lines = [SimpleNamespace(text_translated="¡Pasad!", tts_text="x", findings=[]),
+             SimpleNamespace(text_translated="Me has pillado.", tts_text="", findings=[]),
+             SimpleNamespace(text_translated="Hola.", tts_text="", findings=[])]
+    job = SimpleNamespace(segments=lines, target_locale="es-419", target_lang="es", metrics={})
+    monkeypatch.setattr(dialect, "check", lambda job: 0)   # findings have their own tests
+    assert dialect.revise(job, Translator()) == 1
+    assert lines[0].text_translated == "¡Pasen!" and lines[0].tts_text == ""
+    assert lines[1].text_translated == "Me has pillado."   # still Spain Spanish: kept for review

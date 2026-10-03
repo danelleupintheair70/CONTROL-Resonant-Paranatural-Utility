@@ -1,0 +1,39 @@
+/* One finished dub, watched with every language one click away (web/js/watch.js). */
+.watch { padding:22px 26px 46px; display:flex; flex-direction:column; gap:16px; max-width:1280px; }
+.watch-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:12px;
+  & h2 { margin:0 0 2px; font-size:20px; }
+  & .hint { margin:0; } }
+.watch-langs { display:flex; flex-wrap:wrap; gap:6px; }
+.watch-lang { padding:5px 11px; border-radius:7px; border:1px solid var(--line); background:transparent;
+  color:var(--color-text); font:inherit; font-size:12.5px; cursor:pointer;
+  &[aria-pressed="true"] { background:var(--color-text); color:var(--color-bg, #fff); border-color:var(--color-text); }
+  &.watch-lang-ours { border-color:var(--color-accent); }
+  &:focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; } }
+.watch-stage { display:flex; flex-direction:column; gap:6px; }
+.watch-video { width:100%; max-height:72vh; background:#000; border-radius:8px; }
+.watch-strip { position:relative; height:16px; border-radius:4px; background:color-mix(in srgb, var(--color-text) 6%, transparent); }
+.watch-mark { position:absolute; top:0; bottom:0; padding:0; border:0; cursor:pointer; min-width:3px; }
+.watch-quiet { background:color-mix(in srgb, #E8A33A 70%, transparent); }
+.watch-note-mark { top:-3px; bottom:-3px; width:3px !important; background:var(--color-accent); border-radius:2px; }
+.watch-note-done { opacity:.35; }
+.watch-head-line { position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--color-text); pointer-events:none; }
+.watch-keys { margin:2px 0 0; font-size:12px;
+  & kbd { font:inherit; font-size:11px; padding:0 5px; border:1px solid var(--line); border-radius:4px; } }
+.watch-note { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+  & .input { width:auto; flex:0 0 auto; }
+  & input[name="note"] { flex:1 1 260px; min-width:0; }
+  & .m { min-width:40px; font-weight:600; } }
+.watch-columns { display:grid; grid-template-columns:1fr 1fr; gap:22px;
+  & h3 { margin:0 0 6px; font-size:14px; }
+  & .hint { margin:0 0 6px; } }
+.watch-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; font-size:13px;
+  & li { display:flex; gap:10px; align-items:baseline; }
+  & li > span { flex:1; }
+  & .hint { display:block; margin:0; }
+  & select { padding:2px 6px; font-size:12px; } }
+.watch-quiet-list { max-height:340px; overflow:auto; }
+.watch-done { opacity:.55; }
+.watch-time { all:unset; cursor:pointer; min-width:42px; color:var(--color-accent);
+  &:focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; } }
+.watch-wait { padding:30px 0; & h2 { margin:0 0 6px; } }
+@media (max-width: 760px) { .watch { padding:16px; } .watch-columns { grid-template-columns:1fr; } }

@@ -17,10 +17,10 @@ const ANALYSED = {
   languages: { text: 'en', original: 'ja', original_text: true },
   speakers: [{ speaker: 'SPEAKER_00', share: 0.6 }, { speaker: 'SPEAKER_01', share: 0.4 }],
   lines: [
-    { index: 0, start: 1, end: 4, speaker: 'SPEAKER_00', character: '', text: 'Believe it!',
-      original_text: 'だってばよ!', relative_db: 6, band: 'intense', pitch_hz: 260, movement_st: 4.4, uncertain: false },
+    { index: 0, start: 1, end: 4, speaker: 'SPEAKER_00', character: '', text: 'Wait for me!',
+      original_text: '待ってよ!', relative_db: 6, band: 'intense', pitch_hz: 260, movement_st: 4.4, uncertain: false },
     { index: 1, start: 5, end: 8, speaker: 'SPEAKER_01', character: '', text: 'Kaito.',
-      original_text: 'ナルト。', relative_db: 0, band: 'calm', pitch_hz: 290, movement_st: 2.1, uncertain: false },
+      original_text: 'カイト。', relative_db: 0, band: 'calm', pitch_hz: 290, movement_st: 2.1, uncertain: false },
   ],
 };
 
@@ -50,7 +50,7 @@ test('the breakdown names voices, filters training lines and plays a line', asyn
   });
   await page.goto('/title/tvdb-81234/episode/2/analysis');
   await expect(page.locator('.analysis-line')).toHaveCount(2);
-  await expect(page.locator('.analysis-line').first()).toContainText('だってばよ!');
+  await expect(page.locator('.analysis-line').first()).toContainText('待ってよ!');
   await page.locator('[data-filter-band]').selectOption('intense');
   await expect(page.locator('.analysis-line')).toHaveCount(1);
   await page.getByLabel('Character for SPEAKER_00').fill('Kaito');
@@ -133,7 +133,7 @@ test('watching a voice plays only its lines and can switch the audio language', 
   const player = page.getByRole('dialog');
   await expect(player.getByRole('heading', { name: 'Kaito' })).toBeVisible();
   await expect(player.locator('.mp-item')).toHaveCount(1);              // only Kaito's line
-  await expect(player.locator('.mp-caption')).toHaveText('Believe it!');
+  await expect(player.locator('.mp-caption')).toHaveText('Wait for me!');
   await expect.poll(() => asked[0]).toBe('2');                           // the original language first
   const language = player.getByLabel('Audio language');
   await expect(language.locator('option')).toHaveText(['English', 'Japanese', 'Spanish · Latino']);
@@ -159,7 +159,7 @@ test('a watched line can be given to another character from its menu', async ({ 
   await page.getByRole('button', { name: 'Watch Doran' }).click();
   const player = page.getByRole('dialog');
   await player.getByRole('button', { name: /More for 0:01/ }).click();
-  await expect(player.getByText(/Who says “Believe it!”/)).toBeVisible();
+  await expect(player.getByText(/Who says “Wait for me!”/)).toBeVisible();
   await expect(player.getByLabel('Who says this line')).toBeFocused();
   await page.keyboard.type('Harbor guard');
   await page.getByRole('option', { name: /New character “Harbor guard”/ }).click();
@@ -201,4 +201,45 @@ test('the episode asks who says the doubtful lines, and an answer names the voic
   await expect(page.locator('.ask')).toContainText('Who is this voice?');
   await page.locator('.ask').getByRole('button', { name: 'Kaito' }).click();
   await expect.poll(() => names?.SPEAKER_00).toBe('Kaito');
+});
+
+test('lines show their kind from the subtitle styles, and on-screen text is listed once', async ({ page }) => {
+  await show(page);
+  const lines = ANALYSED.lines.map((l, i) => ({ ...l, role: i === 1 ? 'inner' : 'dialogue' }));
+  await page.route('**/api/analysis?*', route => route.fulfill({ json: { ...ANALYSED, lines,
+    roles: { dialogue: 1, inner: 1, preview: 0, narration: 0, flashback: 0, extra: 0 },
+    on_screen: [{ cue: lines[0].cue, at: 1, text: 'Harbor Gate', kind: 'sign', from: 'subtitles' }] } }));
+  await page.goto('/title/tvdb-81234/episode/2/analysis');
+  await expect(page.locator('.analysis-tally')).toContainText('1 voice-over');
+  await expect(page.locator('.analysis-line').nth(1).locator('.role')).toHaveText('voice-over');
+  await expect(page.locator('.analysis-onscreen summary')).toContainText('Harbor Gate');
+  await page.locator('[data-filter-role]').selectOption('inner');
+  await expect(page.locator('.analysis-line')).toHaveCount(1);
+});
+
+test('names and terms show how each is said and keep a wording for the show', async ({ page }) => {
+  await show(page);
+  let kept;
+  const terms = { locale: 'es-419', show: true, official: { title: 'Latino' }, other_saved: [], rows: [
+    { term: 'Harbor', kind: 'term', count: 3,
+      lines: [{ cue: 'c0', start: 1, text: 'Back to the Harbor.', ours: 'De vuelta al Puerto.', dub: 'Al muelle.' }],
+      ours: { rendering: 'Puerto', share: 0.67, variants: [{ rendering: 'bahía', cues: ['c2'] }], missing: [] },
+      dub: { rendering: 'muelle', share: 1, variants: [], missing: [] }, saved: null, holds: [] },
+    { term: 'Kaito', kind: 'name', count: 4, lines: [],
+      ours: { rendering: 'Kaito', share: 1, variants: [], missing: [] }, dub: null, saved: null, holds: [] }] };
+  await page.route('**/api/analysis?*', route => route.fulfill({ json: { ...ANALYSED, terms } }));
+  await page.route('**/api/analysis/terms', route => {
+    kept = route.request().postDataJSON();
+    return route.fulfill({ json: { term: kept.source, rendering: kept.rendering } });
+  });
+  await page.goto('/title/tvdb-81234/episode/2/analysis');
+  const panel = page.locator('.analysis-terms');
+  await expect(panel.locator('summary')).toContainText('1 said more than one way');
+  // Said two ways: open, listed first, with the other wording beside it.
+  await expect(panel.locator('.terms-row').nth(1)).toContainText('bahía');
+  await panel.getByRole('button', { name: 'muelle' }).click();
+  await expect(panel.getByLabel('Wording of Harbor for the show')).toHaveValue('muelle');
+  await panel.getByLabel('Wording of Harbor for the show').fill('el Puerto');
+  await panel.locator('[data-term-save="0"]').click();
+  await expect.poll(() => kept).toEqual({ path: '/shows/HarborLights/e02.mkv', source: 'Harbor', rendering: 'el Puerto', locale: 'es-419' });
 });

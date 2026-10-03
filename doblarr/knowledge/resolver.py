@@ -169,7 +169,12 @@ class KnowledgeSelection:
         by_phrase: dict[str, list[tuple[Entry, int]]] = {}
         for entry, rank in applicable:
             if entry.id not in suppressed:
-                by_phrase.setdefault(nfc(entry.phrase), []).append((entry, rank))
+                # A term is a rule about its source wording: two source forms
+                # with one rendering ("the Cove" and "the Coves", both "la
+                # Ensenada") are two rules, not a conflict.
+                key = (nfc(entry.phrase) if kind != "term"
+                       else f"{nfc(entry.source_form).casefold()}→{nfc(entry.phrase)}")
+                by_phrase.setdefault(key, []).append((entry, rank))
         winners: dict[str, Entry] = {}
         for phrase, candidates in by_phrase.items():
             candidates.sort(key=lambda c: (SCOPE_RANK[c[0].scope], c[1], c[0].id))

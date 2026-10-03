@@ -342,6 +342,19 @@ def test_terminology_is_bounded_to_relevant_segments(tmp_path):
     db.close()
 
 
+def test_two_source_forms_may_share_one_rendering(tmp_path):
+    db = make_db(tmp_path)
+    for form in ("Cove of the Lantern", "Cove of the Lanterns"):
+        add_rule(db, phrase="la Ensenada del Farol", kind="term", source_form=form,
+                 status="reviewed")
+    sel = selection(db)
+    assert sel.glossary_terms(["From the Cove of the Lanterns!"]) == {
+        "Cove of the Lantern": "la Ensenada del Farol",
+        "Cove of the Lanterns": "la Ensenada del Farol"}
+    assert sel.conflicts == []
+    db.close()
+
+
 def test_ambiguous_term_senses_are_not_applied(tmp_path):
     db = make_db(tmp_path)
     add_rule(

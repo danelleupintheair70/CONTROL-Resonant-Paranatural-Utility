@@ -154,3 +154,40 @@ def test_visual_tracks_can_be_named_and_the_evidence_is_fused_again(client_facto
     assert thumb.status_code == 200
     assert client.get("/api/analysis/visual/thumb", params={
         "path": str(episode), "name": "../secret.jpg"}).status_code == 422
+
+
+def test_names_and_terms_are_read_and_kept_for_the_show(client_factory, tmp_path):
+    client = client_factory()
+    work = client.app.state.worker.config.work_dir
+    episode = _episode(tmp_path, work)
+    script = work / "media" / "abc" / "es-419" / "e02.script.json"
+    data = json.loads(script.read_text(encoding="utf-8"))
+    said = [("Back to the Harbor, Kaito.", "De vuelta al Puerto, Kaito."),
+            ("The Harbor never sleeps.", "El Puerto nunca duerme."),
+            ("Kaito, the Harbor is waiting.", "Kaito, la Bahía espera.")]
+    for seg, (src, out) in zip(data["segments"], said, strict=True):
+        seg["text_src"], seg["text_translated"] = src, out
+    script.write_text(json.dumps(data), encoding="utf-8")
+    # The official dub in the same language, transcribed on the source clock.
+    (work / "media" / "abc" / "e02.dubtext.5.json").write_text(json.dumps({
+        "stream": 5, "lang": "es", "title": "Latino", "offset": 0.0, "rate": 1.0,
+        "words": [{"start": a, "end": a + 0.4, "text": w}
+                  for a, w in ((0.5, "el"), (1.0, "muelle"), (4.2, "el"), (4.7, "muelle"))]}),
+        encoding="utf-8")
+    terms = client.get("/api/analysis", params={"path": str(episode)}).json()["terms"]
+    assert terms["locale"] == "es-419" and terms["official"] == {"title": "Latino"}
+    harbor = next(r for r in terms["rows"] if r["term"] == "Harbor")
+    assert harbor["ours"]["rendering"] == "Puerto" and harbor["ours"]["missing"] == ["c2"]
+    assert harbor["dub"]["rendering"] == "muelle" and harbor["saved"] is None
+    kept = client.put("/api/analysis/terms", json={
+        "path": str(episode), "source": "Harbor", "rendering": "el Puerto"}).json()
+    assert kept["rendering"] == "el Puerto"
+    harbor = next(r for r in client.get("/api/analysis", params={"path": str(episode)}).json()[
+        "terms"]["rows"] if r["term"] == "Harbor")
+    assert harbor["saved"]["rendering"] == "el Puerto" and harbor["saved"]["reviewed"]
+    assert harbor["holds"] == ["c0", "c1"]
+    client.put("/api/analysis/terms", json={"path": str(episode), "source": "harbor",
+                                            "rendering": ""})
+    harbor = next(r for r in client.get("/api/analysis", params={"path": str(episode)}).json()[
+        "terms"]["rows"] if r["term"] == "Harbor")
+    assert harbor["saved"] is None

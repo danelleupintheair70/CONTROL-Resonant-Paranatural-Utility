@@ -27,6 +27,7 @@ import hashlib
 import json
 import subprocess
 import threading
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -36,12 +37,15 @@ from pydantic import BaseModel, Field
 from .. import (
     dialogue_clues,
     doubts,
+    dub_text,
     identity,
     identity_migration,
+    key_terms,
     snapshots,
     speaker_memory,
     speakers,
     speaking,
+    subtitle_roles,
     track_alignment,
     voice_models,
     voice_tags,
@@ -59,6 +63,14 @@ class NamesIn(BaseModel):
     names: dict[str, str] = Field(default_factory=dict)
     # Groups whose name a person kept against the dialogue: never renamed by it.
     keep: list[str] = Field(default_factory=list, max_length=200)
+
+
+class TermIn(BaseModel):
+    path: str = Field(min_length=1, max_length=2000)
+    source: str = Field(min_length=1, max_length=120)
+    # Blank: forget the show's wording for this term.
+    rendering: str = Field(default="", max_length=120)
+    locale: str = Field(default="", max_length=20)
 
 
 class LineIn(BaseModel):
@@ -135,21 +147,53 @@ def _feeling(row: dict | None) -> dict | None:
             "voice": heard.get("feeling") or ""}
 
 
-def on_screen(felt: dict, lines: list[dict]) -> list[dict]:
-    """Text drawn on the picture, without the subtitles a reader copied anyway."""
+_NOT_TEXT = {"", "null", "none", "n/a", "na", "unknown"}
+_QUOTES = "\"'「」『』"
+_COMMENTARY = ("note:", "the line", "original japanese", "subtitle")
+
+
+def _picture_text(text: str, spoken: set[str]) -> str:
+    """Text a seeing model said was on the picture, or "" when it is not usable:
+    empty answers, its own commentary, a run of one repeated word, or the
+    dialogue's subtitles copied back."""
+    text = " ".join(str(text or "").split()).strip().strip(_QUOTES)
+    key = "".join(ch for ch in text.casefold() if ch.isalnum())
+    if key in _NOT_TEXT or len(key) < 2 or len(text) > 60:
+        return ""
+    if any(word in text.casefold() for word in _COMMENTARY):
+        return ""
+    if len(key) > 12 and len(set(key)) <= len(key) // 6:
+        return ""                                # one word repeated across the frame
+    if any(key in said or (len(said) > 6 and said in key) for said in spoken):
+        return ""
+    return text
+
+
+def on_screen(felt: dict, lines: list[dict], signs: list[dict]) -> list[dict]:
+    """Text drawn on the picture: the subtitle track's signs and title cards
+    (translated and timed), then what the picture reader saw that they lack."""
     def fold(text: str) -> str:
         return "".join(ch for ch in text.casefold() if ch.isalnum())
 
-    spoken = {fold(line.get("text") or "") for line in lines} - {""}
+    by_start = sorted(lines, key=lambda line: line["start"])
     found, seen = [], set()
+    for sign in signs:
+        near = min(by_start, key=lambda line: abs(line["start"] - sign["start"]), default=None)
+        seen.add(fold(sign["text"]))
+        found.append({"cue": near["cue"] if near else None, "at": round(sign["start"], 2),
+                      "text": sign["text"], "kind": sign["kind"], "from": "subtitles"})
+    spoken = {fold(line.get("text") or "") for line in lines} - {""}
+    at = {line["cue"]: line["start"] for line in lines}
     for cue, row in felt.items():
-        text = str((row.get("picture") or {}).get("text_on_screen") or "").strip().strip('"')
-        key = fold(text)
-        if len(key) < 2 or key in seen or any(key in said or said in key for said in spoken):
+        text = _picture_text(str((row.get("picture") or {}).get("text_on_screen") or ""), spoken)
+        # The same banner read a little differently on each frame is one text.
+        if not text or fold(text) in seen or any(
+                SequenceMatcher(None, fold(text), other).ratio() > 0.6 for other in seen):
             continue
-        seen.add(key)
-        found.append({"cue": cue, "text": text})
-    return found
+        seen.add(fold(text))
+        found.append({"cue": cue, "at": round(float(at.get(cue) or 0.0), 2), "text": text,
+                      "kind": "picture", "from": "picture"})
+    return sorted(found, key=lambda row: row["at"])
 
 
 def identify(db, path: str, cache_dir: Path | None = None) -> dict | None:
@@ -252,6 +296,78 @@ def build_router(config, store) -> APIRouter:
         data = _read(script)
         return str((data.get("identity") or {}).get("source_lang")
                    or _read(sidecar(script, "analysis.json")).get("source_lang") or "")
+
+    def target_of_script(script: Path, data: dict) -> str:
+        """The language a script was translated (or is to be dubbed) into."""
+        return str((data.get("translation_options") or {}).get("target_locale")
+                   or script.parent.name)
+
+    def show_terms(show_ref: str, locale: str) -> list:
+        """The show's own term entries for this locale (the base language too)."""
+        from ..knowledge import store as knowledge_store
+        from ..languages import base_language
+
+        base = base_language(locale)
+        return [e for e in knowledge_store.latest_entries(db)
+                if e.kind == "term" and e.scope == "show" and e.scope_ref == show_ref
+                and e.status not in ("retired",) and e.source_form
+                and e.locale in (locale, base)]
+
+    def show_ref_of(ident: dict | None) -> str:
+        return identity.show_ref((ident or {}).get("series_id"))
+
+    def terms_of(script: Path, data: dict, lines: list[dict], ident: dict | None) -> dict:
+        """The episode's names and terms: how this dub and the official one
+        say each, and the show's saved wording (doblarr.key_terms)."""
+        segments = data.get("segments") or []
+        texts = [s.get("text_src") or "" for s in segments]
+        renders = [s.get("text_translated") or "" for s in segments]
+        locale = target_of_script(script, data)
+        show = show_ref_of(ident)
+        saved = ({key_terms.fold(e.source_form): e for e in show_terms(show, locale)}
+                 if show else {})
+        official = dub_text.for_script(
+            script.parent.parent, script.name.replace(".script.json", ""),
+            [(float(s.get("start") or 0), float(s.get("end") or 0)) for s in segments], locale)
+        rows = key_terms.episode(texts, renders, dub=official["lines"] if official else None,
+                                 decided={e.source_form: e.phrase for e in saved.values()})
+        cue = [str(line.get("cue")) for line in lines]
+
+        def cues(positions):
+            return [cue[n] for n in positions if n < len(cue)]
+
+        def side(found):
+            if not found:
+                return None
+            return {"rendering": found["example"] or found["rendering"], "share": found["share"],
+                    "variants": [{"rendering": v["rendering"], "cues": cues(v["lines"])}
+                                 for v in found["variants"]],
+                    "missing": cues(found["missing"])}
+
+        out = []
+        for row in rows:
+            entry = saved.get(key_terms.fold(row["term"]))
+            out.append({
+                "term": row["term"], "kind": row["kind"], "count": len(row["lines"]),
+                "lines": [{"cue": cue[n] if n < len(cue) else None,
+                           "start": segments[n].get("start"), "text": texts[n],
+                           "ours": renders[n],
+                           "dub": official["lines"][n] if official else ""}
+                          for n in row["lines"]],
+                "ours": side(row["ours"]) if any(renders) else None,
+                "dub": side(row.get("dub")),
+                "saved": {"id": entry.id, "rendering": entry.phrase,
+                          "reviewed": entry.status == "reviewed"} if entry else None,
+                "holds": cues(row.get("holds") or []) if entry else [],
+            })
+        known = {key_terms.fold(r["term"]) for r in out}
+        # Saved wording for a term this episode never says still belongs to
+        # the show; listed after, so a person sees everything it keeps.
+        others = [{"term": e.source_form, "rendering": e.phrase, "id": e.id,
+                   "reviewed": e.status == "reviewed"}
+                  for k, e in sorted(saved.items()) if k not in known]
+        return {"locale": locale, "show": bool(show), "rows": out, "other_saved": others,
+                "official": {"title": official["title"]} if official else None}
 
     def running(path: str) -> dict | None:
         return next((j for j in store.list() if j.get("kind") == "analyze"
@@ -380,6 +496,17 @@ def build_router(config, store) -> APIRouter:
                     "quality", "active_seconds", "range_db", "mean_db", "reasons")}
                 if feature else None,
             })
+        # Each line's role from the subtitle track's styles (doblarr.subtitle_roles).
+        styled: list[dict] = []
+        if (data.get("segments") or [{}])[0].get("cue", {}).get("source", {}).get(
+                "method") != "asr":
+            kept = subtitle_roles.ensure_styled(
+                script, Path(str((data.get("identity") or {}).get("input") or "")),
+                str(data.get("script_lang") or ""))
+            styled = subtitle_roles.events(kept) if kept else []
+        roles = subtitle_roles.annotate(lines, styled)
+        for line in lines:
+            line.update(roles.get(str(line["cue"])) or {"role": "dialogue", "italic": False})
         summary = speaking.talk_share([{"id": 0, "label": "", "segments": [
             {**s, "speaker": names.get(s.get("speaker") or "", "") or s.get("speaker")}
             for s in data.get("segments") or []]}])
@@ -418,7 +545,15 @@ def build_router(config, store) -> APIRouter:
                 "named_by": named_by_dialogue(ident),
                 # Text drawn on the picture (title cards, captions naming someone),
                 # read with the emotions: names on screen are evidence of who is who.
-                "on_screen": on_screen(felt, lines),
+                "on_screen": on_screen(felt, lines, subtitle_roles.on_screen(styled)),
+                "roles": {r: sum(1 for line in lines if line.get("role") == r)
+                          for r in subtitle_roles.SPOKEN_ROLES},
+                # The episode's parts (cold open, opening, episode, ending, preview).
+                "structure": subtitle_roles.structure(
+                    styled, max((float(line["end"]) for line in lines), default=0.0))
+                if styled else [],
+                # Names and terms the episode keeps saying (doblarr.key_terms).
+                "terms": terms_of(script, data, lines, ident),
                 # The few questions worth a person's time (doblarr.doubts).
                 "doubts": doubts.queue(lines, names, dialogue=clues, suggestions=suggestions,
                                        reader=read_lines),
@@ -544,6 +679,47 @@ def build_router(config, store) -> APIRouter:
         changed = membership_changed(ident, script, "lines moved by hand")
         return {"speaker": label, "character": character, "new_voice": new,
                 "baseline_changes": changed["changed"], "identity": ident}
+
+    @api.put("/api/analysis/terms")
+    def put_term(body: TermIn):
+        """Keep (or forget) the show's wording for one term. A person chose
+        it, so it is reviewed and every later translation of the show uses it."""
+        from dataclasses import replace
+
+        from ..knowledge import store as knowledge_store
+        from ..knowledge.models import Entry
+
+        ident = who(body.path)
+        show = show_ref_of(ident)
+        if not show:
+            raise HTTPException(409, "This episode is not linked to a show yet")
+        script = find(body.path, ident)[0]
+        locale = body.locale or (target_of_script(script, _read(script)) if script else "")
+        if not locale:
+            raise HTTPException(422, "Which language is this wording for?")
+        source = body.source.strip()
+        rendering = body.rendering.strip()
+        same = [e for e in show_terms(show, locale)
+                if key_terms.fold(e.source_form) == key_terms.fold(source)]
+        if not rendering:
+            for entry in same:
+                knowledge_store.save_entry(db, replace(entry, status="retired", revision=1))
+            return {"term": source, "rendering": None}
+        # The wording the subtitles say, not the original audio's language.
+        said_in = (str(_read(script).get("script_lang") or "") or None) if script else None
+        if same:
+            entry = knowledge_store.save_entry(db, replace(
+                same[0], phrase=rendering, status="reviewed", locale=locale,
+                source_lang=said_in or same[0].source_lang, revision=1))
+            for extra in same[1:]:
+                knowledge_store.save_entry(db, replace(extra, status="retired", revision=1))
+        else:
+            entry = knowledge_store.save_entry(db, Entry(
+                phrase=rendering, kind="term", locale=locale, source_form=source,
+                source_lang=said_in, scope="show",
+                scope_ref=show, status="reviewed",
+                usage="kept from the episode analysis's names and terms"))
+        return {"term": source, "rendering": entry.phrase, "id": entry.id}
 
     @api.put("/api/analysis/line")
     def move_line(body: LineIn):

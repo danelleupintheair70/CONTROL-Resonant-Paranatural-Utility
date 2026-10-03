@@ -157,6 +157,7 @@ dub:
   duration_match: true          # time-fit each line to the original slot
   max_fit_attempts: 2           # shorten/retranslate to fit before stretching
   ducking_ratio: "4:1"         # sidechain ducking of background under speech
+  keep_songs: true              # keep the original singing where the subtitles mark songs
   background_volume: 1.0
   fallback_volume: 0.2          # original soundtrack when separation is unavailable
   duck_threshold: 0.05

@@ -121,6 +121,32 @@ def _master(parts, limit):
     return ";".join(parts)
 
 
+def _with_songs(bed: Path, vocals: Path, songs: list, work_dir: Path, job, cancel,
+                force: bool) -> Path:
+    """The bed with the original singing put back where the songs are.
+
+    Separation moves sung vocals out of the bed with the dialogue, so a dub
+    over the bare bed would play the opening and ending without their
+    singer. Only the song spans (from the subtitle track's lyric styles) get
+    the separated vocals back; everywhere else the bed stays clean for the
+    dub. Mixed in before ducking, so the singing is never taken for dialogue.
+    """
+    request = {"bed": stamp(bed), "vocals": stamp(vocals), "songs": songs, "version": 1}
+    out = work_dir / f"{work_stem(job)}.songbed.{digest(request)[:12]}.wav"
+    if matches([out], request, force):
+        return out
+    window = "+".join(f"between(t,{a:.2f},{b:.2f})" for a, b in songs)
+    temp = out.with_suffix(".partial.wav")
+    run_ffmpeg(["-y", "-i", str(bed), "-i", str(vocals), "-filter_complex",
+                f"[1:a]volume='if({window},1,0)':eval=frame,aformat=channel_layouts=stereo[v];"
+                "[0:a]aformat=channel_layouts=stereo[b];[b][v]amix=inputs=2:normalize=0[out]",
+                "-map", "[out]", "-ar", "48000", "-c:a", "pcm_s16le", str(temp)], cancel=cancel)
+    temp.replace(out)
+    record([out], request)
+    log.info("mix: kept the original singing in %d song span(s)", len(songs))
+    return out
+
+
 @stage("mix")
 def run(
     job: DubJob,
@@ -135,6 +161,7 @@ def run(
     attack=DUCK_ATTACK_MS,
     release=DUCK_RELEASE_MS,
     bed_policy: dict | None = None,
+    songs: list | None = None,
 ) -> Plan | None:
     out = work_dir / f"{work_stem(job)}.{job.target_lang}.dub.wav"
     job.dubbed_track = out
@@ -159,6 +186,7 @@ def run(
         "version": 3,
         "mix": [background_volume, fallback_volume, threshold, attack, release],
         **({"bed_policy": bed_policy["fingerprint"]} if bed_policy else {}),
+        **({"songs": songs} if songs else {}),
     }
     # The mix has its own cache namespace: a bed level or ducking change must
     # not look like a dialogue-generation change.
@@ -176,6 +204,9 @@ def run(
     if bed is None:
         raise RuntimeError("mix: no background audio")
     volume = float(background_volume if job.background != job.source_audio else fallback_volume)
+    separated = bool(job.background) and job.background != job.source_audio
+    if songs and separated and job.vocals and Path(job.vocals).is_file():
+        bed = _with_songs(Path(bed), Path(job.vocals), songs, work_dir, job, cancel, force)
     graph_options = {
         "bed_volume": volume,
         "threshold": float(threshold),

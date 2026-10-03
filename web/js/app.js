@@ -1,6 +1,6 @@
 import { state, library, jobs, titleState } from './state.js';
 import { escapeHtml, safeGet, safeSet } from './dom.js';
-import { api, apiUrl } from './api.js';
+import { api } from './api.js';
 import { createSettings } from './settings.js';
 import { createLibrary } from './library.js';
 import { createJobs } from './jobs.js';
@@ -15,6 +15,7 @@ import { createKnowledge } from './knowledge.js';
 import { createVoices } from './voices.js';
 import { initStar } from './star.js';
 import { loadHardware } from './hardware.js';
+import { renderWatch } from './watch.js';
 
 const { statusTag, langChipsHtml, renderLibrary, fetchPlan, queueDub, loadLibrary } = createLibrary({ goTitle });
 const { jobStatusTag, updateDryRunTag, renderJobs, loadJobs, loadOverview, startEventStream } = createJobs({
@@ -66,7 +67,7 @@ function setTheme(theme) {
 
 // ---- History API routing (/library, /settings/<tab>) — the server serves
 // index.html for any extensionless non-api path, so refresh/deep-link works.
-const PAGE_PATHS = { "/": "Overview", "/library": "Library", "/dubs": "Dubs", "/voices": "Voices", "/knowledge": "Knowledge", "/settings": "Settings", "/title": "Title", "/studio": "Studio" };
+const PAGE_PATHS = { "/": "Overview", "/library": "Library", "/dubs": "Dubs", "/voices": "Voices", "/knowledge": "Knowledge", "/settings": "Settings", "/title": "Title", "/studio": "Studio", "/watch": "Watch" };
 const PAGE_TO_PATH = { Overview: "/", Library: "/library", Dubs: "/dubs", Voices: "/voices", Knowledge: "/knowledge", Settings: "/settings" };
 
 function routeFromPath() {
@@ -202,6 +203,13 @@ function applyRoute() {
     if (studio.sid === sid) studio.show?.(parts[2] || 'overview', { push: false });
     else studio.open(sid, parts[2]);
   }
+  if (page === "Watch") {
+    const id = decodePart(location.pathname.split('/').filter(Boolean)[1]);
+    document.querySelectorAll("#nav .navitem").forEach(n =>
+      n.setAttribute("aria-current", n.dataset.page === "Dubs" ? "page" : "false"));
+    if (!id) { history.replaceState({}, '', '/dubs'); applyRoute(); return; }
+    renderWatch(document.getElementById("watchRoot"), id);
+  }
   if (page === "Library" && !library.loaded) loadLibrary();
   if (page === "Knowledge") {
     // Title knowledge picks a show or film from the library.
@@ -303,7 +311,9 @@ document.getElementById("dubsBody").addEventListener("click", async e => {
   }
   const watchBtn = e.target.closest(".job-watch");
   if (watchBtn) {
-    openWatch(watchBtn.dataset.id, jobs.lastData);
+    // Its own page: a link to share or bookmark, every language one click away.
+    history.pushState({}, '', '/watch/' + encodeURIComponent(watchBtn.dataset.id));
+    applyRoute();
     return;
   }
   const btn = e.target.closest(".job-del"); if (!btn) return;
@@ -312,29 +322,12 @@ document.getElementById("dubsBody").addEventListener("click", async e => {
   loadJobs();
 });
 
-// ---- Watch modal (streams /api/jobs/{id}/file with Range support) ----
-const watchModal = document.getElementById("watchModal");
-const watchVideo = document.getElementById("watchVideo");
-
-function openWatch(jobId, data) {
-  const job = (data && data.jobs || []).find(j => j.id === jobId);
-  if (!job) return;
-  const key = safeGet("doblarr_api_key", "");
-  watchVideo.src = apiUrl("jobs/" + jobId + "/file") + (key ? "?api_key=" + encodeURIComponent(key) : "");
-  document.getElementById("watchTitle").textContent =
-    `${job.title}${job.kind === "tease" ? " (tease)" : ""}`;
-  document.getElementById("watchPath").textContent = job.output_file || "";
-  watchModal.hidden = false;
+// ---- Watch a finished dub on its own page (web/js/watch.js) ----
+function openWatch(jobId) {
+  history.pushState({}, '', '/watch/' + encodeURIComponent(jobId));
+  applyRoute();
 }
 
-function closeWatch() {
-  watchVideo.pause();
-  watchVideo.removeAttribute("src");  // stop the stream
-  watchVideo.load();
-  watchModal.hidden = true;
-}
-document.getElementById("watchClose").addEventListener("click", closeWatch);
-watchModal.addEventListener("click", e => { if (e.target === watchModal) closeWatch(); });
 
 // Global search: filters the current page's list by title.
 document.getElementById("globalSearch").addEventListener("input", e => {
@@ -388,8 +381,7 @@ document.getElementById("ndQueue").addEventListener("click", async e => {
 // Esc closes whichever modal is open.
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
-  if (!watchModal.hidden) closeWatch();
-  else if (!newDubModal.hidden) closeNewDub();
+  if (!newDubModal.hidden) closeNewDub();
 });
 
 // ---- Init ----

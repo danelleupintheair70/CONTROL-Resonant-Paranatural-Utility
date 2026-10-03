@@ -73,6 +73,10 @@ def queue(lines: list[dict], names: dict[str, str], *, dialogue: dict | None = N
         sample = _clearest(by_voice[voice])
         hints = [{"name": a["name"], "why": f"answers when {a['name']} is called ({a['count']}×)"}
                  for a in ((dialogue or {}).get(voice) or {}).get("answers", [])[:2]]
+        narrated = sum(1 for x in by_voice[voice] if x.get("role") in ("preview", "narration"))
+        if narrated * 5 >= len(by_voice[voice]) * 3:
+            hints.append({"name": "Narrator", "why": f"{narrated} of its lines are narration or "
+                                                     "the next-episode preview"})
         hints += [{"name": s["name"],
                    "why": f"sounds like {s['name']} ({round(s['similarity'] * 100)}%)"}
                   for s in ((suggestions or {}).get(voice) or [])[:2]

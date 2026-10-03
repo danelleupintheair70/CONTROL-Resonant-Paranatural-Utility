@@ -38,6 +38,7 @@ from .routes import studio as studio_routes
 from .routes import templates as template_routes
 from .routes import titles as title_routes
 from .routes import voice_catalog as catalog_routes
+from .routes import watch as watch_routes
 from .scheduler import Scheduler
 from .services import Services
 from .store import Database
@@ -172,6 +173,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(narrative_routes.build_router(config, store))
     api.include_router(template_routes.build_router(config, db))
     api.include_router(adaptive_routes.build_router(config, store, bus))
+    api.include_router(watch_routes.build_router(config, store))
     app.include_router(api)
 
     # The UI has no build step, so its files keep their names across updates.

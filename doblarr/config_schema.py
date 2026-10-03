@@ -201,6 +201,12 @@ class DubModel(_Section):
     duration_match: bool = True
     max_fit_attempts: int = 2
     ducking_ratio: str = "4:1"
+    # Keep the original singing in the opening, ending and insert songs (found
+    # from the subtitle track's lyric styles); separation removes it otherwise.
+    keep_songs: bool = True
+    # A voice with no clean sample to clone (a few short lines) borrows the
+    # clone of the voice it sounds most like instead of failing the dub.
+    borrow_voice: bool = True
     background_volume: float = 1.0
     fallback_volume: float = 0.2
     duck_threshold: float = 0.05
@@ -447,6 +453,10 @@ class AnalysisModel(_Section):
     # (doblarr.dialogue_reader). Empty: off. A cloud model sends the subtitle
     # text out of this machine; local 8-12B models were not good enough.
     reader_model: str = ""
+    # Transcribe the official dub in the target language, when the file has
+    # one, so the page can offer its wording for the show's names and terms.
+    # Local speech recognition, about two minutes of GPU per episode.
+    dub_text: bool = True
     # A dub track only helps tell voices apart when it is the same cut: its
     # speech has to line up with the original before it is used as evidence.
     verify_tracks: bool = True

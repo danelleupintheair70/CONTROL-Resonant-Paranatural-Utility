@@ -12,7 +12,7 @@ const STATE = { done: 'done', stale: 'needs a rerun', failed: 'failed', unsuppor
   skipped: 'off', missing: 'not run', running: 'running' };
 const STAGE = { probe: 'Read the file', separate: 'Separate dialogue', transcribe: 'Lines', diarize: 'Group voices',
   measure: 'Levels', baselines: 'Speaker baselines', analyze: 'Pitch and words', features: 'Energy curves',
-  speaker_memory: 'Teach the show', emotion: 'How lines are said', shots: 'Shots', faces: 'Faces', tracks: 'Face tracks',
+  speaker_memory: 'Teach the show', emotion: 'How lines are said', dub_text: 'Official dub wording', shots: 'Shots', faces: 'Faces', tracks: 'Face tracks',
   active_speaker: 'Mouth movement', association: 'Who speaks (visual)', scenes: 'Scenes', knowledge: 'Title knowledge' };
 const SCREEN = { 'onscreen-speaking': 'speaking on screen', 'onscreen-silent': 'face on screen, not speaking',
   offscreen: 'nobody on screen', unknown: 'not analysed' };

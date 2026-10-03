@@ -44,7 +44,9 @@ _MARKERS: dict[str, dict[str, str]] = {
         "chaval": "chico / muchacho", "chavales": "chicos", "móvil": "celular",
         "coche": "auto / carro", "enhorabuena": "felicidades",
         "apetece": "tengo ganas / quiero", "pillar": "atrapar / agarrar",
-        "pillado": "atrapado", "pillé": "atrapé", "vale": "bien / está bien / de acuerdo",
+        "pillado": "atrapado", "pillé": "atrapé", "pillaste": "atrapaste",
+        "pilla": "atrapa", "pillas": "atrapas", "pillo": "atrapo", "pillamos": "atrapamos",
+        "vale": "bien / está bien / de acuerdo",
         "ordenador": "computadora", "ordenadores": "computadoras", "nevera": "refrigerador",
         "patata": "papa", "patatas": "papas", "zumo": "jugo", "aparcar": "estacionar",
         "despacho": "oficina",
@@ -75,6 +77,16 @@ _VALE = re.compile(r"(?:(?:^|[.!?¡¿…—-]\s*)[Vv]ale|[,;:]\s*vale)\s*(?:[.!?
 
 # "Ir a por algo" — 182 Spain subtitle lines across 29 titles, 5 Latin American.
 _A_POR = re.compile(r"\ba por\b", re.IGNORECASE)
+# Vosotros verb forms by their endings: present (habláis, coméis), preterite
+# (hablasteis, comisteis). No Latin American variety uses them in speech.
+_VOSOTROS_VERB = re.compile(r"\b\w+(?:áis|éis|asteis|isteis)\b", re.IGNORECASE)
+# Vosotros imperatives: a closed list, since "-ad/-ed/-id" also ends nouns
+# (verdad, pared, Madrid).
+_VOSOTROS_IMPERATIVE = re.compile(
+    r"\b(?:pasad|entrad|salid|venid|idos|tened|decid|callad|dejad|tomad|traed|haced|"
+    r"poned|volved|seguid|subid|bajad|atacad|luchad|huid|ayudad|daos|sentaos|quedaos|"
+    r"largaos|preparaos|calmaos|moveos|levantaos|apartaos|esconded|corred|mirad)\b",
+    re.IGNORECASE)
 
 
 def applies(target_locale: str | None) -> bool:
@@ -99,6 +111,12 @@ def markers(text: str) -> list[dict]:
     if _VALE.search(text):
         hits.append({"word": "vale", "category": "vocabulary",
                      "suggest": _WORD["vale"][1]})
+    for pattern in (_VOSOTROS_VERB, _VOSOTROS_IMPERATIVE):
+        for match in pattern.finditer(text):
+            if match.group(0).lower() not in seen:
+                seen.add(match.group(0).lower())
+                hits.append({"word": match.group(0), "category": "vosotros",
+                             "suggest": "the ustedes form"})
     found = _A_POR.search(text)
     if found:
         hits.append({"word": found.group(0), "category": "grammar",
@@ -132,3 +150,40 @@ def check(job) -> int:
     else:
         job.metrics.pop("spain_spanish_lines", None)
     return flagged
+
+
+def revise(job, translator) -> int:
+    """Rewrite the lines `check` flagged into Latin American Spanish.
+
+    The translator is asked to replace exactly the Spain-only words found
+    (vosotros, "pillar", "vale"…) with their Latin American alternatives, and
+    to prefer the simple past for something just done ("¿Volviste?" over
+    "¿Has vuelto?"). A rewrite is kept only when it no longer has a marker;
+    otherwise the line keeps its finding for a person. Returns lines fixed.
+    """
+    revise_line = getattr(translator, "revise", None)
+    locale = job.target_locale or job.target_lang
+    if revise_line is None or not applies(locale):
+        return 0
+    fixed = 0
+    for seg in job.segments:
+        hits = markers(seg.text_translated or "")
+        if not hits:
+            continue
+        swaps = "; ".join(f"{h['word']} -> {h['suggest']}" for h in hits)
+        try:
+            better = revise_line(
+                seg.text_translated, locale,
+                f"Rewrite this line in Latin American Spanish ({locale}). Replace the Spain-only "
+                f"Spanish: {swaps}. Use ustedes, never vosotros; prefer the simple past for "
+                "something that just happened.")
+        except Exception:  # noqa: BLE001 - a line that cannot be revised keeps its finding
+            continue
+        if better and better.strip() and not markers(better):
+            seg.text_translated = better.strip()
+            seg.tts_text = ""
+            fixed += 1
+    if fixed:
+        job.metrics["spain_spanish_revised"] = fixed
+        check(job)
+    return fixed

@@ -160,6 +160,13 @@ def run_job(
         spoken = {**romaji.respellings(config["translate"].get("glossary", {}).values()),
                   **spoken}
     knowledge = None
+    if db is not None and not job.show_ref:
+        # A job queued by hand carries no series; the file's recorded identity
+        # still says which show it is, so the show's own terms apply.
+        from . import identity
+
+        media = identity.find_media_by_path(db, job.input_file) if job.input_file else None
+        job.show_ref = identity.show_ref((media or {}).get("series_id"))
     if db is not None:
         if job.knowledge_snapshot is None:
             job.knowledge_snapshot = freeze_knowledge(db)
@@ -237,6 +244,27 @@ def run_job(
                 force=force,
                 compute=compute,
             )
+        if not dry_run and job.segments and config["transcribe"]["source"] != "whisper":
+            _subtitle_roles()
+
+    def _subtitle_roles():
+        """What each line is, from the subtitle track's styles: voice-over and
+        preview lines are directed as such, and the songs are kept in the mix."""
+        from . import subtitle_roles
+        from .stages.common import script_path
+
+        kept = subtitle_roles.ensure_styled(script_path(job, work), Path(job.input_file),
+                                            job.script_lang or "")
+        if kept is None:
+            return
+        found = subtitle_roles.events(kept)
+        roles = subtitle_roles.annotate(
+            [{"cue": s.cue_id, "start": s.start, "end": s.end} for s in job.segments], found)
+        directed = subtitle_roles.direct(job.segments, roles)
+        job.metrics["subtitle_roles"] = {
+            "roles": {r: sum(1 for v in roles.values() if v["role"] == r)
+                      for r in subtitle_roles.SPOKEN_ROLES},
+            "directed": directed, "songs": subtitle_roles.song_spans(found)}
 
     def _ensure_cast():
         if db is None or dry_run:
@@ -510,6 +538,7 @@ def run_job(
             locale_direction=locale_direction,
             character_notes=character_notes,
             clone_cleanup=config["dub"].get("clone_cleanup", False),
+            borrow_voice=config["dub"].get("borrow_voice", True),
         )
         if db is not None and not dry_run and segments is None:
             save_characters(job, db, character_group, character_map)
@@ -676,6 +705,52 @@ def run_job(
             return
         analysis.record(db, job, "reader", "done", outputs={"reader": str(path)},
                         version=dialogue_reader.READER)
+
+    def _dub_text():
+        """What the official dub in the target language says (doblarr.dub_text):
+        the names and terms its translators chose, for a person to adopt."""
+        from . import dub_text, speakers
+        from .artifacts import read_json
+        from .stages.common import work_stem
+
+        if not job.segments or not job.input_file or not job.input_file.is_file():
+            return
+        try:
+            tracks = speakers.audio_tracks(job.input_file)
+        except (OSError, ValueError) as exc:
+            analysis.record(db, job, "dub_text", "failed", error=str(exc))
+            return
+        track = dub_text.pick_track(tracks, job.target_locale or job.target_lang,
+                                    job.source_lang or "")
+        if track is None:
+            analysis.record(db, job, "dub_text", "skipped",
+                            error="no dub track in the target language")
+            return
+        stem = work_stem(job)
+        evidence = {int(e["stream"]): e for e in read_json(
+            Path(shared_work) / f"{stem}.speakers.json").get("track_evidence") or []}
+        aligned = evidence.get(int(track["stream"])) or {}
+        if aligned.get("state") not in ("verified", "unchecked"):
+            analysis.record(db, job, "dub_text", "skipped",
+                            error="the dub track is not verified to line up with the original")
+            return
+        found = speakers.other_tracks(job.input_file, job.source_lang, Path(shared_work), stem,
+                                      [str(track["stream"])])
+        if not found:
+            analysis.record(db, job, "dub_text", "failed", error="the dub track could not be read")
+            return
+        try:
+            path = dub_text.ensure(
+                Path(shared_work), stem, track, found[0][1],
+                offset=float(aligned.get("offset") or 0.0),
+                rate=float(aligned.get("rate") or 1.0),
+                model=config["transcribe"].get("whisper_model", "large-v3"),
+                device=resolve_device("transcribe", compute))
+        except Exception as exc:  # noqa: BLE001 - a proposal source; the analysis stands without it
+            analysis.record(db, job, "dub_text", "failed", error=str(exc))
+            return
+        analysis.record(db, job, "dub_text", "done", outputs={"dub_text": str(path)},
+                        version=dub_text.READER)
 
     def _knowledge():
         """Narrative extraction into a reviewable draft (never active knowledge)."""
@@ -1014,6 +1089,8 @@ def run_job(
                 cancel=cancel_event,
                 force=force,
                 bed_policy=_bed_policy(),
+                songs=(job.metrics.get("subtitle_roles") or {}).get("songs")
+                if config["dub"].get("keep_songs", True) else None,
             ),
         ),
         (
@@ -1054,6 +1131,8 @@ def run_job(
             optional.append(("emotion", _emotion))
         if analysis_options.get("reader_model"):
             optional.append(("reader", _reader))
+        if analysis_options.get("dub_text", True):
+            optional.append(("dub_text", _dub_text))
         chosen = [str(x) for x in analysis_options.get("stages") or []]
         if chosen:
             # A targeted rerun: the earlier stages run from their checkpoints
@@ -1063,7 +1142,8 @@ def run_job(
             wanted = {("visual" if c in visual else c) for c in chosen}
             available = {"analyze": _analyze, "features": _features,
                          "speaker_memory": _speaker_memory, "visual": _visual,
-                         "knowledge": _knowledge, "emotion": _emotion, "reader": _reader}
+                         "knowledge": _knowledge, "emotion": _emotion, "reader": _reader,
+                         "dub_text": _dub_text}
             optional = [(name, available[name]) for name in available if name in wanted]
             if "features" in wanted:
                 force_features["on"] = True
