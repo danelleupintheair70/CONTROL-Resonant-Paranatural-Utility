@@ -39,3 +39,12 @@ def test_words_and_ranks_are_not_taken_for_names():
 def test_a_name_used_once_and_not_in_the_cast_is_not_a_candidate():
     lines = [line("V1", 0, "Sora!"), line("V2", 2, "Yes?")]
     assert dialogue_clues.read(lines)["groups"]["V2"]["answers"] == []
+
+
+def test_a_sibling_honorific_written_as_its_own_word_is_not_a_name():
+    lines = [{"text": "Kaito Nii-chan!"}, {"text": "Mina Nee-chan!"},
+             {"text": "Kaito Nii-chan, wait!"}]
+    names = dialogue_clues.candidates(lines)
+    assert "nii" not in names and "nee" not in names
+    assert dialogue_clues.called("Kaito Nii-chan!", names) == ["Kaito"]
+    assert dialogue_clues.called("Mina Nee-chan!", names) == ["Mina"]
