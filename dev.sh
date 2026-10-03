@@ -4,9 +4,11 @@
 #   ./dev.sh setup          install Python + Node deps
 #   ./dev.sh serve          build the web UI, run it + the API (http://127.0.0.1:6363)
 #   ./dev.sh ui             web UI dev server with live reload (http://127.0.0.1:5363)
-#   ./dev.sh test           Python tests (pytest)
+#   ./dev.sh validate       the fast checks once: ruff, mypy, eslint, node tests, UI build,
+#                           pytest without the slow end-to-end tests (watching: dev.ps1)
+#   ./dev.sh test           Python tests, in parallel (pytest -n auto)
 #   ./dev.sh test-web       frontend unit tests (node --test)
-#   ./dev.sh test-browser   Playwright browser tests
+#   ./dev.sh test-browser   Playwright browser tests (builds the UI first)
 #   ./dev.sh lint           ruff + mypy + eslint
 #   ./dev.sh check          everything CI runs (minus docker build)
 #   ./dev.sh cli <args...>  pass through to the doblarr CLI
@@ -51,13 +53,24 @@ case "$cmd" in
         exec npm run dev:ui
         ;;
     test)
-        exec "$PYTHON" -m pytest -q "$@"
+        exec "$PYTHON" -m pytest -q -n auto "$@"
         ;;
     test-web)
         exec npm test
         ;;
     test-browser)
-        exec npx playwright test "$@"
+        exec npm run test:browser -- "$@"
+        ;;
+    validate)
+        step "ruff" "$PYTHON" -m ruff check .
+        step "mypy" "$PYTHON" -m mypy doblarr/
+        step "eslint" npm run lint
+        step "node tests" npm test
+        step "ui build" npm run build:ui
+        step "pytest (fast tier)" "$PYTHON" -m pytest -q -n auto -m "not slow"
+        printf '
+All fast checks passed.
+'
         ;;
     lint)
         step "ruff" "$PYTHON" -m ruff check .
@@ -67,7 +80,7 @@ case "$cmd" in
     check)
         step "ruff" "$PYTHON" -m ruff check .
         step "mypy" "$PYTHON" -m mypy doblarr/
-        step "pytest" "$PYTHON" -m pytest -q --cov=doblarr --cov-report=term-missing --cov-fail-under=70
+        step "pytest" "$PYTHON" -m pytest -q -n auto --cov=doblarr --cov-report=term-missing --cov-fail-under=70
         step "npm run check" npm run check
         printf '\nAll checks passed.\n'
         ;;

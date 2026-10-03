@@ -382,13 +382,26 @@ cancellation; if the server cannot be reached, remote generation may continue.
 ## Development
 
 ```bash
-pip install -e ".[dev]"   # app + pytest/pytest-cov/ruff/mypy/httpx
-python -m pytest -q       # test suite (no network or *arr services needed)
-python -m pytest -q --cov=doblarr --cov-report=term-missing   # with coverage
+pip install -e ".[dev]"   # app + pytest/pytest-cov/pytest-xdist/ruff/mypy/httpx
+python -m pytest -q -n auto            # test suite on every core (no network or *arr services needed)
+python -m pytest -q -n auto -m "not slow"   # skip the end-to-end audio renders (~1 min)
+python -m pytest -q -n auto --cov=doblarr --cov-report=term-missing   # with coverage
 ruff check .              # lint
 mypy doblarr/             # type check
 # pre-commit install      # optional: run ruff+mypy as git hooks (.pre-commit-config.yaml)
 ```
+
+`.\dev.ps1 validate` watches `doblarr/`, `tests/` and `ui/` and reruns the
+checks on every save: ruff (safe fixes applied), mypy and the fast pytest tier
+when Python changes; eslint, the node tests and the UI build when the UI
+changes. `.\dev.ps1 validate once` runs them a single time (`./dev.sh validate`
+on Linux/macOS). `check` runs everything CI does, slow tests and browser specs
+included.
+
+Tests never reach the network: `tests/conftest.py` makes every real HTTP request
+fail at once, so a test that forgets to fake a service fails fast instead of
+waiting out a connection timeout. Tests that render real audio end to end are
+marked `slow` by file (`SLOW_FILES` in the same conftest).
 
 ### Frontend checks
 
