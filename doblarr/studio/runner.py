@@ -54,6 +54,16 @@ def _research(db, config, task, cancel, progress) -> str:
         if stage:
             progress(steps[stage], 5, getattr(event, "message", "") or stage)
 
+    if task.get("action") == "scripts":
+        from ..research import probe
+
+        progress(1, 2, "looking for reference scripts")
+        found = probe.probe_all(db, config, task["series_id"], list(task.get("sources") or []),
+                                wiki=task.get("wiki") or "", lang=task.get("lang") or "",
+                                languages=task.get("languages") or "en",
+                                season=task.get("season"), episode=task.get("episode"))
+        skipped = "; ".join(f"{k}: {v}" for k, v in found["skipped"].items())
+        return f"kept {found['saved']} script(s)" + (f" · skipped {skipped}" if skipped else "")
     run = agent.research_title(db, task["series_id"], task["question"], config=config,
                                target_locale=task.get("target_locale") or "",
                                on_event=on_event)

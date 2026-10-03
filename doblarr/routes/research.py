@@ -13,7 +13,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..research import agent
+from ..research import agent, probe, scripts
 from ..studio import records
 from .cast import research_allowed
 
@@ -33,6 +33,28 @@ class LeadIn(BaseModel):
     index: int = Field(ge=0, le=500)
     decision: Literal["accept", "dismiss"]
     reviewer: str = Field(default="you", min_length=1, max_length=80)
+
+
+ScriptSource = Literal["fandom", "screenplays", "kitsunekko", "opensubtitles", "dubbing"]
+
+
+class ScriptsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    series_id: str = Field(min_length=3, max_length=120)
+    sources: list[ScriptSource] = Field(min_length=1, max_length=5)
+    wiki: str = Field(default="", max_length=80, pattern=r"^[a-z0-9-]*$")
+    lang: str = Field(default="", max_length=8, pattern=r"^[a-z-]*$")
+    languages: str = Field(default="en", max_length=40)
+    season: int | None = Field(default=None, ge=0, le=99)
+    episode: int | None = Field(default=None, ge=0, le=9999)
+
+
+class PlaceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    season: int | None = Field(default=None, ge=0, le=99)
+    episode: int | None = Field(default=None, ge=0, le=9999)
 
 
 def build_router(config, store, bus) -> APIRouter:
@@ -86,5 +108,41 @@ def build_router(config, store, bus) -> APIRouter:
         except records.StudioConflict as exc:
             raise HTTPException(409, {"error": str(exc), "current": exc.current}) from exc
         return {"leads": saved["leads"]}
+
+    @api.post("/api/research/scripts")
+    def find_scripts(body: ScriptsIn):
+        """Queue a search for reference scripts in the chosen sources."""
+        research_allowed(config)
+        if not records.get(db, "series", body.series_id):
+            raise HTTPException(404, "unknown series")
+        task = {"action": "scripts", **body.model_dump()}
+        job = store.add(title=f"Scripts · {', '.join(body.sources)}", source="research",
+                        source_lang="und", target_lang="und", kind="studio_research",
+                        task={**task, "question": ""})
+        bus.publish("job", {"type": "queued", "job_id": job.id, "title": job.title})
+        return {"job_id": job.id, "sources": body.sources}
+
+    @api.get("/api/research/scripts")
+    def list_scripts(series_id: str):
+        return {"series_id": series_id, "sources": list(probe.SOURCES),
+                "scripts": scripts.listing(db, series_id)}
+
+    @api.get("/api/research/scripts/{script_id}")
+    def script(script_id: str):
+        found = records.get(db, scripts.KIND, script_id)
+        if found is None:
+            raise HTTPException(404, "no such script")
+        return found
+
+    @api.post("/api/research/scripts/{script_id}/place")
+    def place(script_id: str, body: PlaceIn):
+        """A person says which episode a found script is (or that it is the film)."""
+        found = records.get(db, scripts.KIND, script_id)
+        if found is None:
+            raise HTTPException(404, "no such script")
+        saved = records.update(db, scripts.KIND, script_id,
+                               {"season": body.season, "episode": body.episode,
+                                "placed_by": "person"}, base_revision=found["revision"])
+        return {"id": saved["id"], "season": saved["season"], "episode": saved["episode"]}
 
     return api

@@ -194,6 +194,7 @@ def link(db, series_id: str, url: str, *, season: int | None = None,
         "episodes": found.get("episodes"),
         "characters": characters,
         "staff": found.get("staff") or [],
+        "episode_titles": found.get("episode_titles") or {},
         "complete": bool(found.get("complete", True)),
         "linked_by": "person",
         "fetched_at": records.now_marker(),
@@ -248,6 +249,16 @@ def sources(db, series_id: str) -> list[str]:
         if source_of(record) not in names:
             names.append(source_of(record))
     return sorted(names, key=lambda n: n != SOURCE)
+
+
+def episode_titles(db, series_id: str) -> dict[str, int]:
+    """Episode titles the linked catalogues list, folded, to their numbers."""
+    out: dict[str, int] = {}
+    for record in links(db, series_id):
+        for number, title in (record.get("episode_titles") or {}).items():
+            if str(number).isdigit():
+                out.setdefault(name_key(title), int(number))
+    return out
 
 
 def candidates(cast: dict | None, *, episode: int | None = None) -> list[dict]:

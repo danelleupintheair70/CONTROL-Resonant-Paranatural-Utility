@@ -192,6 +192,7 @@ const TABS = [
     B("analysis.verify_tracks", "Check dub tracks line up before using them"),
     B("analysis.knowledge", "Extract title knowledge", "Reads the lines with a language model. Proposals are only used after you review them."),
     T("analysis.knowledge_model", "Knowledge model", "A Prompture model, for example ollama/gemma3:12b."),
+    B("analysis.use_reference_scripts", "Read found transcripts beside the lines", "When title research found a transcript or screenplay for the episode, the extraction also sees its lines where their words match. It is somebody else's text, never the episode itself; off until it has proven itself."),
   ])]),
   tab("hardware", "Hardware", [group("This machine", [
     I("hardware", "Detected hardware", "What this Doblarr process can use for separation, diarization and transcription. voicebox is a separate program and picks its own device."),

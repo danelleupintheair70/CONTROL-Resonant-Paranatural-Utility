@@ -9,6 +9,7 @@
     doblarr cast show SERIES_ID [--season N] [--episode N] [--merged]
     doblarr cast import SERIES_ID [--roles MAIN,SUPPORTING | --names A,B]
     doblarr research SERIES_ID "QUESTION" [--depth quick|standard|deep]
+    doblarr scripts SERIES_ID [--sources fandom,screenplays,kitsunekko,opensubtitles,dubbing]
 """
 
 from __future__ import annotations
@@ -206,6 +207,35 @@ def _cmd_research(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def _cmd_scripts(args: argparse.Namespace, config: Config) -> int:
+    from . import catalogues
+    from .research import probe, scripts
+    from .store import Database
+
+    catalogues.configure_from(config)
+    db = Database(config.db_path)
+    try:
+        if args.sources:
+            wanted = [s.strip() for s in args.sources.split(",") if s.strip()]
+            print(f"looking in {', '.join(wanted)} (sends the title out)")
+            found = probe.probe_all(db, config, args.series, wanted, wiki=args.wiki or "",
+                                    languages=args.languages)
+            for name, why in found["skipped"].items():
+                print(f"{name}: skipped ({why})")
+            print(f"kept {found['saved']} script(s)")
+        for row in scripts.listing(db, args.series):
+            where = (f"S{row['season'] or 0:02d}E{row['episode']:02d}"
+                     if row["episode"] is not None else "-")
+            print(f"  {row['id']}  {where:<7} {row['source']:<22} {row['kind']:<10} "
+                  f"{row['lines']:>5} lines  {row['title']}")
+    except (KeyError, ValueError, RuntimeError) as exc:
+        print(f"scripts: {exc}")
+        return 1
+    finally:
+        db.close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="doblarr", description="AI dubbing for your library")
     p.add_argument("--version", action="version", version=f"doblarr {__version__}")
@@ -265,6 +295,15 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("question")
     r.add_argument("--depth", choices=["quick", "standard", "deep"], default=None)
     r.add_argument("--locale", default=None, help="dub locale for found terms, e.g. es-MX")
+
+    sc = sub.add_parser("scripts", help="find and list a title's reference scripts")
+    sc.add_argument("series")
+    sc.add_argument("--sources", default=None,
+                    help="comma list of " + ", ".join(
+                        ["fandom", "screenplays", "kitsunekko", "opensubtitles", "dubbing"])
+                    + "; without it, only lists what was found before")
+    sc.add_argument("--wiki", default=None, help="the Fandom wiki's name, if not the title")
+    sc.add_argument("--languages", default="en", help="OpenSubtitles languages, e.g. en,es")
     return p
 
 
@@ -282,6 +321,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_cast(args, config)
     if args.command == "research":
         return _cmd_research(args, config)
+    if args.command == "scripts":
+        return _cmd_scripts(args, config)
     return 2
 
 

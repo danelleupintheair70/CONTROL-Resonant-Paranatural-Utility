@@ -368,6 +368,7 @@ analysis:
   max_track_offset: 2.0         # seconds
   knowledge: false              # read the lines with a language model for title knowledge
   knowledge_model: ""           # a Prompture model, e.g. ollama/gemma3:12b (local)
+  use_reference_scripts: false  # extraction also reads a transcript found by title research
   emotion: false                # read how each line is said (a still per line + the voice)
   emotion_model: ollama/qwen3-vl:8b   # a model that sees; local
   reader_model: ""              # who speaks each line, read by a strong model; a cloud one

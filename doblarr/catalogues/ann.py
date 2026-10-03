@@ -139,10 +139,18 @@ class ANN:
         staff = [{"task": (s.findtext("task") or "").strip(),
                   "name": (s.findtext("person") or "").strip()}
                  for s in node.findall("staff") if s.findtext("person")]
+        episode_titles = {}
+        for ep in node.findall("episode"):
+            title = next((t.text for t in ep.findall("title")
+                          if (t.get("lang") or "").upper() == "EN" and t.text), None)
+            number = base.int_or_none(ep.get("num"))
+            if title and number is not None:
+                episode_titles[str(number)] = title.strip()
         return {"source_id": summary["id"], "url": summary["url"], "title": summary["title"],
                 "titles": summary["titles"], "format": summary["format"],
                 "year": summary["year"], "episodes": summary["episodes"],
-                "characters": characters, "complete": complete, "staff": staff}
+                "characters": characters, "complete": complete, "staff": staff,
+                "episode_titles": episode_titles}
 
 
 def dub_languages(document: dict[str, Any]) -> list[str]:

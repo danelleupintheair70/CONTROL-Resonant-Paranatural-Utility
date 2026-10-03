@@ -451,6 +451,9 @@ class AnalysisModel(_Section):
     knowledge: bool = False
     knowledge_model: str = ""
     knowledge_endpoint: str | None = None
+    # Let the extraction read a reference script found online (title research)
+    # next to the lines, aligned by their words. Off until it has proven itself.
+    use_reference_scripts: bool = False
     # How each line is said (doblarr.emotion): a still per line read by a
     # model that sees, plus the voice. Off unless asked; local by default.
     emotion: bool = False

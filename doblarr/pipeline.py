@@ -773,9 +773,19 @@ def run_job(
 
         client = llm.Client(model, endpoint=analysis_options.get("knowledge_endpoint"),
                             budget=budget, budget_kind="knowledge", guard=holdout)
+        reference = None
+        if analysis_options.get("use_reference_scripts"):
+            import json as _json
+
+            from .research import scripts as reference_scripts
+
+            data = _json.loads(script_path(job, work).read_text(encoding="utf-8"))
+            reference = reference_scripts.reference_for(
+                db, ident, narrative.script_cues(data, {}))
         try:
             result = narrative.extract(db, ident, script_path(job, work), client,
-                                       cancel=cancel_event, progress=_report("knowledge"))
+                                       cancel=cancel_event, progress=_report("knowledge"),
+                                       reference=reference)
         except (llm.ModelUnavailable, ValueError) as exc:
             analysis.record(db, job, "knowledge", "failed", error=str(exc))
             return
