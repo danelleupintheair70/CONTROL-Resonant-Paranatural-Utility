@@ -41,14 +41,26 @@ jobs:
               core.setFailed('Stable releases require a merged dev → main/master PR from this repository.');
             }
 
-  checks:
-    name: CI Gate
+  # Nothing publishes with a red suite, UI or image build. The three gates run
+  # side by side; each workflow explains its own trade-offs.
+  backend-gate:
+    name: Backend Gate
     needs: promotion
-    uses: ./.github/workflows/ci.yml
+    uses: ./.github/workflows/backend-ci.yml
+
+  frontend-gate:
+    name: Frontend Gate
+    needs: promotion
+    uses: ./.github/workflows/frontend-ci.yml
+
+  docker-gate:
+    name: Docker Gate
+    needs: promotion
+    uses: ./.github/workflows/docker-ci.yml
 
   publish:
     name: Publish container and release
-    needs: checks
+    needs: [backend-gate, frontend-gate, docker-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

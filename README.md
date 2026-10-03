@@ -444,8 +444,11 @@ reuse those field definitions. Make API calls through `api()` in
 authentication, errors and caching stay consistent. A page keeps its own
 classes in a CSS file next to it and reuses `ui/src/styles` for the rest.
 
-CI checks Python lint/types/tests and the frontend checks on pull requests and
-pushes to `dev`, `main` and `master`.
+CI is three workflows that run side by side: Backend CI (ruff, mypy, and pytest
+in a fast and a slow tier across Ubuntu/Windows and Python 3.11/3.12), Frontend
+CI (eslint, unit tests, UI build, Playwright) and Docker CI. Pull requests run
+the ones whose paths they touch; every push to `dev`, `main` and `master` runs
+all three through `release.yml` before anything publishes.
 
 ## Roadmap
 
