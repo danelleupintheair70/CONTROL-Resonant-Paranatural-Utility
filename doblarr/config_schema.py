@@ -204,6 +204,9 @@ class DubModel(_Section):
     # Keep the original singing in the opening, ending and insert songs (found
     # from the subtitle track's lyric styles); separation removes it otherwise.
     keep_songs: bool = True
+    # A voice with no clean sample to clone (a few short lines) borrows the
+    # clone of the voice it sounds most like instead of failing the dub.
+    borrow_voice: bool = True
     background_volume: float = 1.0
     fallback_volume: float = 0.2
     duck_threshold: float = 0.05

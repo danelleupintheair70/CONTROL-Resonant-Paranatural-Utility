@@ -531,6 +531,7 @@ def run_job(
             locale_direction=locale_direction,
             character_notes=character_notes,
             clone_cleanup=config["dub"].get("clone_cleanup", False),
+            borrow_voice=config["dub"].get("borrow_voice", True),
         )
         if db is not None and not dry_run and segments is None:
             save_characters(job, db, character_group, character_map)

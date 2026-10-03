@@ -388,6 +388,51 @@ def _resolve_profile(job, spk, vb, clips_dir, voice_mode, cast, cancel, cleanup=
     raise RuntimeError(f"no clean single-speaker reference for {spk.label}; assign a preset voice")
 
 
+def _borrow_voices(job, unvoiced: list) -> None:
+    """Give voices nobody could clone the clone of the voice they sound most like.
+
+    A few short lines (a guard, a crowd) can leave no clean sample to clone
+    from, and failing the whole dub over them helps nobody. Each such voice
+    borrows the voice of the group closest to it in the grouping's own voice
+    space (else the one heard most), and the run records who borrowed whom.
+    """
+    import numpy as np
+
+    from .common import work_stem
+
+    voiced = [s for s in job.speakers.values() if s.voicebox_profile_id]
+    if not voiced:
+        raise RuntimeError("no voice could be cloned for this episode; assign preset voices")
+    centres: dict[str, np.ndarray] = {}
+    sidecar = (Path(job.vocals).parent / f"{work_stem(job)}.speakers.json") if job.vocals else None
+    if sidecar is not None and sidecar.is_file():
+        groups: dict[str, list] = {}
+        for line in json.loads(sidecar.read_text(encoding="utf-8")).get("lines") or []:
+            if line.get("vector"):
+                groups.setdefault(str(line.get("speaker")), []).append(line["vector"])
+        for label, vectors in groups.items():
+            mean = np.mean(np.asarray(vectors, dtype=float), axis=0)
+            norm = float(np.linalg.norm(mean))
+            if norm:
+                centres[label] = mean / norm
+    heard = {s.label: sum(seg.duration for seg in job.segments if seg.speaker == s.label)
+             for s in voiced}
+    for speaker in unvoiced:
+        mine = centres.get(speaker.label)
+        scored = [(float(mine @ centres[s.label]), s) for s in voiced
+                  if mine is not None and s.label in centres]
+        similarity, donor = max(scored, key=lambda row: row[0]) if scored else (
+            None, max(voiced, key=lambda s: heard.get(s.label, 0.0)))
+        speaker.voicebox_profile_id = donor.voicebox_profile_id
+        speaker.reference_clip = donor.reference_clip
+        how = f" (similarity {similarity:.2f})" if similarity is not None else ""
+        log.warning("no clone reference for %s; borrowing %s's voice%s", speaker.label,
+                    donor.label, how)
+        job.metrics.setdefault("voices_borrowed", {})[speaker.label] = {
+            "from": donor.label, "similarity": round(similarity, 3) if similarity is not None
+            else None}
+
+
 def _register_take(seg, signature: dict, dest: Path, state: str, *, origin: str = "auto",
                    attempt: int = 0, select: bool = True) -> Take:
     """Record the raw generation for this cue and select it.
@@ -615,6 +660,7 @@ def run(
     locale_direction="",
     character_notes=None,
     clone_cleanup=False,
+    borrow_voice=True,
 ) -> Plan | None:
     clips_dir = _clips_dir(job, work_dir)
     log.info("synthesize %d lines (voice_mode=%s)", len(job.segments), voice_mode)
@@ -659,6 +705,7 @@ def run(
         for i, speaker in enumerate(job.speakers.values()):
             if not cast.get(speaker.label, {}).get("voice"):
                 cast[speaker.label] = {"voice": preset_voices[i % len(preset_voices)]}
+    unvoiced = []
     for speaker in job.speakers.values():
         try:
             _resolve_profile(job, speaker, vb, clips_dir, voice_mode, cast or {}, cancel,
@@ -666,6 +713,9 @@ def run(
         except RuntimeError:
             entry = cast.get(speaker.label, {})
             if not entry.get("fallback_voice"):
+                if borrow_voice:
+                    unvoiced.append(speaker)
+                    continue
                 raise
             # No clean reference exists for this character (a whisper, a crowd):
             # the cast named a preset to use instead, and that is recorded.
@@ -675,6 +725,8 @@ def run(
             entry["engine"] = entry.get("fallback_engine") or entry.get("engine")
             speaker.voicebox_profile_id = entry["voice"]
             job.metrics.setdefault("clone_fallbacks", []).append(speaker.label)
+    if unvoiced:
+        _borrow_voices(job, unvoiced)
 
     # Generate every line. Per-line resume: clips already on disk from a
     # previous (failed/interrupted) run are kept, not regenerated.
