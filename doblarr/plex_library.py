@@ -67,7 +67,11 @@ def poster_url(thumb: str | None) -> str | None:
 
 
 class AudioCache:
-    """Audio languages per Plex item, valid while the item's updatedAt holds."""
+    """Audio languages per Plex item, valid while the item's updatedAt holds.
+
+    Rows also keep each audio track's tag and title (`tracks`) for the audio
+    languages page; rows written before that have none and are read again.
+    """
 
     def __init__(self, path: Path | None):
         self.path = path
@@ -82,8 +86,15 @@ class AudioCache:
         row = self.data.get(str(key))
         return row["langs"] if row and row.get("updated") == updated else None
 
-    def put(self, key: str, updated, langs: list[str]) -> None:
-        self.data[str(key)] = {"updated": updated, "langs": langs}
+    def tracks(self, key: str, updated) -> list[dict] | None:
+        row = self.data.get(str(key))
+        return row.get("tracks") if row and row.get("updated") == updated else None
+
+    def put(self, key: str, updated, langs: list[str], tracks: list[dict] | None = None) -> None:
+        self.data[str(key)] = {"updated": updated, "langs": langs, "tracks": tracks}
+
+    def forget(self, key: str) -> None:
+        self.data.pop(str(key), None)
 
     def save(self) -> None:
         if not self.path:
@@ -123,15 +134,16 @@ def scan_plex(client, targets: list[str], *, known_tvdb: set[int], known_tmdb: s
 
         def probe(leaf):
             try:
-                return leaf, client.audio_languages(client.metadata(leaf["ratingKey"]))
+                meta = client.metadata(leaf["ratingKey"])
+                return leaf, client.audio_languages(meta), audio_tracks(meta)
             except Exception as exc:  # noqa: BLE001 - one unreadable file must not end the scan
                 log.warning("plex: %s: %s", leaf.get("title"), exc)
-                return leaf, None
+                return leaf, None, None
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-            for leaf, langs in pool.map(probe, missing):
+            for leaf, langs, tracks in pool.map(probe, missing):
                 if langs is not None:
-                    cache.put(leaf["ratingKey"], leaf.get("updatedAt"), langs)
+                    cache.put(leaf["ratingKey"], leaf.get("updatedAt"), langs, tracks)
         cache.save()
 
     items = []
@@ -159,6 +171,27 @@ def scan_plex(client, targets: list[str], *, known_tvdb: set[int], known_tmdb: s
             tvdb_id=ids.get("tvdb") if not movie else None,
             media_type="movie" if movie else "show"))
     return items
+
+
+def audio_tracks(item: dict) -> list[dict]:
+    """Every audio stream of an item's files as found: tag, title, channels.
+
+    `pos` counts audio streams within one file (ffmpeg's `a:N`), which is how
+    a track is addressed when it is rewritten.
+    """
+    found = []
+    for media in item.get("Media") or []:
+        for part in media.get("Part") or []:
+            audio = [s for s in part.get("Stream") or [] if s.get("streamType") == 2]
+            for pos, stream in enumerate(audio):
+                found.append({
+                    "file": part.get("file") or "", "pos": pos,
+                    "lang": str(stream.get("languageCode") or "und").lower(),
+                    "title": str(stream.get("title") or ""),
+                    "channels": int(stream.get("channels") or 0),
+                    "default": bool(stream.get("default")),
+                })
+    return found
 
 
 def _files(leaf: dict) -> list[str]:

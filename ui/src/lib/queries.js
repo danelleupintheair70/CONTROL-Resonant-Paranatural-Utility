@@ -15,6 +15,8 @@ export const configQuery = { queryKey: ['config'], queryFn: () => api('config') 
 export const hardwareQuery = { queryKey: ['hardware'], queryFn: () => api('hardware').catch(() => null) };
 // The library scan can take seconds on a cold server; only pages that list it wait for it.
 export const libraryQuery = { queryKey: ['library'], queryFn: () => api('library'), staleTime: 5 * 60_000 };
+// Every audio track's language tag and title, grouped by language; reads Plex like the library scan.
+export const audioLanguagesQuery = { queryKey: ['audio-languages'], queryFn: () => api('audio-languages'), staleTime: 5 * 60_000 };
 // languages.js keeps its own session cache (languageName reads it synchronously).
 export const languagesQuery = { queryKey: ['languages'], queryFn: loadLanguages, staleTime: Infinity };
 
