@@ -25,6 +25,22 @@ A stage is *done*, *needs a rerun* (something it depends on changed), *failed*, 
 
 The energy curves are a different measurement from the level analysis. `levels` reports `dBFS-rms-speech`, the RMS of 20 ms frame peaks. On a real episode the two correlate at 0.94 and differ by about 9.5 dB, so the units are never mixed.
 
+## Published cast (optional)
+
+A published anime already has a public cast list. `doblarr cast` links a series to its AniList entry so the characters come with their role, gender, description and original voice actors:
+
+```
+doblarr cast series                         # series ids and titles
+doblarr cast search show:tvdb:123           # sends the title to anilist.co; stores nothing
+doblarr cast link show:tvdb:123 URL [--season N]
+doblarr cast show show:tvdb:123 --episode 4 # main cast + guests described in episode 4
+doblarr cast import show:tvdb:123 [--roles MAIN,SUPPORTING]
+```
+
+The title is the only thing sent, and only when you search. A link is your choice of entry, stored apart from what episodes taught, like other library metadata. A show's search lists TV entries before its films. Catalogues list each season as its own title, so a link can be per season.
+
+**Import** never renames or overwrites a character. A character you already have matches a cast member by name, alias or a unique part of the name, with romanization folded (`Hyūga`, `Hyuuga` and `Hyuga` are one name). It gains the published facts and the published name as an alias. A name part shared by several cast members creates nothing and is reported for you to settle. Only characters that existed before the import can match.
+
 ## Who speaks
 
 Every line keeps how its voice was decided:
