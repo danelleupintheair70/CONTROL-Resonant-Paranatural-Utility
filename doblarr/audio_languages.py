@@ -46,7 +46,8 @@ EXAMPLES = 4   # titles listed under each variant
 _WORDS = {
     "latino": "es-419", "lat": "es-419", "latam": "es-419", "latin": "es-419",
     "latinoamericano": "es-419", "castellano": "es-ES", "castilian": "es-ES",
-    "españa": "es-ES", "spain": "es-ES", "español": "es", "espanol": "es",
+    "españa": "es-ES", "spain": "es-ES", "argentino": "es-AR", "rioplatense": "es-AR",
+    "colombiano": "es-CO", "chileno": "es-CL", "español": "es", "espanol": "es",
     "spanish": "es", "esp": "es", "eng": "en", "english": "en", "deutsch": "de",
     "francais": "fr", "français": "fr", "italiano": "it", "portugues": "pt",
     "português": "pt", "brazilian": "pt", "jap": "ja", "jpn": "ja", "japanese": "ja",

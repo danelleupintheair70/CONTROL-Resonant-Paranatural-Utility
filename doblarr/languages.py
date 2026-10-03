@@ -65,6 +65,30 @@ _ES_VE_DIRECTION = (
     "Venezuelan Spanish for studio dubbing. Use natural Venezuelan vocabulary. "
     + _LATAM_CORE
 )
+_ES_AR_DIRECTION = (
+    "Rioplatense Spanish (Argentina) for studio dubbing. Address one person with "
+    "vos and voseo verb forms, never tuteo: vos tenés, vos querés, vos hablás, vos "
+    "sos; commands hablá, tené, vení, mirá, with the stress on the last syllable "
+    "(tenés, never the Spain tenéis). Use natural Rioplatense vocabulary where the "
+    "register allows it (che, pibe/piba, laburo, plata, bondi, morfar); boludo and "
+    "quilombo are crude, so only when the source is crude too. " + _LATAM_CORE
+)
+_ES_CO_DIRECTION = (
+    "Colombian Spanish for studio dubbing. Keep it clear and standard: Colombian "
+    "speech uses usted broadly, even with family and friends, so prefer usted "
+    "where other regions would use tú unless the scene is plainly intimate, and "
+    "keep diminutives for when the source is affectionate. Colombian words fit "
+    "informal scenes (parce or parcero for a friend, chévere or bacano for great, "
+    "tinto for black coffee, chino/china for a kid). " + _LATAM_CORE
+)
+_ES_CL_DIRECTION = (
+    "Chilean Spanish for studio dubbing. Default to tuteo (tú tienes, tú quieres); "
+    "informal Chilean speech also has a voseo (tú tenís, vo cachai), keep it for "
+    "plainly casual scenes. Use natural Chilean vocabulary where the register "
+    "allows it (po and cachai as tags, al tiro for right away, pololo/polola for "
+    "boyfriend/girlfriend, pega for work, luca for a thousand pesos); weón is "
+    "vulgar, so only when the source is crude too. " + _LATAM_CORE
+)
 
 # The first entries are the validated dubbing targets; the rest keep every base
 # language discovery already knew about selectable and correctly tagged.
@@ -86,6 +110,30 @@ _ENTRIES = [
         "es",
         region="VE",
         direction=_ES_VE_DIRECTION,
+    ),
+    LanguageEntry(
+        "es-AR",
+        "Spanish — Argentina",
+        "español rioplatense",
+        "es",
+        region="AR",
+        direction=_ES_AR_DIRECTION,
+    ),
+    LanguageEntry(
+        "es-CO",
+        "Spanish — Colombia",
+        "español de Colombia",
+        "es",
+        region="CO",
+        direction=_ES_CO_DIRECTION,
+    ),
+    LanguageEntry(
+        "es-CL",
+        "Spanish — Chile",
+        "español de Chile",
+        "es",
+        region="CL",
+        direction=_ES_CL_DIRECTION,
     ),
     LanguageEntry(
         "es-419",

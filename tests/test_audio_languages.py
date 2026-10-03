@@ -52,6 +52,9 @@ STREAMS = {
 
 def test_a_title_naming_a_language_wins_over_the_tag():
     assert al.title_language("Esp LAT") == "es-419"
+    assert al.title_language("Argentino 5.1") == "es-AR"
+    assert al.title_language("Español Colombiano") == "es-CO"
+    assert al.title_language("Chileno 2.0") == "es-CL"
     assert al.title_language("[Group] 2.0 ENG - FLAC") == "en"
     assert al.title_language("Stereo") is None
     moved = al.classify({"lang": "eng", "title": "Korean"}, None)
@@ -60,6 +63,7 @@ def test_a_title_naming_a_language_wins_over_the_tag():
     assert al.classify({"lang": "jpn", "title": ""}, "ja")["kind"] == "Original"
     assert al.track_name("es-419") == "Spanish (Latin America)"
     assert al.track_name("es-ES") == "Spanish (Spain)"
+    assert al.track_name("es-AR") == "Spanish (Argentina)"
 
 
 def test_tracks_are_grouped_by_language_and_cached_by_file(tmp_path):

@@ -62,7 +62,7 @@ const TABS = [
     C("translate.provider", "Translation provider", ["claude", "prompture", "voicebox", "passthrough"]),
     T("translate.model", "Translation model"),
     T("translate.endpoint", "Translation endpoint"),
-    C("translate.locale", "Spanish region", ["auto", "es-419", "es-MX", "es-ES"], "es-419: neutral Latin America. es-MX: Mexico. es-ES: Spain. Wording only; voice accent is set separately."),
+    C("translate.locale", "Spanish region", ["auto", "es-419", "es-MX", "es-VE", "es-AR", "es-CO", "es-CL", "es-ES"], "es-419: neutral Latin America. es-MX: Mexico. es-VE: Venezuela. es-AR: Argentina (voseo). es-CO: Colombia. es-CL: Chile. es-ES: Spain. Wording only; voice accent is set separately."),
     C("translate.adaptation", "Dialogue style", ["natural", "faithful", "localized"]),
     B("translate.slang", "Allow regional slang", "Off by default. When on, characters may talk the way people in the dub's region do, where their register calls for it. Spain-only Spanish is still flagged in Latin American dubs."),
     B("translate.adapt_region", "Adapt wording to this region", "Also adapt subtitles already in the target language. Original dialogue stays available for comparison."),

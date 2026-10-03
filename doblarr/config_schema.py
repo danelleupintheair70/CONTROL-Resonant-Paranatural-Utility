@@ -103,7 +103,7 @@ class TranslateModel(_Section):
     batch_size: int = 12
     chars_per_second: float = 14
     glossary: dict[str, str] = {}
-    locale: Literal["auto", "es-419", "es-MX", "es-ES"] = "auto"
+    locale: Literal["auto", "es-419", "es-MX", "es-VE", "es-AR", "es-CO", "es-CL", "es-ES"] = "auto"
     adaptation: Literal["natural", "faithful", "localized"] = "natural"
     adapt_region: bool = False
     # Regional slang in the dub. Off keeps wording understandable across the

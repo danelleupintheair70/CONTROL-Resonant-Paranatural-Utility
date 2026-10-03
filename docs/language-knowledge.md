@@ -6,6 +6,18 @@ are used across targets. Eight per target are held out from development.
 Every candidate is unverified. Installing the bundled pack does not activate
 its proposed entries or certify an accent.
 
+An entry may declare an optional `register`: `formal`, `neutral`, `colloquial`
+or `vulgar`, unset by default. The register says how the wording is meant to
+land (an es-VE "pana" is colloquial). It travels with the resolved glossary
+into translation, where the translator sees the rendering labeled with its
+register, and it round-trips through recipes and packs. An unset register
+changes nothing.
+
+The language catalog also dubs into Argentine (`es-AR`, Rioplatense, directed
+to voseo), Colombian (`es-CO`) and Chilean (`es-CL`) Spanish. These locales
+have no authored validation scenes yet, so validation-scene coverage still
+reports English, Mexican and Venezuelan Spanish only.
+
 Use Language knowledge to install a local JSON pack, download from the configured
 `knowledge.pack_distribution_url`, or roll back a release. Downloads happen only
 on an explicit request. Installed releases remain available for frozen jobs.
