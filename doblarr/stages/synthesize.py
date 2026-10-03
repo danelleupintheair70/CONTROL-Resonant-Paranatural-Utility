@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ..artifacts import digest, matches, read_json, record, stamp
 from ..clients.speech import GenerationFailed, SpeechClient, SpeechError
+from ..clients.voicebox import SAMPLING_KEYS
 from ..cues import (
     RAW,
     Artifact,
@@ -220,9 +221,6 @@ def _voice_shift(cast: dict, speaker: str) -> tuple[float, float]:
         except (TypeError, ValueError):
             values.append(0.0)
     return values[0], values[1]
-
-
-SAMPLING_KEYS = ("exaggeration", "cfg_weight", "temperature")
 
 
 def _sampling(client, engine, defaults: dict | None, cast: dict, speaker: str) -> dict:
