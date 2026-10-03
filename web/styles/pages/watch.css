@@ -20,6 +20,7 @@
 .watch-keys { margin:2px 0 0; font-size:12px;
   & kbd { font:inherit; font-size:11px; padding:0 5px; border:1px solid var(--line); border-radius:4px; } }
 .watch-note { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+  & .input { width:auto; flex:0 0 auto; }
   & input[name="note"] { flex:1 1 260px; min-width:0; }
   & .m { min-width:40px; font-weight:600; } }
 .watch-columns { display:grid; grid-template-columns:1fr 1fr; gap:22px;

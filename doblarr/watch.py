@@ -52,7 +52,8 @@ def streams(output: Path) -> dict:
     raw = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries",
          "stream=index,codec_type,codec_name:stream_tags=language,title:disposition=default",
-         "-of", "json", str(output)], capture_output=True, text=True, check=False).stdout
+         "-of", "json", str(output)], capture_output=True, text=True, encoding="utf-8",
+        errors="replace", check=False).stdout
     audio, subs = [], []
     for row in json.loads(raw or "{}").get("streams") or []:
         tags = row.get("tags") or {}
