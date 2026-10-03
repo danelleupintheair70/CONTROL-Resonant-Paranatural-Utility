@@ -10,6 +10,7 @@
     doblarr cast import SERIES_ID [--roles MAIN,SUPPORTING | --names A,B]
     doblarr research SERIES_ID "QUESTION" [--depth quick|standard|deep]
     doblarr scripts SERIES_ID [--sources fandom,screenplays,kitsunekko,opensubtitles,dubbing]
+    doblarr titles SERIES_ID [--refresh]  # the title's ids and other names
 """
 
 from __future__ import annotations
@@ -236,6 +237,36 @@ def _cmd_scripts(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def _cmd_titles(args: argparse.Namespace, config: Config) -> int:
+    from . import catalogues
+    from .research import titles
+    from .store import Database
+
+    catalogues.configure_from(config)
+    db = Database(config.db_path)
+    try:
+        if args.refresh:
+            print("looking the title up on wikidata.org (and themoviedb.org with a key)")
+            info = titles.refresh(db, args.series, tmdb_api_key=str(
+                (config.get("research") or {}).get("tmdb_api_key") or ""))
+        else:
+            info = titles.get(db, args.series) or {"external_ids": titles.known_ids(
+                db, args.series), "aliases": [], "skipped": {}}
+    except KeyError as exc:
+        print(f"titles: {exc}")
+        return 1
+    finally:
+        db.close()
+    for key, value in sorted(info["external_ids"].items()):
+        print(f"  {key:<10} {value}")
+    for alias in info["aliases"]:
+        where = "-".join(x for x in (alias.get("language"), alias.get("region")) if x) or "?"
+        print(f"  {where:<6} {alias['title']}")
+    for name, why in (info.get("skipped") or {}).items():
+        print(f"{name}: skipped ({why})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="doblarr", description="AI dubbing for your library")
     p.add_argument("--version", action="version", version=f"doblarr {__version__}")
@@ -304,6 +335,10 @@ def build_parser() -> argparse.ArgumentParser:
                     + "; without it, only lists what was found before")
     sc.add_argument("--wiki", default=None, help="the Fandom wiki's name, if not the title")
     sc.add_argument("--languages", default="en", help="OpenSubtitles languages, e.g. en,es")
+
+    ti = sub.add_parser("titles", help="a title's catalogue ids and other names")
+    ti.add_argument("series")
+    ti.add_argument("--refresh", action="store_true", help="look them up again (online)")
     return p
 
 
@@ -323,6 +358,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_research(args, config)
     if args.command == "scripts":
         return _cmd_scripts(args, config)
+    if args.command == "titles":
+        return _cmd_titles(args, config)
     return 2
 
 

@@ -13,7 +13,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..research import agent, probe, scripts
+from ..research import agent, probe, scripts, titles
 from ..studio import records
 from .cast import research_allowed
 
@@ -48,6 +48,12 @@ class ScriptsIn(BaseModel):
     languages: str = Field(default="en", max_length=40)
     season: int | None = Field(default=None, ge=0, le=99)
     episode: int | None = Field(default=None, ge=0, le=9999)
+
+
+class TitlesIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    series_id: str = Field(min_length=3, max_length=120)
 
 
 class PlaceIn(BaseModel):
@@ -108,6 +114,21 @@ def build_router(config, store, bus) -> APIRouter:
         except records.StudioConflict as exc:
             raise HTTPException(409, {"error": str(exc), "current": exc.current}) from exc
         return {"leads": saved["leads"]}
+
+    @api.get("/api/research/titles")
+    def title_info(series_id: str):
+        return {"series_id": series_id, "known": titles.known_ids(db, series_id),
+                "info": titles.get(db, series_id)}
+
+    @api.post("/api/research/titles")
+    def refresh_titles(body: TitlesIn):
+        """Look up the title's ids (Wikidata) and other names (TMDB, with a key)."""
+        research_allowed(config)
+        try:
+            return titles.refresh(db, body.series_id, tmdb_api_key=str(
+                (config.get("research") or {}).get("tmdb_api_key") or ""))
+        except KeyError as exc:
+            raise HTTPException(404, "unknown series") from exc
 
     @api.post("/api/research/scripts")
     def find_scripts(body: ScriptsIn):
