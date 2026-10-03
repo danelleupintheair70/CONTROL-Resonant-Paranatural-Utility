@@ -50,11 +50,16 @@ def test_sse_requires_auth(sse_client):
     assert sse_client.get("/api/events").status_code == 401
 
 
-def test_sse_streams_replayed_event(sse_client):
+def test_sse_streams_replayed_event(sse_client, monkeypatch):
     """Drive the ASGI app directly: starlette's TestClient waits for the app
     coroutine to finish, which an infinite SSE stream never does — so consume
     the ASGI messages ourselves and disconnect after the first body chunk."""
     import asyncio
+
+    from doblarr import server
+
+    # The stream notices a disconnect between heartbeats; don't wait 15 s for one.
+    monkeypatch.setattr(server, "SSE_HEARTBEAT", 0.2)
 
     app = sse_client.app
     scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
