@@ -342,6 +342,18 @@ class PromptureTranslator:
         except _InvalidTranslation as exc:
             raise TranslationError("Could not produce a shorter spoken line") from exc
 
+    def revise(self, text: str, language: str, instruction: str,
+               target_chars: int | None = None) -> str:
+        """Rewrite one line in the SAME language following `instruction`
+        (a dialect correction, say), keeping meaning, names and length."""
+        self.last_usage = []
+        try:
+            return self._translate_lines(
+                [text], language, language, target_chars, glossary=self.repair_glossary,
+                instruction=instruction + " Preserve meaning, names, tone and length.")[0]
+        except _InvalidTranslation as exc:
+            raise TranslationError("Could not revise the line") from exc
+
     def translate(
         self, text: str, source_lang: str, target_lang: str, target_chars: int | None = None
     ) -> str:

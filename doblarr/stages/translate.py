@@ -182,8 +182,12 @@ def run(
     # under older directions.
     from .. import dialect
 
-    if dialect.check(job) and checkpoint:
-        checkpoint()
+    if dialect.check(job):
+        # Flagged lines are rewritten, not only reported: a Latin American dub
+        # with "¡Pasad!" in it is wrong, not merely worth a look.
+        dialect.revise(job, translator)
+        if checkpoint:
+            checkpoint()
 
 
 def _reference_for(seg, job, references) -> dict:
