@@ -3,7 +3,7 @@
     doblarr check                         # ping the voicebox service
     doblarr dub MOVIE --to es --from ko [--subs FILE] [--dry-run]
     doblarr cast series                   # series ids and titles
-    doblarr cast search SERIES_ID [--query TITLE] [--source anilist|ann|jikan|bangumi|all]
+    doblarr cast search SERIES_ID [--query TITLE] [--source anilist|ann|jikan|bangumi|kitsu|all]
     doblarr cast suggest SERIES_ID --source ann   # entries matching the linked title
     doblarr cast link SERIES_ID URL [--season N] [--why TEXT]
     doblarr cast show SERIES_ID [--season N] [--episode N] [--merged]
@@ -300,10 +300,11 @@ def build_parser() -> argparse.ArgumentParser:
     cs.add_argument("series")
     cs.add_argument("--query", default=None, help="title to search (default: the series title)")
     cs.add_argument("--source", default="anilist",
-                    choices=["anilist", "ann", "jikan", "bangumi", "all"])
+                    choices=["anilist", "ann", "jikan", "bangumi", "kitsu", "all"])
     cg = actions.add_parser("suggest", help="entries of another catalogue that match the link")
     cg.add_argument("series")
-    cg.add_argument("--source", required=True, choices=["ann", "jikan", "bangumi", "anilist"])
+    cg.add_argument("--source", required=True,
+                    choices=["ann", "jikan", "bangumi", "kitsu", "anilist"])
     cg.add_argument("--season", type=int, default=None)
     cl = actions.add_parser("link", help="link a series (or one season) to an entry")
     cl.add_argument("series")

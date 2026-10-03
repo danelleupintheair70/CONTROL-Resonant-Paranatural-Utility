@@ -1,8 +1,8 @@
 """Public catalogues a series' cast can come from (see `base` for the rules).
 
 `PROVIDERS` maps a source name to the provider that reads it. AniList stays
-the first choice; the others add dub casts (ANN, MyAnimeList through Jikan)
-and native-script coverage (Bangumi).
+the first choice; the others add dub casts (ANN, MyAnimeList through Jikan),
+native-script coverage (Bangumi) and Kitsu's voices by locale.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from .ann import ANN
 from .bangumi import Bangumi
 from .base import CastProvider, Unreachable, configure, configure_from
 from .jikan import Jikan
+from .kitsu import Kitsu
 
 PRIMARY = "anilist"
 
@@ -20,6 +21,7 @@ PROVIDERS: dict[str, CastProvider] = {
     "ann": ANN(),
     "jikan": Jikan(),
     "bangumi": Bangumi(),
+    "kitsu": Kitsu(),
 }
 
 

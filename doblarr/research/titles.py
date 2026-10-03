@@ -16,7 +16,8 @@ from ..studio import records
 
 KIND = "title_info"
 # Which published-cast source holds which Wikidata id.
-_CAST_IDS = {"anilist": "anilist", "ann": "ann", "jikan": "mal", "bangumi": "bangumi"}
+_CAST_IDS = {"anilist": "anilist", "ann": "ann", "jikan": "mal", "bangumi": "bangumi",
+             "kitsu": "kitsu"}
 
 
 def known_ids(db, series_id: str) -> dict[str, str]:

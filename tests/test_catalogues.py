@@ -265,7 +265,39 @@ def test_cli_searches_the_chosen_sources(tmp_path, monkeypatch, capsys):
     assert code == 0 and "animenewsnetwork.com" in out and "anime.php?id=77" in out
     monkeypatch.setitem(catalogues.PROVIDERS, "anilist", ANN(fetch=recorder({"~": ANN_SEARCH})))
     monkeypatch.setitem(catalogues.PROVIDERS, "bangumi", Jikan(fetch=down))
+    monkeypatch.setitem(catalogues.PROVIDERS, "kitsu", Jikan(fetch=down))
     cli.main(["-c", str(config), "cast", "search", SERIES, "--query", "Harbor Lights",
               "--source", "all"])
     out = capsys.readouterr().out
     assert "MyAnimeList (Jikan): skipped (api.jikan.moe did not answer)" in out
+
+
+def test_kitsu_reads_voices_by_locale_across_pages():
+    from doblarr.catalogues.kitsu import Kitsu
+
+    page = {"data": [{"attributes": {"role": "main"},
+                      "relationships": {"character": {"data": {"type": "characters", "id": "1"}},
+                                        "voices": {"data": [{"type": "characterVoices",
+                                                             "id": "v1"},
+                                                            {"type": "characterVoices",
+                                                             "id": "v2"}]}}}],
+            "included": [
+                {"type": "characters", "id": "1", "attributes": {
+                    "canonicalName": "Mira Tavel", "names": {"ja_jp": "ミラ"}}},
+                {"type": "characterVoices", "id": "v1", "attributes": {"locale": "ja_jp"},
+                 "relationships": {"person": {"data": {"type": "people", "id": "p1"}}}},
+                {"type": "characterVoices", "id": "v2", "attributes": {"locale": "es"},
+                 "relationships": {"person": {"data": {"type": "people", "id": "p2"}}}},
+                {"type": "people", "id": "p1", "attributes": {"name": "Aki Sora"}},
+                {"type": "people", "id": "p2", "attributes": {"name": "Lucia Prado"}}],
+            "links": {}}
+    fetch = recorder({"/characters": page, "/anime/9": {"data": {"id": "9", "attributes": {
+        "canonicalTitle": "Harbor Lights", "startDate": "2001-04-02", "subtype": "TV",
+        "episodeCount": 12}}}})
+    doc = Kitsu(fetch=fetch).read("https://kitsu.io/anime/9")
+    mira = doc["characters"][0]
+    assert (doc["title"], doc["year"], doc["format"]) == ("Harbor Lights", 2001, "TV")
+    assert (mira["name"], mira["native"], mira["role"]) == ("Mira Tavel", "ミラ", "MAIN")
+    assert [(v["language"], v["name"]) for v in mira["voice_actors"]] == [
+        ("Japanese", "Aki Sora"), ("Spanish", "Lucia Prado")]
+    assert doc["complete"] is True

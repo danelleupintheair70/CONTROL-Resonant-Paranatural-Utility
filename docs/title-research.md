@@ -46,6 +46,7 @@ The two API keys are secrets: the settings page never shows their values.
 | Anime News Network | none | casts for each dub (`lang="EN"`, `"ES"`, ...), staff such as ADR directors, episode titles | 1 request/s; batch reads of up to 50 entries |
 | MyAnimeList via Jikan | none | voices per language, staff | about 60 requests/min; the public instance is sometimes unreachable |
 | Bangumi | none | native-script names, Chinese coverage | actors' language is not stated |
+| Kitsu | none | voices by locale, main and supporting roles | sparser dub credits; 1 request/s |
 
 ```
 doblarr cast search SERIES [--source anilist|ann|jikan|bangumi|all]
@@ -128,7 +129,7 @@ for wikis and subtitle folders.
 
 ## Not covered yet
 
-Behind the Voice Actors (scrape-only), AniDB (registered client, strict
-anti-leech rules) and Kitsu castings are possible future sources. Forever
-Dreaming, SubsLikeScript and ourboard.org are excluded because they block
-automated access. TVDB is excluded because it is paid.
+Behind the Voice Actors (scrape-only) and AniDB (registered client, strict
+anti-leech rules) are possible future sources. Forever Dreaming,
+SubsLikeScript and ourboard.org are excluded because they block automated
+access. TVDB is excluded because it is paid.
