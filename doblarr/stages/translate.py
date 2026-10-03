@@ -188,6 +188,13 @@ def run(
         dialect.revise(job, translator)
         if checkpoint:
             checkpoint()
+    # The show's names and terms, said the same way in every line: the
+    # glossary's renderings everywhere, and where a term drifted, the wording
+    # most of the episode already used.
+    from .. import key_terms
+
+    if key_terms.enforce(job, translator, glossary)["revised"] and checkpoint:
+        checkpoint()
 
 
 def _reference_for(seg, job, references) -> dict:

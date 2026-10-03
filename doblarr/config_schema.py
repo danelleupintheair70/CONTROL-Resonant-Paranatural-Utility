@@ -453,6 +453,10 @@ class AnalysisModel(_Section):
     # (doblarr.dialogue_reader). Empty: off. A cloud model sends the subtitle
     # text out of this machine; local 8-12B models were not good enough.
     reader_model: str = ""
+    # Transcribe the official dub in the target language, when the file has
+    # one, so the page can offer its wording for the show's names and terms.
+    # Local speech recognition, about two minutes of GPU per episode.
+    dub_text: bool = True
     # A dub track only helps tell voices apart when it is the same cut: its
     # speech has to line up with the original before it is used as evidence.
     verify_tracks: bool = True

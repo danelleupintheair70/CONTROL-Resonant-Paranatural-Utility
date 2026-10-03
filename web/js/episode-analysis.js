@@ -3,6 +3,7 @@ import { escapeHtml as esc, safeGet } from './dom.js';
 import { openMediaPlayer } from './media-player.js';
 import { characterPicker } from './character-picker.js';
 import { mountEvidence, mountSelection, weak, whyText } from './episode-evidence.js';
+import { mountTerms, termsSection } from './episode-terms.js';
 
 // One episode broken down line by line: the voices found in it (with how much
 // each talks, and who they are once picked from the show's cast), then every
@@ -344,6 +345,7 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
         }).join('')}</div>
         <p class="hint">Signs and title cards come from the subtitle track, already translated. Dimmed ones were read from the picture.</p>
       </details>` : ''}
+      ${termsSection(data)}
       ${(data.doubts || []).length ? `<section class="asks" aria-label="Questions about the voices">
         <h4>Who says this? <span class="hint">${data.doubts.length} question${data.doubts.length === 1 ? '' : 's'} · each answer is kept for the show and teaches the next episodes</span></h4>
         <div class="asks-list">${data.doubts.map((q, n) => `<article class="ask" data-ask="${n}" style="--tint:${tint(q.voice)}">
@@ -453,6 +455,7 @@ export async function renderEpisodeAnalysis(box, item, { target = 'es' } = {}) {
     box.querySelector('[data-analyze]').onclick = start;
     mountEvidence(box, data, { path, target, reload: load, say, visual });
     mountSelection(box, data, { path, reload: load, say });
+    mountTerms(box, data, { path, reload: load, say });
     const regroupButton = box.querySelector('[data-regroup]');
     if (regroupButton) regroupButton.onclick = () => regroup(models, found);
     // Answers: a voice question names the whole group; a line question assigns

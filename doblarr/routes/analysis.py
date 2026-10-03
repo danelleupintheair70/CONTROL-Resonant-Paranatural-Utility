@@ -37,8 +37,10 @@ from pydantic import BaseModel, Field
 from .. import (
     dialogue_clues,
     doubts,
+    dub_text,
     identity,
     identity_migration,
+    key_terms,
     snapshots,
     speaker_memory,
     speakers,
@@ -61,6 +63,14 @@ class NamesIn(BaseModel):
     names: dict[str, str] = Field(default_factory=dict)
     # Groups whose name a person kept against the dialogue: never renamed by it.
     keep: list[str] = Field(default_factory=list, max_length=200)
+
+
+class TermIn(BaseModel):
+    path: str = Field(min_length=1, max_length=2000)
+    source: str = Field(min_length=1, max_length=120)
+    # Blank: forget the show's wording for this term.
+    rendering: str = Field(default="", max_length=120)
+    locale: str = Field(default="", max_length=20)
 
 
 class LineIn(BaseModel):
@@ -287,6 +297,78 @@ def build_router(config, store) -> APIRouter:
         return str((data.get("identity") or {}).get("source_lang")
                    or _read(sidecar(script, "analysis.json")).get("source_lang") or "")
 
+    def target_of_script(script: Path, data: dict) -> str:
+        """The language a script was translated (or is to be dubbed) into."""
+        return str((data.get("translation_options") or {}).get("target_locale")
+                   or script.parent.name)
+
+    def show_terms(show_ref: str, locale: str) -> list:
+        """The show's own term entries for this locale (the base language too)."""
+        from ..knowledge import store as knowledge_store
+        from ..languages import base_language
+
+        base = base_language(locale)
+        return [e for e in knowledge_store.latest_entries(db)
+                if e.kind == "term" and e.scope == "show" and e.scope_ref == show_ref
+                and e.status not in ("retired",) and e.source_form
+                and e.locale in (locale, base)]
+
+    def show_ref_of(ident: dict | None) -> str:
+        return identity.show_ref((ident or {}).get("series_id"))
+
+    def terms_of(script: Path, data: dict, lines: list[dict], ident: dict | None) -> dict:
+        """The episode's names and terms: how this dub and the official one
+        say each, and the show's saved wording (doblarr.key_terms)."""
+        segments = data.get("segments") or []
+        texts = [s.get("text_src") or "" for s in segments]
+        renders = [s.get("text_translated") or "" for s in segments]
+        locale = target_of_script(script, data)
+        show = show_ref_of(ident)
+        saved = ({key_terms.fold(e.source_form): e for e in show_terms(show, locale)}
+                 if show else {})
+        official = dub_text.for_script(
+            script.parent.parent, script.name.replace(".script.json", ""),
+            [(float(s.get("start") or 0), float(s.get("end") or 0)) for s in segments], locale)
+        rows = key_terms.episode(texts, renders, dub=official["lines"] if official else None,
+                                 decided={e.source_form: e.phrase for e in saved.values()})
+        cue = [str(line.get("cue")) for line in lines]
+
+        def cues(positions):
+            return [cue[n] for n in positions if n < len(cue)]
+
+        def side(found):
+            if not found:
+                return None
+            return {"rendering": found["example"] or found["rendering"], "share": found["share"],
+                    "variants": [{"rendering": v["rendering"], "cues": cues(v["lines"])}
+                                 for v in found["variants"]],
+                    "missing": cues(found["missing"])}
+
+        out = []
+        for row in rows:
+            entry = saved.get(key_terms.fold(row["term"]))
+            out.append({
+                "term": row["term"], "kind": row["kind"], "count": len(row["lines"]),
+                "lines": [{"cue": cue[n] if n < len(cue) else None,
+                           "start": segments[n].get("start"), "text": texts[n],
+                           "ours": renders[n],
+                           "dub": official["lines"][n] if official else ""}
+                          for n in row["lines"]],
+                "ours": side(row["ours"]) if any(renders) else None,
+                "dub": side(row.get("dub")),
+                "saved": {"id": entry.id, "rendering": entry.phrase,
+                          "reviewed": entry.status == "reviewed"} if entry else None,
+                "holds": cues(row.get("holds") or []) if entry else [],
+            })
+        known = {key_terms.fold(r["term"]) for r in out}
+        # Saved wording for a term this episode never says still belongs to
+        # the show; listed after, so a person sees everything it keeps.
+        others = [{"term": e.source_form, "rendering": e.phrase, "id": e.id,
+                   "reviewed": e.status == "reviewed"}
+                  for k, e in sorted(saved.items()) if k not in known]
+        return {"locale": locale, "show": bool(show), "rows": out, "other_saved": others,
+                "official": {"title": official["title"]} if official else None}
+
     def running(path: str) -> dict | None:
         return next((j for j in store.list() if j.get("kind") == "analyze"
                      and j.get("status") in ("queued", "running")
@@ -470,6 +552,8 @@ def build_router(config, store) -> APIRouter:
                 "structure": subtitle_roles.structure(
                     styled, max((float(line["end"]) for line in lines), default=0.0))
                 if styled else [],
+                # Names and terms the episode keeps saying (doblarr.key_terms).
+                "terms": terms_of(script, data, lines, ident),
                 # The few questions worth a person's time (doblarr.doubts).
                 "doubts": doubts.queue(lines, names, dialogue=clues, suggestions=suggestions,
                                        reader=read_lines),
@@ -595,6 +679,44 @@ def build_router(config, store) -> APIRouter:
         changed = membership_changed(ident, script, "lines moved by hand")
         return {"speaker": label, "character": character, "new_voice": new,
                 "baseline_changes": changed["changed"], "identity": ident}
+
+    @api.put("/api/analysis/terms")
+    def put_term(body: TermIn):
+        """Keep (or forget) the show's wording for one term. A person chose
+        it, so it is reviewed and every later translation of the show uses it."""
+        from dataclasses import replace
+
+        from ..knowledge import store as knowledge_store
+        from ..knowledge.models import Entry
+
+        ident = who(body.path)
+        show = show_ref_of(ident)
+        if not show:
+            raise HTTPException(409, "This episode is not linked to a show yet")
+        script = find(body.path, ident)[0]
+        locale = body.locale or (target_of_script(script, _read(script)) if script else "")
+        if not locale:
+            raise HTTPException(422, "Which language is this wording for?")
+        source = body.source.strip()
+        rendering = body.rendering.strip()
+        same = [e for e in show_terms(show, locale)
+                if key_terms.fold(e.source_form) == key_terms.fold(source)]
+        if not rendering:
+            for entry in same:
+                knowledge_store.save_entry(db, replace(entry, status="retired", revision=1))
+            return {"term": source, "rendering": None}
+        if same:
+            entry = knowledge_store.save_entry(db, replace(
+                same[0], phrase=rendering, status="reviewed", locale=locale, revision=1))
+            for extra in same[1:]:
+                knowledge_store.save_entry(db, replace(extra, status="retired", revision=1))
+        else:
+            entry = knowledge_store.save_entry(db, Entry(
+                phrase=rendering, kind="term", locale=locale, source_form=source,
+                source_lang=language_of(script) if script else None, scope="show",
+                scope_ref=show, status="reviewed",
+                usage="kept from the episode analysis's names and terms"))
+        return {"term": source, "rendering": entry.phrase, "id": entry.id}
 
     @api.put("/api/analysis/line")
     def move_line(body: LineIn):
