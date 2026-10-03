@@ -26,6 +26,7 @@ from .logging_setup import attach_log_stream
 from .routes import adaptive as adaptive_routes
 from .routes import analysis as analysis_routes
 from .routes import audio_languages as audio_language_routes
+from .routes import cast as cast_routes
 from .routes import characters as character_routes
 from .routes import configuration as configuration_routes
 from .routes import jobs as job_routes
@@ -179,6 +180,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(catalog_routes.build_router(config, services, db))
     api.include_router(character_routes.build_router(config, services, db))
     api.include_router(narrative_routes.build_router(config, store))
+    api.include_router(cast_routes.build_router(config, db))
     api.include_router(template_routes.build_router(config, db))
     api.include_router(adaptive_routes.build_router(config, store, bus))
     api.include_router(watch_routes.build_router(config, store))
