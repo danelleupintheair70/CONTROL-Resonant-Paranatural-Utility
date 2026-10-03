@@ -2,9 +2,9 @@
 
 An analysis learns who speaks from the episode itself. A public catalogue
 already knows the cast of a published show: each character's role, gender,
-sometimes an age, a description and the original voice actors. This module
-fetches that list once per series, so later stages can match what they hear
-and see against real characters instead of naming voices from scratch.
+sometimes an age, a description and the voice actors in each language. This
+module fetches that list once per series, so later stages can match what they
+hear and see against real characters instead of naming voices from scratch.
 
 Nothing here runs on its own and nothing is guessed:
 
@@ -20,24 +20,30 @@ Nothing here runs on its own and nothing is guessed:
 - `import_characters` creates series characters from the cast, or attaches the
   published facts to a character that already has the name. It never renames
   or overwrites a character.
+- `merged_cast` lays the records of several catalogues side by side: one row
+  per character with the sources that list it and every language's voices.
+  Where catalogues disagree (gender, age) the row says so; nothing picks one.
 
-The catalogue today is AniList (anime), read through Prompture's keyless
-AniList reader.
+AniList is the first choice; ANN, MyAnimeList (Jikan) and Bangumi add dub
+casts and other scripts (`doblarr.catalogues`). A record's id carries its
+source (`<series>#ann`, `<series>#ann#s2`); AniList's keeps the plain id
+(`<series>`, `<series>#s2`) it had before there were other sources.
 """
 
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from . import identity
+from . import catalogues, identity
+from .catalogues.anilist import AniList
+from .catalogues.base import ROLES, CastProvider, name_key
 from .studio import records
 
 KIND = "published_cast"
-SOURCE = "anilist"
-ROLES = ("MAIN", "SUPPORTING", "BACKGROUND")
+SOURCE = catalogues.PRIMARY
+__all__ = ["ROLES", "name_key"]
 
 # "episode 14", "episodes 3 and 5", "Episode #4", "episodes 7-9", "ep. 12"
 _EPISODES = re.compile(
@@ -48,30 +54,33 @@ _RANGE = re.compile(r"(\d{1,4})\s*(?:-|–|to)\s*(\d{1,4})")
 # Catalogue formats that fit a show or a film, for ordering search results.
 SHOW_FORMATS = ("TV", "TV_SHORT", "ONA")
 FILM_FORMATS = ("MOVIE",)
-# Romanizations of one long vowel: Hyūga, Hyuuga, Hyuga; Kōichi, Kouichi.
-_LONG_VOWELS = (("ou", "o"), ("oo", "o"), ("uu", "u"), ("aa", "a"), ("ii", "i"), ("ee", "e"))
 
 SearchFn = Callable[..., list[dict]]
 ReadFn = Callable[..., Any]
 
 
-def _prompture_search(query: str, **kwargs: Any) -> list[dict]:
-    try:
-        from prompture.tools.web import search_anilist
-    except ImportError as exc:  # pragma: no cover - depends on the installed Prompture
-        raise RuntimeError("the published cast needs prompture>=1.13.6 (the AniList reader); "
-                           "reinstall Doblarr's requirements") from exc
-    return search_anilist(query, **kwargs)
+def record_id(series_id: str, season: int | None = None, source: str = SOURCE) -> str:
+    rid = series_id if source == SOURCE else f"{series_id}#{source}"
+    return f"{rid}#s{int(season)}" if season is not None else rid
 
 
-def _prompture_read(url: str, **kwargs: Any) -> Any:
-    from prompture.tools.web import read_url
+def source_of(record: dict) -> str:
+    """A record's catalogue; records from before there were others are AniList."""
+    return str(record.get("source") or SOURCE)
 
-    return read_url(url, **kwargs)
 
-
-def record_id(series_id: str, season: int | None = None) -> str:
-    return f"{series_id}#s{int(season)}" if season is not None else series_id
+def _provider(source: str | None, *, search_fn: SearchFn | None = None,
+              read_fn: ReadFn | None = None, url: str = "") -> CastProvider:
+    # search_fn/read_fn are Prompture-shaped stand-ins for AniList (tests, or a
+    # caller that already holds a reader).
+    if search_fn is not None or read_fn is not None:
+        return AniList(search_fn=search_fn, read_fn=read_fn)
+    if source:
+        return catalogues.provider(source)
+    found = catalogues.for_url(url)
+    if found is None:
+        raise ValueError(f"{url} is not a title page of a known catalogue")
+    return found
 
 
 def episode_mentions(text: str) -> list[int]:
@@ -114,7 +123,7 @@ def series_title(db, series_id: str) -> str:
 
 
 def search(query: str, *, kind: str = "", max_results: int = 8,
-           search_fn: SearchFn | None = None) -> list[dict]:
+           search_fn: SearchFn | None = None, source: str = SOURCE) -> list[dict]:
     """Catalogue entries that might be this title, best match first. Stores nothing.
 
     `kind` ("show" or "movie", from the series id) moves the entries of that
@@ -123,14 +132,24 @@ def search(query: str, *, kind: str = "", max_results: int = 8,
     query = " ".join(str(query or "").split())
     if not query:
         raise ValueError("a search needs a title")
-    hits = (search_fn or _prompture_search)(query, max_results=max_results)
+    hits = _provider(source, search_fn=search_fn).search(query, max_results=max_results)
     preferred = {"show": SHOW_FORMATS, "movie": FILM_FORMATS}.get(kind, ())
     if preferred:
         hits = sorted(hits, key=lambda h: h.get("format") not in preferred)
-    return [{"source": SOURCE, "id": h.get("id"), "title": h.get("title"),
-             "titles": h.get("titles") or {}, "year": h.get("year"),
-             "format": h.get("format"), "episodes": h.get("episodes"), "url": h.get("url")}
-            for h in hits]
+    return hits
+
+
+def search_all(query: str, *, kind: str = "", max_results: int = 5,
+               sources: Iterable[str] | None = None) -> dict:
+    """Every catalogue's entries for a title; one that cannot answer is listed as skipped."""
+    found: dict[str, list[dict]] = {}
+    skipped: dict[str, str] = {}
+    for name in sources or list(catalogues.PROVIDERS):
+        try:
+            found[name] = search(query, kind=kind, max_results=max_results, source=name)
+        except (catalogues.Unreachable, LookupError, RuntimeError) as exc:
+            skipped[name] = str(exc)
+    return {"hits": found, "skipped": skipped}
 
 
 def _character(c: dict) -> dict:
@@ -150,58 +169,85 @@ def _character(c: dict) -> dict:
 
 
 def link(db, series_id: str, url: str, *, season: int | None = None,
-         max_characters: int = 100, read_fn: ReadFn | None = None) -> dict:
-    """Record that a person chose this catalogue entry for the series, with its cast."""
+         max_characters: int = 100, read_fn: ReadFn | None = None,
+         source: str | None = None, why: str = "") -> dict:
+    """Record that a person chose this catalogue entry for the series, with its cast.
+
+    The catalogue is the one whose pages the URL belongs to, unless named.
+    `why` keeps the person's reason when they confirmed a suggested match.
+    """
     if not records.get(db, "series", series_id):
         raise KeyError(f"unknown series {series_id}")
-    result = (read_fn or _prompture_read)(url, max_characters=max_characters, use_cache=False)
-    meta = getattr(result, "meta", None) or {}
-    if getattr(result, "reader", "") != SOURCE or not isinstance(meta.get("characters"), list):
-        raise ValueError(f"{url} is not an AniList title page")
-    characters = [_character(c) for c in meta["characters"] if c.get("name")]
+    reader = _provider(source, read_fn=read_fn, url=url)
+    found = reader.read(url, max_characters=max_characters, fresh=True)
+    characters = [_character(c) for c in found["characters"] if c.get("name")]
     document = {
         "series_id": series_id,
         "season": season,
-        "source": SOURCE,
-        "source_id": meta.get("id"),
-        "url": meta.get("page_url") or url,
-        "title": getattr(result, "title", "") or "",
-        "titles": meta.get("titles") or {},
-        "format": meta.get("format"),
-        "year": meta.get("year"),
-        "episodes": meta.get("episodes"),
+        "source": reader.name,
+        "source_id": found.get("source_id"),
+        "url": found.get("url") or url,
+        "title": found.get("title") or "",
+        "titles": found.get("titles") or {},
+        "format": found.get("format"),
+        "year": found.get("year"),
+        "episodes": found.get("episodes"),
         "characters": characters,
-        "complete": not meta.get("more_characters"),
+        "staff": found.get("staff") or [],
+        "complete": bool(found.get("complete", True)),
         "linked_by": "person",
         "fetched_at": records.now_marker(),
     }
-    rid = record_id(series_id, season)
+    if why:
+        document["why"] = str(why)[:400]
+    rid = record_id(series_id, season, reader.name)
     current = records.get(db, KIND, rid)
     return records.put(db, KIND, rid, document, scope=series_id,
                        base_revision=current["revision"] if current else 0)
 
 
-def refresh(db, series_id: str, *, season: int | None = None,
+def refresh(db, series_id: str, *, season: int | None = None, source: str | None = None,
             read_fn: ReadFn | None = None) -> dict:
     """Fetch the linked entry again (the catalogue may have grown)."""
-    current = get(db, series_id, season=season)
+    current = get(db, series_id, season=season, source=source)
     if current is None:
         raise KeyError(f"{series_id} has no published cast linked")
     return link(db, series_id, current["url"], season=season,
-                max_characters=max(100, len(current.get("characters") or [])), read_fn=read_fn)
+                max_characters=max(100, len(current.get("characters") or [])), read_fn=read_fn,
+                source=None if read_fn else source_of(current), why=current.get("why") or "")
 
 
-def get(db, series_id: str, *, season: int | None = None) -> dict | None:
-    """The linked cast for a season, falling back to the whole-series link."""
-    if season is not None:
-        found = records.get(db, KIND, record_id(series_id, season))
+def get(db, series_id: str, *, season: int | None = None,
+        source: str | None = None) -> dict | None:
+    """The linked cast for a season, falling back to the whole-series link.
+
+    Without a source, AniList's record when there is one, else the first
+    other catalogue a person linked.
+    """
+    if source is not None:
+        if season is not None:
+            found = records.get(db, KIND, record_id(series_id, season, source))
+            if found is not None:
+                return found
+        return records.get(db, KIND, record_id(series_id, source=source))
+    for name in sources(db, series_id):
+        found = get(db, series_id, season=season, source=name)
         if found is not None:
             return found
-    return records.get(db, KIND, record_id(series_id))
+    return None
 
 
 def links(db, series_id: str) -> list[dict]:
     return records.list_latest(db, KIND, scope=series_id)
+
+
+def sources(db, series_id: str) -> list[str]:
+    """The catalogues linked for a series, AniList first, then in link order."""
+    names: list[str] = []
+    for record in sorted(links(db, series_id), key=lambda r: str(r.get("fetched_at") or "")):
+        if source_of(record) not in names:
+            names.append(source_of(record))
+    return sorted(names, key=lambda n: n != SOURCE)
 
 
 def candidates(cast: dict | None, *, episode: int | None = None) -> list[dict]:
@@ -230,22 +276,115 @@ def candidates(cast: dict | None, *, episode: int | None = None) -> list[dict]:
     return out
 
 
-def name_key(text: str) -> str:
-    """A name folded for matching only: accents, case and long-vowel spellings."""
-    text = "".join(ch for ch in unicodedata.normalize("NFKD", str(text or ""))
-                   if not unicodedata.combining(ch))
-    text = " ".join(re.sub(r"[^\w\s]", " ", text.casefold()).split())
-    for long, short in _LONG_VOWELS:
-        text = text.replace(long, short)
-    return text
-
-
 def _cast_names(c: dict) -> list[str]:
     return [n for n in (c.get("name"), c.get("native"), *(c.get("alternative") or [])) if n]
 
 
 def _words(c: dict) -> set[str]:
     return {w for n in _cast_names(c) for w in name_key(n).split()}
+
+
+def _same_person(a: dict, b: dict) -> bool:
+    """Two catalogues' entries are one character when a name matches, in any order."""
+    keys_a = {name_key(n) for n in _cast_names(a)}
+    keys_b = {name_key(n) for n in _cast_names(b)}
+    if keys_a & keys_b:
+        return True
+    words_a = {" ".join(sorted(k.split())) for k in keys_a if " " in k}
+    return bool(words_a & {" ".join(sorted(k.split())) for k in keys_b if " " in k})
+
+
+def merged_cast(db, series_id: str, *, season: int | None = None) -> dict:
+    """Every linked catalogue's cast side by side, one row per character.
+
+    Each row keeps which sources list the character and every voice by
+    language, each voice with the sources that credit it. Facts the sources
+    disagree on are listed under `conflicts` and on the row; none is chosen.
+    """
+    rows: list[dict] = []
+    used: list[dict] = []
+    seen_values: list[dict] = []
+    for name in sources(db, series_id):
+        record = get(db, series_id, season=season, source=name)
+        if record is None:
+            continue
+        used.append({"source": name, "title": record.get("title"), "url": record.get("url"),
+                     "season": record.get("season"), "complete": record.get("complete"),
+                     "fetched_at": record.get("fetched_at"), "why": record.get("why") or "",
+                     "characters": len(record.get("characters") or []),
+                     "staff": record.get("staff") or []})
+        for c in record.get("characters") or []:
+            at = next((i for i, r in enumerate(rows)
+                       if name not in r["sources"] and _same_person(r, c)), None)
+            if at is None:
+                rows.append({**c, "alternative": list(c.get("alternative") or []),
+                             "sources": [], "voice_actors": [], "conflicts": [], "urls": {}})
+                seen_values.append({})
+                at = len(rows) - 1
+            row, values = rows[at], seen_values[at]
+            row["sources"].append(name)
+            row["urls"][name] = c.get("url")
+            known = {name_key(n) for n in _cast_names(row)}
+            for alias in _cast_names(c):
+                if name_key(alias) not in known:
+                    row["alternative"].append(alias)
+                    known.add(name_key(alias))
+            for field in ("role", "gender", "age", "description", "native"):
+                if c.get(field) and not row.get(field):
+                    row[field] = c[field]
+            for field in ("gender", "age"):
+                if c.get(field):
+                    values.setdefault(field, {})[name] = c[field]
+            for v in c.get("voice_actors") or []:
+                same = next((x for x in row["voice_actors"]
+                             if x.get("language") == v.get("language")
+                             and name_key(x["name"]) == name_key(v.get("name") or "")), None)
+                if same is None:
+                    row["voice_actors"].append({**v, "sources": [name]})
+                elif name not in same["sources"]:
+                    same["sources"].append(name)
+    conflicts = []
+    for row, values in zip(rows, seen_values, strict=True):
+        for field, seen in values.items():
+            if len({str(v).casefold() for v in seen.values()}) > 1:
+                row["conflicts"].append(field)
+                conflicts.append({"name": row["name"], "field": field, "values": seen})
+    return {"series_id": series_id, "season": season, "sources": used, "characters": rows,
+            "conflicts": conflicts}
+
+
+def suggest_links(db, series_id: str, source: str, *, season: int | None = None,
+                  max_results: int = 5) -> list[dict]:
+    """Entries of another catalogue that may be the title already linked, likeliest first.
+
+    Searches by the linked title and ranks by matching title, year and episode
+    count. Stores nothing: a person confirms one with `link(..., why=...)`.
+    """
+    linked = get(db, series_id, season=season)
+    if linked is None:
+        raise KeyError(f"{series_id} has no published cast linked")
+    titles = [str(t) for t in [linked.get("title"), *(linked.get("titles") or {}).values()]
+              if t]
+    if not titles:
+        raise ValueError("the linked entry has no title to search with")
+    query = next((t for t in titles if t.isascii()), titles[0])
+    hits = search(query, kind="movie" if series_id.startswith("movie:") else "show",
+                  max_results=max_results, source=source)
+    known = {name_key(t) for t in titles}
+
+    def checks(h: dict) -> tuple[bool, bool, bool]:
+        names = {name_key(str(t)) for t in [h.get("title"), *(h.get("titles") or {}).values()]
+                 if t}
+        return (bool(known & names),
+                bool(h.get("year") and h.get("year") == linked.get("year")),
+                bool(h.get("episodes") and h.get("episodes") == linked.get("episodes")))
+
+    out = []
+    for h in sorted(hits, key=lambda h: tuple(not ok for ok in checks(h))):
+        reasons = [label for label, ok in zip(("same title", "same year", "same episode count"),
+                                              checks(h), strict=True) if ok]
+        out.append({**h, "why": ", ".join(reasons) or "title search only"})
+    return out
 
 
 def match_existing(series_characters: list[dict], cast: list[dict], member: dict
@@ -274,7 +413,8 @@ def match_existing(series_characters: list[dict], cast: list[dict], member: dict
 
 
 def import_characters(db, series_id: str, *, season: int | None = None,
-                      roles: Iterable[str] = ("MAIN",), names: Iterable[str] | None = None) -> dict:
+                      roles: Iterable[str] = ("MAIN",), names: Iterable[str] | None = None,
+                      source: str | None = None) -> dict:
     """Create series characters from the linked cast, or annotate existing ones.
 
     Only the given roles (or the given names) are imported. A character that
@@ -282,11 +422,13 @@ def import_characters(db, series_id: str, *, season: int | None = None,
     (`match_existing`) keeps its name; it gains the published facts once and
     the published name as an alias, and is reported as matched. A name part
     that fits several cast members creates nothing and is reported as
-    ambiguous, for a person to settle.
+    ambiguous, for a person to settle. The published facts carry the voices
+    every linked catalogue credits, each with its sources.
     """
-    cast = get(db, series_id, season=season)
+    cast = get(db, series_id, season=season, source=source)
     if cast is None:
         raise KeyError(f"{series_id} has no published cast linked")
+    merged = merged_cast(db, series_id, season=season)["characters"]
     wanted_roles = {r.upper() for r in roles}
     wanted_names = {identity._fold(n) for n in names} if names is not None else None
     created, matched, ambiguous = [], [], []
@@ -300,9 +442,14 @@ def import_characters(db, series_id: str, *, season: int | None = None,
                 continue
         elif c.get("role") not in wanted_roles:
             continue
-        published = {"source": cast["source"], "source_id": c.get("source_id"),
+        row = next((r for r in merged if source_of(cast) in r["sources"]
+                    and _same_person(r, c)), None)
+        published = {"source": source_of(cast), "source_id": c.get("source_id"),
                      "url": c.get("url"), "role": c.get("role"), "gender": c.get("gender"),
-                     "age": c.get("age"), "voice_actors": c.get("voice_actors") or [],
+                     "age": c.get("age"),
+                     "voice_actors": (row or {}).get("voice_actors") or c.get("voice_actors")
+                     or [],
+                     "sources": (row or {}).get("sources") or [source_of(cast)],
                      "linked_at": records.now_marker()}
         existing, rivals = match_existing(before, members, c)
         if rivals:

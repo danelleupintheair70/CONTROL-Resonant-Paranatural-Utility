@@ -3,9 +3,10 @@
     doblarr check                         # ping the voicebox service
     doblarr dub MOVIE --to es --from ko [--subs FILE] [--dry-run]
     doblarr cast series                   # series ids and titles
-    doblarr cast search SERIES_ID [--query TITLE]
-    doblarr cast link SERIES_ID URL [--season N]
-    doblarr cast show SERIES_ID [--season N] [--episode N]
+    doblarr cast search SERIES_ID [--query TITLE] [--source anilist|ann|jikan|bangumi|all]
+    doblarr cast suggest SERIES_ID --source ann   # entries matching the linked title
+    doblarr cast link SERIES_ID URL [--season N] [--why TEXT]
+    doblarr cast show SERIES_ID [--season N] [--episode N] [--merged]
     doblarr cast import SERIES_ID [--roles MAIN,SUPPORTING | --names A,B]
 """
 
@@ -81,11 +82,20 @@ def _cmd_dub(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def _print_hits(hits: list[dict]) -> None:
+    for hit in hits:
+        episodes = hit["episodes"] and f"{hit['episodes']} eps"
+        facts = ", ".join(str(f) for f in (hit["format"], hit["year"], episodes) if f)
+        why = f"  [{hit['why']}]" if hit.get("why") else ""
+        print(f"  {hit['url']}  {hit['title']} ({facts}){why}")
+
+
 def _cmd_cast(args: argparse.Namespace, config: Config) -> int:
-    from . import published_cast
+    from . import catalogues, published_cast
     from .store import Database
     from .studio import records
 
+    catalogues.configure_from(config)
     db = Database(config.db_path)
     try:
         if args.action == "series":
@@ -101,15 +111,26 @@ def _cmd_cast(args: argparse.Namespace, config: Config) -> int:
             if not query:
                 print("no title known for this series; pass --query")
                 return 1
-            print(f"searching AniList for {query!r} (sends the title to anilist.co)")
             kind = "movie" if args.series.startswith("movie:") else "show"
-            for hit in published_cast.search(query, kind=kind):
-                episodes = hit["episodes"] and f"{hit['episodes']} eps"
-                facts = ", ".join(str(f) for f in (hit["format"], hit["year"], episodes) if f)
-                print(f"  {hit['url']}  {hit['title']} ({facts})")
+            wanted = list(catalogues.PROVIDERS) if args.source == "all" else [args.source]
+            hosts = ", ".join(catalogues.provider(n).host for n in wanted)
+            print(f"searching for {query!r} (sends the title to {hosts})")
+            found = published_cast.search_all(query, kind=kind, sources=wanted,
+                                              max_results=8 if len(wanted) == 1 else 5)
+            for name, hits in found["hits"].items():
+                print(f"{catalogues.provider(name).label}:")
+                _print_hits(hits)
+            for name, why in found["skipped"].items():
+                print(f"{catalogues.provider(name).label}: skipped ({why})")
+            return 0
+        if args.action == "suggest":
+            print(f"searching {catalogues.provider(args.source).host} for the linked title")
+            _print_hits(published_cast.suggest_links(db, args.series, args.source,
+                                                     season=args.season))
             return 0
         if args.action == "link":
-            published = published_cast.link(db, args.series, args.url, season=args.season)
+            published = published_cast.link(db, args.series, args.url, season=args.season,
+                                            why=args.why or "")
             print(f"linked {published['title']}: {len(published['characters'])} characters"
                   + ("" if published["complete"] else " (more exist; raise the limit)"))
             return 0
@@ -118,9 +139,21 @@ def _cmd_cast(args: argparse.Namespace, config: Config) -> int:
             if cast is None:
                 print("no published cast linked; run `doblarr cast search` then `link`")
                 return 1
+            if args.merged:
+                merged = published_cast.merged_cast(db, args.series, season=args.season)
+                for src in merged["sources"]:
+                    print(f"{src['source']}: {src['title']} <{src['url']}>")
+                for c in merged["characters"]:
+                    voices = "; ".join(f"{v['language'] or '?'}: {v['name']}"
+                                       for v in c["voice_actors"]) or "-"
+                    flag = f"  (sources disagree on {', '.join(c['conflicts'])})" \
+                        if c["conflicts"] else ""
+                    print(f"  {c['name']:<24} [{'+'.join(c['sources'])}] {voices}{flag}")
+                return 0
             print(f"{cast['title']} <{cast['url']}>")
             for c in published_cast.candidates(cast, episode=args.episode):
-                voices = ", ".join(v["name"] for v in c["voice_actors"]) or "-"
+                voices = ", ".join(f"{v['name']} ({v.get('language') or '?'})"
+                                   for v in c["voice_actors"]) or "-"
                 print(f"  {c['name']:<24} {c['role']:<11} {c.get('gender') or '-':<7} "
                       f"voice: {voices}  ({c['why']})")
             return 0
@@ -134,7 +167,7 @@ def _cmd_cast(args: argparse.Namespace, config: Config) -> int:
             for item in done["ambiguous"]:
                 print(f"skipped {item['name']}: the name also fits {', '.join(item['also'])}")
             return 0
-    except (KeyError, ValueError, RuntimeError) as exc:
+    except (KeyError, ValueError, RuntimeError, LookupError) as exc:
         print(f"cast: {exc}")
         return 1
     finally:
@@ -168,20 +201,29 @@ def build_parser() -> argparse.ArgumentParser:
                    help="print the plan without running heavy stages "
                         "(overrides dub.dry_run in config)")
 
-    c = sub.add_parser("cast", help="link a series to its published cast (AniList)")
+    c = sub.add_parser("cast", help="link a series to its published cast (AniList, ANN, ...)")
     actions = c.add_subparsers(dest="action", required=True)
     actions.add_parser("series", help="list series ids and titles")
     cs = actions.add_parser("search", help="find catalogue entries for a series")
     cs.add_argument("series")
     cs.add_argument("--query", default=None, help="title to search (default: the series title)")
+    cs.add_argument("--source", default="anilist",
+                    choices=["anilist", "ann", "jikan", "bangumi", "all"])
+    cg = actions.add_parser("suggest", help="entries of another catalogue that match the link")
+    cg.add_argument("series")
+    cg.add_argument("--source", required=True, choices=["ann", "jikan", "bangumi", "anilist"])
+    cg.add_argument("--season", type=int, default=None)
     cl = actions.add_parser("link", help="link a series (or one season) to an entry")
     cl.add_argument("series")
-    cl.add_argument("url", help="an AniList title URL from `cast search`")
+    cl.add_argument("url", help="a title URL from `cast search` or `cast suggest`")
     cl.add_argument("--season", type=int, default=None)
+    cl.add_argument("--why", default=None, help="why this entry is the title (kept on record)")
     cw = actions.add_parser("show", help="show the linked cast, optionally for one episode")
     cw.add_argument("series")
     cw.add_argument("--season", type=int, default=None)
     cw.add_argument("--episode", type=int, default=None)
+    cw.add_argument("--merged", action="store_true",
+                    help="every linked catalogue side by side, voices by language")
     ci = actions.add_parser("import", help="create series characters from the linked cast")
     ci.add_argument("series")
     ci.add_argument("--season", type=int, default=None)
