@@ -466,23 +466,27 @@ def enforce(job, translator=None, glossary: dict[str, str] | None = None) -> dic
         text = seg.text_translated or ""
         lacking = {k: v for k, v in needed.items() if not says(text, v)}
         if lacking and revise_line is not None and text.strip():
-            swaps = "; ".join(f'"{k}" must be "{v}"' for k, v in lacking.items())
-            try:
-                better = revise_line(
-                    text, language,
-                    f"Keep this show's set wording. In this line {swaps}. Change only those "
-                    "words (and the articles or agreement they need); keep the meaning, the "
-                    "tone and the length.")
-            except Exception:  # noqa: BLE001 - a line that cannot be revised keeps its finding
-                better = None
-            if better and better.strip() and all(says(better, v) for v in needed.values()):
-                from . import dialect
+            # The rewrite sees the source line: told only '"harbor" must be
+            # "puerto"', a model cannot tell which Spanish word was the harbor.
+            swaps = "; ".join(f'"{k}" is "{v}"' for k, v in needed.items())
+            instruction = (
+                f'This line translates "{seg.text_src}". The show always says these terms '
+                f"one way: {swaps}. Replace the words that render those terms with exactly "
+                "that wording (adjusting articles and agreement), and change nothing else.")
+            for _attempt in range(2):
+                try:
+                    better = revise_line(text, language, instruction)
+                except Exception:  # noqa: BLE001 - a line that cannot be revised keeps its finding
+                    break
+                if better and better.strip() and all(says(better, v) for v in needed.values()):
+                    from . import dialect
 
-                if not (dialect.applies(language) and dialect.markers(better)):
-                    seg.text_translated = text = better.strip()
-                    seg.tts_text = ""
-                    counts["revised"] += 1
-                    lacking = {}
+                    if not (dialect.applies(language) and dialect.markers(better)):
+                        seg.text_translated = text = better.strip()
+                        seg.tts_text = ""
+                        counts["revised"] += 1
+                        lacking = {}
+                        break
         observed = []
         if lacking:
             counts["open"] += 1

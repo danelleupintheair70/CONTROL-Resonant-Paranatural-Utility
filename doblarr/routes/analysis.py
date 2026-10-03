@@ -705,15 +705,18 @@ def build_router(config, store) -> APIRouter:
             for entry in same:
                 knowledge_store.save_entry(db, replace(entry, status="retired", revision=1))
             return {"term": source, "rendering": None}
+        # The wording the subtitles say, not the original audio's language.
+        said_in = (str(_read(script).get("script_lang") or "") or None) if script else None
         if same:
             entry = knowledge_store.save_entry(db, replace(
-                same[0], phrase=rendering, status="reviewed", locale=locale, revision=1))
+                same[0], phrase=rendering, status="reviewed", locale=locale,
+                source_lang=said_in or same[0].source_lang, revision=1))
             for extra in same[1:]:
                 knowledge_store.save_entry(db, replace(extra, status="retired", revision=1))
         else:
             entry = knowledge_store.save_entry(db, Entry(
                 phrase=rendering, kind="term", locale=locale, source_form=source,
-                source_lang=language_of(script) if script else None, scope="show",
+                source_lang=said_in, scope="show",
                 scope_ref=show, status="reviewed",
                 usage="kept from the episode analysis's names and terms"))
         return {"term": source, "rendering": entry.phrase, "id": entry.id}

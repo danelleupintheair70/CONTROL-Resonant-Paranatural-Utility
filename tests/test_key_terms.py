@@ -86,7 +86,9 @@ def test_a_glossary_term_said_another_way_is_rewritten():
     counts = key_terms.enforce(job, reviser, {"Harbor Guild": "el Gremio del Puerto"})
     assert counts["revised"] == 1 and counts["open"] == 0
     assert job.segments[4].text_translated == "El Gremio del Puerto mandó un mensaje."
-    assert '"Harbor Guild" must be "el Gremio del Puerto"' in reviser.asked[0]
+    # The rewrite sees the source line and the show's wording for its terms.
+    assert '"Harbor Guild" is "el Gremio del Puerto"' in reviser.asked[0]
+    assert SOURCE[4] in reviser.asked[0]
 
 
 def test_a_rewrite_that_still_misses_the_term_keeps_a_finding():
