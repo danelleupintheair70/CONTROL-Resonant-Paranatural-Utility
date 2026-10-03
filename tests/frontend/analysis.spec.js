@@ -1,14 +1,21 @@
 import { test, expect } from '@playwright/test';
+import { mockEpisodeLookup, mockLibraryItems } from './title-mocks.js';
+
+const LIBRARY = { items: [{
+  title: 'Harbor Lights', tvdb_id: 81234, media_type: 'show', source: 'Plex · TV Shows',
+  original: '??', path: '/shows/HarborLights', audio_langs: ['en', 'ja'], label: 'available',
+}], target_languages: ['en', 'es'], counts: {} };
+
+const EPISODES = {
+  title: 'Harbor Lights', total: 1, downloaded: 1, dubbed: 0, episodes: [
+    { id: 2, season: 1, episode: 2, title: 'The Storm Makes Its Move', downloaded: true,
+      path: '/shows/HarborLights/e02.mkv', audio_langs: ['en', 'ja'], status: 'needs-dub', dubbed: false }] };
 
 async function show(page) {
-  await page.route('**/api/library', route => route.fulfill({ json: { items: [{
-    title: 'Harbor Lights', tvdb_id: 81234, media_type: 'show', source: 'Plex · TV Shows',
-    original: '??', path: '/shows/HarborLights', audio_langs: ['en', 'ja'], label: 'available',
-  }], target_languages: ['en', 'es'], counts: {} } }));
-  await page.route('**/api/series/81234/episodes?*', route => route.fulfill({ json: {
-    title: 'Harbor Lights', total: 1, downloaded: 1, dubbed: 0, episodes: [
-      { id: 2, season: 1, episode: 2, title: 'The Storm Makes Its Move', downloaded: true,
-        path: '/shows/HarborLights/e02.mkv', audio_langs: ['en', 'ja'], status: 'needs-dub', dubbed: false }] } }));
+  await page.route('**/api/library', route => route.fulfill({ json: LIBRARY }));
+  await mockLibraryItems(page, LIBRARY);
+  await page.route('**/api/series/81234/episodes?*', route => route.fulfill({ json: EPISODES }));
+  await mockEpisodeLookup(page, 81234, EPISODES);
   await page.route('**/api/voices', route => route.fulfill({ json: { voices: [] } }));
 }
 

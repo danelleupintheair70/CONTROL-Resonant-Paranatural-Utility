@@ -96,8 +96,11 @@ def build_router(config, services, store, bus):
         report = read_json(Path(job["report_file"])) if job.get("report_file") else {}
         return path.is_file() and not report.get("dry_run", False)
 
-    def detail(tvdb_id, target, refresh=False):
+    def detail(tvdb_id, target, refresh=False, only=None):
+        """The show's episodes with their dub status; `only` keeps one episode id."""
         show, episodes, files = inventory(tvdb_id, refresh)
+        if only is not None:
+            episodes = [ep for ep in episodes if ep.get("id") == only]
         indexed = {f["id"]: f for f in files}
         metadata = _name_to_iso2((show.get("originalLanguage") or {}).get("name"))
         # A show only Plex has carries no original language: the episode files
@@ -245,6 +248,16 @@ def build_router(config, services, store, bus):
         refresh: bool = False,
     ):
         return detail(tvdb_id, target_lang, refresh)
+
+    @api.get("/api/series/{tvdb_id}/episodes/{episode_id}")
+    def get_episode(tvdb_id: int, episode_id: int, target_lang: LanguageQuery):
+        """One episode and its show, so an episode page doesn't list the whole series."""
+        result = detail(tvdb_id, target_lang, only=episode_id)
+        if not result["episodes"]:
+            raise HTTPException(404, "Episode not found in Sonarr or Plex")
+        return {"episode": result["episodes"][0], "target_lang": target_lang,
+                "show": {k: result[k] for k in ("title", "source", "path", "original")}
+                | {"tvdb_id": tvdb_id}}
 
     @api.put("/api/series/{tvdb_id}/original-language")
     def set_original(tvdb_id: int, body: OriginalIn):

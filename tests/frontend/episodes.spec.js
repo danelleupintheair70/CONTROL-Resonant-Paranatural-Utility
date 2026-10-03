@@ -1,20 +1,25 @@
 import { test, expect } from '@playwright/test';
+import { mockEpisodeLookup, mockLibraryItems } from './title-mocks.js';
+
+const LIBRARY = { items: [{
+  title: 'Mushi-Shi', tvdb_id: 79214, media_type: 'show', source: 'Sonarr · Shows',
+  original: 'ja', path: '/shows/Mushi-Shi', audio_langs: ['en', 'ja'], label: 'available',
+}], target_languages: ['en', 'es'], counts: {} };
+
+const episodesFor = target => ({ title: 'Mushi-Shi', total: 3, downloaded: 1, dubbed: target === 'en' ? 1 : 0,
+  episodes: [
+    { id: 1, season: 1, episode: 1, title: 'The Green Seat', downloaded: true,
+      path: '/shows/Mushi-Shi/first.mkv', audio_langs: ['en', 'ja'], status: target === 'en' ? 'audio-present' : 'needs-dub', dubbed: target === 'en' },
+    { id: 2, season: 1, episode: 2, title: 'The Light of the Eyelid', downloaded: false, audio_langs: [], status: 'not-downloaded' },
+    { id: 3, season: 2, episode: 1, title: 'Banquet', downloaded: false, audio_langs: [], status: 'not-downloaded' },
+  ] });
 
 async function showPage(page) {
-  await page.route('**/api/library', route => route.fulfill({ json: { items: [{
-    title: 'Mushi-Shi', tvdb_id: 79214, media_type: 'show', source: 'Sonarr · Shows',
-    original: 'ja', path: '/shows/Mushi-Shi', audio_langs: ['en', 'ja'], label: 'available',
-  }], target_languages: ['en', 'es'], counts: {} } }));
-  await page.route('**/api/series/79214/episodes?*', route => {
-    const target = new URL(route.request().url()).searchParams.get('target_lang');
-    return route.fulfill({ json: { title: 'Mushi-Shi', total: 3, downloaded: 1, dubbed: target === 'en' ? 1 : 0,
-      episodes: [
-        { id: 1, season: 1, episode: 1, title: 'The Green Seat', downloaded: true,
-          path: '/shows/Mushi-Shi/first.mkv', audio_langs: ['en', 'ja'], status: target === 'en' ? 'audio-present' : 'needs-dub', dubbed: target === 'en' },
-        { id: 2, season: 1, episode: 2, title: 'The Light of the Eyelid', downloaded: false, audio_langs: [], status: 'not-downloaded' },
-        { id: 3, season: 2, episode: 1, title: 'Banquet', downloaded: false, audio_langs: [], status: 'not-downloaded' },
-      ] } });
-  });
+  await page.route('**/api/library', route => route.fulfill({ json: LIBRARY }));
+  await mockLibraryItems(page, LIBRARY);
+  await page.route('**/api/series/79214/episodes?*', route =>
+    route.fulfill({ json: episodesFor(new URL(route.request().url()).searchParams.get('target_lang')) }));
+  await mockEpisodeLookup(page, 79214, episodesFor);
   await page.route('**/api/voices', route => route.fulfill({ json: { voices: [{ id: 'warm', name: 'Warm storyteller' }] } }));
   await page.goto('/title/tvdb-79214');
   await expect(page.getByRole('heading', { name: 'Episodes', exact: true })).toBeVisible();

@@ -1,7 +1,8 @@
-import { NotPorted } from '../../shell/BootScreen.jsx';
+import { Library, libraryLoader } from './Library.jsx';
+import { Title, titleHandle, titleLoader } from './Title.jsx';
 
-// Routes for this area; see docs/react-migration.md.
+// The library grid and one title's page (a film, a show, or one episode).
 export const routes = [
-  { path: 'library', element: <NotPorted />, handle: { nav: 'Library', title: 'Library' } },
-  { path: 'title/*', element: <NotPorted />, handle: { nav: 'Library', title: 'Title' } },
+  { path: 'library', element: <Library />, loader: libraryLoader, handle: { nav: 'Library', title: 'Library' } },
+  { path: 'title/*', element: <Title />, loader: titleLoader, handle: titleHandle },
 ];

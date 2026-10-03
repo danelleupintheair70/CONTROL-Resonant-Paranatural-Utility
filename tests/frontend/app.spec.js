@@ -1,12 +1,16 @@
 import { test, expect } from '@playwright/test';
+import { mockLibraryItems } from './title-mocks.js';
 import { FIELD_BY_KEY } from '../../web/js/settings-model.js';
 
+const LIBRARY = {
+  target_languages: ['en', 'es'], counts: { needs_dub: 1 }, warnings: [],
+  items: [{ title: 'Test Film', year: 2024, tmdb_id: 42, original: 'ko',
+    source: 'Radarr', label: 'needs-dub', missing: ['en'], audio_langs: ['ko'] }],
+};
+
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/library', route => route.fulfill({ json: {
-    target_languages: ['en', 'es'], counts: { needs_dub: 1 }, warnings: [],
-    items: [{ title: 'Test Film', year: 2024, tmdb_id: 42, original: 'ko',
-      source: 'Radarr', label: 'needs-dub', missing: ['en'], audio_langs: ['ko'] }],
-  } }));
+  await page.route('**/api/library', route => route.fulfill({ json: LIBRARY }));
+  await mockLibraryItems(page, LIBRARY);
 });
 
 test('nested routes load modules and save real settings', async ({ page }) => {

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { mockLibraryItems } from './title-mocks.js';
 import { readFileSync } from 'node:fs';
 
 async function mockVoiceCatalog(page) {
@@ -89,11 +90,13 @@ test('a correction from review re-renders affected lines with updated knowledge'
 });
 
 test('a v2 recipe exports and applies a knowledge overlay', async ({ page }) => {
-  await page.route('**/api/library', route => route.fulfill({ json: {
+  const library = {
     target_languages: ['en', 'es'], counts: {},
     items: [{ title: 'Test Film', year: 2024, tmdb_id: 42, original: 'ko', source: 'Radarr',
       label: 'needs-dub', path: '/films/test-film.mkv', audio_langs: ['ko'], media_type: 'movie' }],
-  } }));
+  };
+  await page.route('**/api/library', route => route.fulfill({ json: library }));
+  await mockLibraryItems(page, library);
   await page.goto('/library');
   await page.request.put('/api/plan', { data: {
     path: '/films/test-film.mkv', title: 'Test Film',

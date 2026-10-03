@@ -10,10 +10,19 @@ from pydantic import BaseModel
 from .. import discovery, plex_labels
 from ..clients.plex import PlexError
 from ..config import Config
-from ..errors import ConfigError
+from ..errors import ConfigError, NotFoundError
 from ..jobs import Worker
 from ..library_service import LibraryService
 from ..services import Services
+
+
+def item_key(row: dict) -> str:
+    """A library row's identity in title URLs; matches itemKey() in the web UI."""
+    if row.get("tmdb_id"):
+        return f"tmdb-{row['tmdb_id']}"
+    if row.get("tvdb_id"):
+        return f"tvdb-{row['tvdb_id']}"
+    return f"t-{row.get('title')}" + (f"-{row['year']}" if row.get("year") else "")
 
 
 class PlexLabelsIn(BaseModel):
@@ -82,6 +91,16 @@ def build_router(config: Config, library: LibraryService, services: Services,
             "warnings": warnings,
             "items": with_known_originals(discovery.to_dicts(items)),
         }
+
+    @api.get("/api/library/item/{key:path}")
+    def library_item(key: str):
+        """One title by its URL key (tmdb-…, tvdb-…, t-<title>[-<year>]), from the last scan."""
+        items, _ = library.scan()
+        for row in discovery.to_dicts(items):
+            if item_key(row) == key:
+                return {"item": with_known_originals([row])[0],
+                        "target_languages": config["general"]["target_languages"]}
+        raise NotFoundError(f"{key} is not in the current library scan")
 
     @api.post("/api/plex/labels")
     def plex_sync_labels(body: PlexLabelsIn):

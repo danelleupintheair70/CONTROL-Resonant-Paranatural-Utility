@@ -136,6 +136,23 @@ def test_library_scan_cached_and_refresh(tmp_path, monkeypatch):
         assert calls["n"] == 2
 
 
+def test_library_item_by_url_key(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("doblarr.clients.radarr.RadarrClient.list_movies",
+                        lambda self: RADARR_MOVIES)
+    cfg = Config.load(_config(tmp_path, {
+        "web": {"api_key": API_KEY},
+        "connect": {"radarr_url": "http://r", "radarr_api_key": "k"},
+    }))
+    with TestClient(create_app(cfg)) as c:
+        listed = c.get("/api/library", headers=HEADERS).json()["items"][0]
+        r = c.get("/api/library/item/tmdb-9999", headers=HEADERS)
+        assert r.status_code == 200
+        assert r.json()["item"] == listed
+        assert r.json()["target_languages"] == cfg["general"]["target_languages"]
+        assert c.get("/api/library/item/tmdb-1", headers=HEADERS).status_code == 404
+
+
 def test_lifespan_starts_and_stops_threads(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = Config.load(_config(tmp_path, {}))
