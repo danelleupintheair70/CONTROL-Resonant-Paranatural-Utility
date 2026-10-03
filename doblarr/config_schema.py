@@ -94,6 +94,12 @@ class VoiceboxModel(_Section):
     concurrency: int = 1
     seed: int | None = None
     preview_engine: str = "kokoro"
+    # Chatterbox sampling (needs the jhd3197/voicebox fork). None keeps the
+    # engine default (0.5 / 0.5 / 0.8); a cast entry can override each one.
+    # cfg_weight near 0 stops a Japanese reference's accent leaking into Spanish.
+    exaggeration: float | None = None  # 0.25-2.0
+    cfg_weight: float | None = None  # 0-1
+    temperature: float | None = None  # 0.05-5.0
 
 
 class TranslateModel(_Section):

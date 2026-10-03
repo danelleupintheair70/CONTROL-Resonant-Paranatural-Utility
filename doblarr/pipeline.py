@@ -493,6 +493,9 @@ def run_job(
             "characters_identified": len(labels), "direction_layers": layered}
         return narrative_state
 
+    def _voicebox_sampling():
+        return {k: config["voicebox"].get(k) for k in synthesize.SAMPLING_KEYS}
+
     def _narrator_speakers():
         return {
             label
@@ -539,6 +542,7 @@ def run_job(
             character_notes=character_notes,
             clone_cleanup=config["dub"].get("clone_cleanup", False),
             borrow_voice=config["dub"].get("borrow_voice", True),
+            sampling=_voicebox_sampling(),
         )
         if db is not None and not dry_run and segments is None:
             save_characters(job, db, character_group, character_map)
@@ -877,6 +881,7 @@ def run_job(
             character_notes=character_notes,
             narrator_delivery=config["dub"].get("narrator_delivery", ""),
             narrator_speakers=_narrator_speakers(),
+            sampling=_voicebox_sampling(),
         )
         save_script(job, effective_work)
 
