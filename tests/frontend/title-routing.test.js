@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTitlePath, resolveTitleTab, titlePath } from '../../web/js/title-routing.js';
+import { parseTitlePath, resolveTitleTab, titlePath } from '../../ui/src/lib/title-routing.js';
 
 test('title routes round-trip encoded identities and episode tabs', () => {
   assert.deepEqual(parseTitlePath(titlePath('t-A/B & C', 42, 'jobs')), {

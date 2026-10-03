@@ -1,11 +1,16 @@
 import { test, expect } from '@playwright/test';
+import { mockLibraryItems } from './title-mocks.js';
+import { FIELD_BY_KEY } from '../../ui/src/lib/settings-model.js';
+
+const LIBRARY = {
+  target_languages: ['en', 'es'], counts: { needs_dub: 1 }, warnings: [],
+  items: [{ title: 'Test Film', year: 2024, tmdb_id: 42, original: 'ko',
+    source: 'Radarr', label: 'needs-dub', missing: ['en'], audio_langs: ['ko'] }],
+};
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/library', route => route.fulfill({ json: {
-    target_languages: ['en', 'es'], counts: { needs_dub: 1 }, warnings: [],
-    items: [{ title: 'Test Film', year: 2024, tmdb_id: 42, original: 'ko',
-      source: 'Radarr', label: 'needs-dub', missing: ['en'], audio_langs: ['ko'] }],
-  } }));
+  await page.route('**/api/library', route => route.fulfill({ json: LIBRARY }));
+  await mockLibraryItems(page, LIBRARY);
 });
 
 test('nested routes load modules and save real settings', async ({ page }) => {
@@ -65,14 +70,9 @@ test('failed manual enqueue keeps the form open and displays the server error', 
   await expect(page.locator('#ndQueue')).toBeEnabled();
 });
 
-test('every editable settings field has a backend config key', async ({ page, request }) => {
-  await page.goto('/settings');
+test('every editable settings field has a backend config key', async ({ request }) => {
   const config = await (await request.get('/api/config')).json();
-  const keys = await page.evaluate(async () => {
-    const { FIELD_BY_KEY } = await import('/js/settings-model.js');
-    return Object.keys(FIELD_BY_KEY);
-  });
-  for (const key of keys) {
+  for (const key of Object.keys(FIELD_BY_KEY)) {
     const [section, name] = key.split('.');
     expect(config[section], key).toHaveProperty(name);
   }

@@ -1,0 +1,11 @@
+/* Library grid: the inline styles of the vanilla Library page, as classes. */
+.library-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.library-sync { margin-left: auto; }
+.library-status { font-size: 13px; color: var(--muted); margin: -8px 0 16px; min-height: 18px; }
+.library-apply { margin-left: 8px; padding: 5px 12px; }
+.library-card { cursor: pointer; }
+.library-card-title { font-weight: 600; font-size: 13.5px; line-height: 1.3; }
+.library-card-year { color: var(--muted); font-size: 12px; }
+.library-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+.library-card-source { font-size: 11.5px; color: var(--muted); }
+.library-card-actions { display: flex; gap: 2px; flex-wrap: wrap; }

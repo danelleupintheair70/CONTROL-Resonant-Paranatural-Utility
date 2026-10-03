@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
-import { api, apiUrl } from '../../web/js/api.js';
-import { getJobs } from '../../web/js/jobs-data.js';
+import { api, apiUrl } from '../../ui/src/lib/api.js';
 
 const originalFetch = globalThis.fetch;
 beforeEach(() => {
@@ -51,14 +50,4 @@ test('unauthorized requests retry with the supplied key', async () => {
   await api('jobs');
   assert.equal(calls, 2);
   assert.equal(localStorage.getItem('doblarr_api_key'), 'new-key');
-});
-
-test('concurrent job reads share a request and recover after failure', async () => {
-  let calls = 0;
-  globalThis.fetch = async () => { calls++; return Response.json({ error: 'offline' }, { status: 503 }); };
-  await Promise.allSettled([getJobs(), getJobs(), getJobs()]);
-  assert.equal(calls, 1);
-  globalThis.fetch = async () => { calls++; return Response.json({ jobs: [] }); };
-  assert.deepEqual(await getJobs(), { jobs: [] });
-  assert.equal(calls, 2);
 });

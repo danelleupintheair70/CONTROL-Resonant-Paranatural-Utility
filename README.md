@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="web/logo.png" alt="Doblarr logo" width="160" />
+  <img src="ui/public/logo.png" alt="Doblarr logo" width="160" />
 </p>
 
 <h1 align="center">Doblarr</h1>
@@ -82,6 +82,7 @@ your platform/GPU before installing that extra. The default mode is dry-run.
 
 ```bash
 pip install -r requirements.txt          # core + FastAPI/uvicorn
+npm ci && npm run build:ui                # the web UI (Node 22+), into ui/dist
 cp config.example.yaml config.yaml        # set Radarr/Sonarr URLs + API keys
 python -m doblarr serve                    # http://127.0.0.1:6363
 ```
@@ -339,13 +340,13 @@ doblarr/
     voicebox.py     # voicebox HTTP client (transcribe, profiles, generate, audio)
     translator.py   # shared Prompture structured translation
   stages/           # one module per pipeline step (see table above)
-web/index.html      # application shell
-web/styles.css      # shared styles
-web/js/app.js       # routing, navigation and feature wiring
-web/js/settings-model.js # field metadata shared by settings and title plans
-web/js/api.js       # JSON requests, authentication and consistent errors
-web/js/jobs-data.js # coalesced job requests shared across screens
-web/js/             # settings, library, jobs and title feature controllers
+ui/                 # web UI (React + Vite), built into ui/dist
+  src/router.jsx    # every route, with the loader that fetches its data first
+  src/shell/        # sidebar, header, boot screen, new-dub dialog
+  src/pages/        # one folder per area: library + title, episode, dubs, voices, studio
+  src/components/   # pieces several pages use (media player, character picker, …)
+  src/lib/          # API transport, query cache, live events, pure helpers
+  src/styles/       # shared CSS (tokens, layout, one file per page)
 ```
 
 ## API
@@ -355,6 +356,8 @@ web/js/             # settings, library, jobs and title feature controllers
 | GET | `/api/health` | liveness (process up) |
 | GET | `/api/health/ready` | readiness (voicebox up + a source configured), 503 otherwise |
 | GET | `/api/library` | scan Radarr+Sonarr, classify every title (`?refresh=true` bypasses the scan cache) |
+| GET | `/api/library/item/{key}` | one title from the last scan by its URL key (`tmdb-…`, `tvdb-…`, `t-<title>-<year>`) |
+| GET | `/api/series/{tvdb_id}/episodes/{episode_id}` | one episode and its show, without building the whole series |
 | GET/POST | `/api/config` | read (redacted) / save config |
 | GET/POST | `/api/jobs` | list / enqueue dub jobs (`force: true` ignores cached artifacts) |
 | POST | `/api/jobs/clear-finished` | remove done+failed+cancelled jobs |
@@ -379,29 +382,50 @@ cancellation; if the server cannot be reached, remote generation may continue.
 ## Development
 
 ```bash
-pip install -e ".[dev]"   # app + pytest/pytest-cov/ruff/mypy/httpx
-python -m pytest -q       # test suite (no network or *arr services needed)
-python -m pytest -q --cov=doblarr --cov-report=term-missing   # with coverage
+pip install -e ".[dev]"   # app + pytest/pytest-cov/pytest-xdist/ruff/mypy/httpx
+python -m pytest -q -n auto            # test suite on every core (no network or *arr services needed)
+python -m pytest -q -n auto -m "not slow"   # skip the end-to-end audio renders (~1 min)
+python -m pytest -q -n auto --cov=doblarr --cov-report=term-missing   # with coverage
 ruff check .              # lint
 mypy doblarr/             # type check
 # pre-commit install      # optional: run ruff+mypy as git hooks (.pre-commit-config.yaml)
 ```
 
+`.\dev.ps1 validate` watches `doblarr/`, `tests/` and `ui/` and reruns the
+checks on every save: ruff (safe fixes applied), mypy and the fast pytest tier
+when Python changes; eslint, the node tests and the UI build when the UI
+changes. `.\dev.ps1 validate once` runs them a single time (`./dev.sh validate`
+on Linux/macOS). `check` runs everything CI does, slow tests and browser specs
+included.
+
+Tests never reach the network: `tests/conftest.py` makes every real HTTP request
+fail at once, so a test that forgets to fake a service fails fast instead of
+waiting out a connection timeout. Tests that render real audio end to end are
+marked `slow` by file (`SLOW_FILES` in the same conftest).
+
 ### Frontend checks
 
-The UI uses native JavaScript modules. There is no frontend build step and Node
-is needed only for development checks. Use Node 22 or newer:
+The UI is React, built with Vite. Use Node 22 or newer:
 
 ```bash
 npm ci
 npx playwright install chromium
-npm run check            # lint + API tests + browser regressions
+npm run dev:ui           # live-reload UI on :5363, /api proxied to a running server on :6363
+npm run build:ui         # production build into ui/dist (what `doblarr serve` serves)
+npm run check            # lint + unit tests + build + browser regressions
 npm test                 # fast API/helper tests only
-npm run test:browser     # settings, queue errors and title-plan browser flows
+npm run test:browser     # builds the UI, then runs the browser specs
 ```
 
+Every route in `ui/src/router.jsx` has a loader that fetches what the page
+needs before it renders: the first load shows one boot screen and later
+navigations a progress bar, so a deep link never paints a half-filled page.
+Data lives in one TanStack Query cache (`ui/src/lib/queries.js`); the SSE
+stream refreshes what an event changed.
+
 Browser tests start an isolated FastAPI server with temporary configuration and
-storage on port 8766; they do not use your media services or local config. They
+storage on port 8766 (`PW_PORT` changes it); they serve `ui/dist` (`UI_DIR`
+picks another build) and do not use your media services or local config. They
 use `.venv` when available, otherwise `python`; set `PYTHON` to choose another
 interpreter. Python tests share a `client_factory` fixture in `tests/conftest.py`
 for isolated API clients with automatic cleanup. Tests that exercise worker
@@ -414,12 +438,11 @@ python -m uvicorn doblarr.server:create_app --factory --reload --port 6363
 ```
 
 Settings defaults belong in `ConfigModel` in `doblarr/config_schema.py`.
-Presentation metadata belongs in `web/js/settings-model.js`; title plans reuse
-those field definitions. Controls inherited from the design mockup that had no
-backend setting have been removed. Add API calls through `api()` and shared job
-reads through `getJobs()` so authentication, error handling and concurrent reads
-stay consistent. Each feature controller receives navigation callbacks from
-`app.js`, keeping feature imports free of circular dependencies.
+Presentation metadata belongs in `ui/src/lib/settings-model.js`; title plans
+reuse those field definitions. Make API calls through `api()` in
+`ui/src/lib/api.js` and read shared data through the query objects, so
+authentication, errors and caching stay consistent. A page keeps its own
+classes in a CSS file next to it and reuses `ui/src/styles` for the rest.
 
 CI checks Python lint/types/tests and the frontend checks on pull requests and
 pushes to `dev`, `main` and `master`.

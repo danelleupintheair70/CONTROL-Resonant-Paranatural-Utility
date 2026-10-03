@@ -180,3 +180,15 @@ def test_analysing_an_episode_again_runs_the_way_its_first_analysis_did(client_f
     job = client.app.state.jobs.get(queued["queued"][0]["job_id"])
     assert (job.kind, job.source_lang, job.target_lang, job.target_locale) == (
         "analyze", "ja", "es", "es-419")
+
+
+def test_single_episode_matches_the_series_row(client_factory, tmp_path):
+    client = client_factory()
+    setup_series(client, tmp_path)
+    listed = client.get("/api/series/79214/episodes?target_lang=es").json()
+    one = client.get("/api/series/79214/episodes/2?target_lang=es").json()
+    assert one["episode"] == next(e for e in listed["episodes"] if e["id"] == 2)
+    assert one["show"] == {"title": "Quiet Valley", "source": "Sonarr · Shows",
+                           "path": str(tmp_path), "original": "ja", "tvdb_id": 79214}
+    assert one["target_lang"] == "es"
+    assert client.get("/api/series/79214/episodes/99?target_lang=es").status_code == 404

@@ -5,6 +5,14 @@
 # Needs an NVIDIA driver and the NVIDIA Container Toolkit on the host:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 # then check Settings > Hardware. The image is large (CUDA torch wheels).
+# The web UI (React), built once and copied into the app image.
+FROM node:22-slim AS ui
+WORKDIR /src
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY ui ./ui
+RUN npm run build:ui
+
 FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cu128
@@ -37,7 +45,7 @@ RUN pip install --upgrade pip \
 COPY pyproject.toml setup.py MANIFEST.in README.md LICENSE config.example.yaml ./
 COPY requirements.txt .
 COPY doblarr ./doblarr
-COPY web ./web
+COPY --from=ui /src/ui/dist ./ui/dist
 RUN pip install -r requirements.txt \
     && pip install ".[real]"
 

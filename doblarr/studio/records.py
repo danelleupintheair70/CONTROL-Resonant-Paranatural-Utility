@@ -23,7 +23,9 @@ KINDS = ("session", "reference", "alignment", "experiment", "variant", "audition
          # profile or an accepted narrative revision is never edited in place.
          "series", "media", "character", "profile", "voice_asset", "assignment",
          "association", "claim", "narrative", "snapshot", "visual", "template",
-         "decision", "feedback", "example", "migration")
+         "decision", "feedback", "example", "migration",
+         # A series' cast from a public catalogue (doblarr.published_cast).
+         "published_cast")
 # A document larger than this is a sign that media or a whole transcript is
 # being stored as state. Structured state stays small; artifacts go to disk.
 MAX_DOCUMENT_BYTES = 4 * 1024 * 1024

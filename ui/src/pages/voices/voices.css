@@ -1,0 +1,33 @@
+/* Knowledge page classes. Voices pages use ui/src/styles/pages/voices.css
+   and knowledge.css as they are. */
+.knowledge-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.knowledge-head h3 { font-size: 18px; margin: 0; }
+.knowledge-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
+.knowledge-card { padding: 16px 18px; }
+.knowledge-card-name { margin: 0; font-weight: 700; }
+.knowledge-card-locale { margin: 4px 0 0; font-size: 12.5px; }
+.knowledge-card-counts { margin: 8px 0 0; }
+.knowledge-card-actions { margin-top: 10px; }
+.knowledge-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 22px 0 12px; }
+.knowledge-panel { padding: 20px 24px; }
+.knowledge-filters { padding: 16px 20px; margin-bottom: 14px; }
+.knowledge-filter-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.knowledge-row { cursor: pointer; }
+.knowledge-strong { font-weight: 600; }
+.knowledge-cell { font-size: 13px; }
+.knowledge-col-locale { width: 130px; }
+.knowledge-col-scope { width: 110px; }
+.knowledge-col-status { width: 120px; }
+.knowledge-col-rules { width: 80px; }
+.knowledge-pager { margin-top: 10px; }
+.knowledge-entry { margin-top: 14px; }
+.knowledge-entry-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.knowledge-entry-head h3 { margin: 0; font-size: 17px; }
+.knowledge-entry-actions { margin-left: auto; }
+.knowledge-sound { margin: 10px 0 0; }
+.knowledge-line { margin: 6px 0 0; }
+.knowledge-subhead { margin: 16px 0 6px; font-size: 14px; }
+.knowledge-listen-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-top: 14px; }
+.knowledge-history { margin-top: 10px; }
+.knowledge-history pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.template-strength { width: 70px; }

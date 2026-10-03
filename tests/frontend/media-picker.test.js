@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { locate, reelLayout } from '../../web/js/media-player.js';
-import { distance, fold, pickerOptions } from '../../web/js/character-picker.js';
+import { locate, reelLayout } from '../../ui/src/lib/media.js';
+import { distance, fold, pickerOptions } from '../../ui/src/lib/characters.js';
 
 test('a reel of clips has its own timeline and any moment maps to a clip', () => {
   const layout = reelLayout([{ start: 10, end: 12 }, { start: 40, end: 43 }, { start: 90, end: 91 }]);

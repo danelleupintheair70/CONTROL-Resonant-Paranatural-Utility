@@ -1,8 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { mockLibraryItems } from './title-mocks.js';
 import { readFile } from 'node:fs/promises';
 
+const LIBRARY = {items:[{title:'Test Film',tmdb_id:42,original:'ko',source:'Radarr',path:'/local/film.mkv',media_type:'movie',label:'needs-dub',audio_langs:['ko']}],target_languages:['en','es'],counts:{}};
+
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/library', route => route.fulfill({json:{items:[{title:'Test Film',tmdb_id:42,original:'ko',source:'Radarr',path:'/local/film.mkv',media_type:'movie',label:'needs-dub',audio_langs:['ko']}],target_languages:['en','es'],counts:{}}}));
+  await page.route('**/api/library', route => route.fulfill({json:LIBRARY}));
+  await mockLibraryItems(page, LIBRARY);
 });
 
 test('recipe import waits for the saved plan before accepting a file', async ({ page }) => {
