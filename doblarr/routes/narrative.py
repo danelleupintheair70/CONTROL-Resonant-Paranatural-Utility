@@ -57,6 +57,7 @@ class ExternalIn(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     source: str = Field(min_length=1, max_length=120)
     fetched_at: str = Field(min_length=4, max_length=40)
+    sources: list[str] = Field(default_factory=list, max_length=20)
 
 
 def build_router(config, store) -> APIRouter:
@@ -179,6 +180,7 @@ def build_router(config, store) -> APIRouter:
     @api.post("/api/narrative/external")
     def external(body: ExternalIn):
         return narrative.add_external(db, body.series_id, body.media_id, body.text,
-                                      source=body.source, fetched_at=body.fetched_at)
+                                      source=body.source, fetched_at=body.fetched_at,
+                                      sources=body.sources)
 
     return api

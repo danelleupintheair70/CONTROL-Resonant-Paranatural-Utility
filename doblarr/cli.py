@@ -8,6 +8,7 @@
     doblarr cast link SERIES_ID URL [--season N] [--why TEXT]
     doblarr cast show SERIES_ID [--season N] [--episode N] [--merged]
     doblarr cast import SERIES_ID [--roles MAIN,SUPPORTING | --names A,B]
+    doblarr research SERIES_ID "QUESTION" [--depth quick|standard|deep]
 """
 
 from __future__ import annotations
@@ -175,6 +176,36 @@ def _cmd_cast(args: argparse.Namespace, config: Config) -> int:
     return 2
 
 
+def _cmd_research(args: argparse.Namespace, config: Config) -> int:
+    from .research import agent
+    from .store import Database
+
+    if args.depth:
+        config = config.with_overrides({"research.depth": args.depth})
+    db = Database(config.db_path)
+    try:
+        sent = agent.compose_query(db, args.series, args.question)
+        model = agent.resolve_model(config)
+        print(f"researching with {model} (sends this question out: {sent!r})")
+        run = agent.research_title(db, args.series, args.question, config=config,
+                                   target_locale=args.locale or "")
+    except (KeyError, ValueError, RuntimeError) as exc:
+        print(f"research: {exc}")
+        return 1
+    finally:
+        db.close()
+    print(run["report"] or run["answer"] or "(no answer)")
+    print(f"\nrun {run['id']} · ${run['cost']:.4f} · {run['elapsed_s']}s")
+    if run["claim_id"]:
+        print(f"external claim {run['claim_id']} waits in the narrative review")
+    for t in run["terms"]:
+        print(f"term for review: {t['source_form']} -> {t['phrase']}"
+              + ("" if t.get("entry_id") else " (no show to keep it under; see the run folder)"))
+    for lead in run["leads"]:
+        print(f"cast lead: {lead['character']} ({lead['language']}): {lead['voice_actor']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="doblarr", description="AI dubbing for your library")
     p.add_argument("--version", action="version", version=f"doblarr {__version__}")
@@ -229,6 +260,11 @@ def build_parser() -> argparse.ArgumentParser:
     ci.add_argument("--season", type=int, default=None)
     ci.add_argument("--roles", default="MAIN", help="comma list of MAIN, SUPPORTING, BACKGROUND")
     ci.add_argument("--names", default=None, help="comma list of names (overrides --roles)")
+    r = sub.add_parser("research", help="ask the web about a title (cited, for review)")
+    r.add_argument("series")
+    r.add_argument("question")
+    r.add_argument("--depth", choices=["quick", "standard", "deep"], default=None)
+    r.add_argument("--locale", default=None, help="dub locale for found terms, e.g. es-MX")
     return p
 
 
@@ -244,6 +280,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_dub(args, config)
     if args.command == "cast":
         return _cmd_cast(args, config)
+    if args.command == "research":
+        return _cmd_research(args, config)
     return 2
 
 

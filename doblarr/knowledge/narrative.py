@@ -556,10 +556,14 @@ def coverage(db, series_id: str) -> list[dict]:
 
 
 def add_external(db, series_id: str, media_id: str, text: str, *, source: str,
-                 fetched_at: str) -> dict:
-    """A provider's metadata, kept apart from evidence in the episode."""
+                 fetched_at: str, sources: list[str] | None = None) -> dict:
+    """A provider's metadata, kept apart from evidence in the episode.
+
+    `sources` are the pages a cited answer drew on (a research run's citations).
+    """
     claim_id = "ext-" + digest([series_id, media_id, source, text])[:16]
     return records.put(db, "claim", claim_id, {
         "series_id": series_id, "media_id": media_id, "kind": "summary",
         "statement": str(text)[:2000], "origin": "external", "source": source,
+        "sources": [str(u)[:500] for u in sources or []][:20],
         "fetched_at": fetched_at, "evidence": [], "state": "proposed"}, scope=series_id)

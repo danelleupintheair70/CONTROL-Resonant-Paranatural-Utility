@@ -17,7 +17,7 @@ from . import records
 
 log = logging.getLogger("doblarr.studio.runner")
 
-KINDS = ("studio_experiment", "studio_audition", "studio_transcribe")
+KINDS = ("studio_experiment", "studio_audition", "studio_transcribe", "studio_research")
 
 
 def run(job, config, *, db, services, cancel, on_progress=None) -> str:
@@ -35,7 +35,31 @@ def run(job, config, *, db, services, cancel, on_progress=None) -> str:
         return _audition(db, root, config, services, task, cancel, progress)
     if job.kind == "studio_transcribe":
         return _transcribe(db, root, config, services, task, cancel, progress)
+    if job.kind == "studio_research":
+        return _research(db, config, task, cancel, progress)
     raise DoblarrError(f"unknown studio job kind {job.kind}")
+
+
+def _research(db, config, task, cancel, progress) -> str:
+    """One title-research question (doblarr.research.agent); costs provider calls."""
+    from ..research import agent
+
+    if cancel.is_set():
+        raise JobCancelled("cancelled before the research started")
+    steps = {"plan": 1, "search": 2, "fetch": 3, "synthesize": 4}
+
+    def on_event(event) -> None:
+        kind = str(getattr(event, "event_type", "") or "")
+        stage = next((k for k in steps if kind.startswith(k)), None)
+        if stage:
+            progress(steps[stage], 5, getattr(event, "message", "") or stage)
+
+    run = agent.research_title(db, task["series_id"], task["question"], config=config,
+                               target_locale=task.get("target_locale") or "",
+                               on_event=on_event)
+    cited = sum(1 for s in run["sources"] if s["cited"])
+    return (f"answered from {cited} cited source(s); {len(run['terms'])} term(s) and "
+            f"{len(run['leads'])} cast lead(s) for review")
 
 
 def translator_for(experiment: dict, services):
