@@ -115,6 +115,23 @@ def spoken_form(text: str, pronunciations: dict) -> str:
     return re.sub(pattern, lambda match: pronunciations[match.group()], text)
 
 
+# Chatterbox's GPU kernel fails ("device-side assert") on a very short line
+# that trails off in an ellipsis ("Escuadrón Cinco..."), and the failure
+# leaves the speech service unable to generate anything until it restarts.
+_TRAILING_DOTS = re.compile(r"\s*(?:\.{2,}|…)+\s*$")
+
+
+def engine_safe(text: str, engine: str | None) -> str:
+    """The spoken text adjusted for what an engine is known to choke on.
+
+    Only the request changes: the script keeps the line as written."""
+    if (engine or "").startswith("chatterbox") and len(text.split()) <= 3:
+        trimmed = _TRAILING_DOTS.sub("", text)
+        if trimmed != text and trimmed.strip(" ¿¡"):
+            return trimmed.rstrip(" ,;:") + ("" if trimmed[-1:] in "?!" else ".")
+    return text
+
+
 def recognizer_id(vb) -> str:
     """Best-effort identity of the recognizer, for the verification cache key.
 

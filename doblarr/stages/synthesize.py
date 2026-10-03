@@ -30,7 +30,7 @@ from ..models import DubJob, Speaker
 from ..performance import compose, requested_direction
 from ..telemetry import write_json
 from .common import Plan, dry, stage, work_stem
-from .quality import spoken_form
+from .quality import engine_safe, spoken_form
 
 log = logging.getLogger("doblarr.synthesize")
 
@@ -541,8 +541,8 @@ def candidates(job, vb, work_dir: Path, requests: dict, *, cast=None, engine=Non
                                if (narrator_speakers is not None
                                    and seg.speaker in narrator_speakers) else ""))
         delivery = requested_direction(seg.intent)
-        text = seg.tts_text or spoken_form(seg.text_translated or seg.text_src,
-                                           pronunciations or {})
+        text = engine_safe(seg.tts_text or spoken_form(seg.text_translated or seg.text_src,
+                                                       pronunciations or {}), engine)
         for attempt in range(1, wanted + 1):
             if cancel is not None and cancel.is_set():
                 raise JobCancelled("cancelled during candidate generation")
@@ -787,6 +787,7 @@ def run(
             seg.applied_rules = applied
         else:
             text = spoken_form(seg.text_translated or seg.text_src, pronunciations or {})
+        text = engine_safe(text, voice_engine)
         signature = {
             "text": text,
             "language": job.target_lang,

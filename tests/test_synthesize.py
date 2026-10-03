@@ -20,3 +20,13 @@ def test_a_voice_with_no_sample_borrows_the_voice_it_sounds_most_like(tmp_path):
     synthesize._borrow_voices(job, [speakers["V9"]])
     assert speakers["V9"].voicebox_profile_id == "mina"
     assert job.metrics["voices_borrowed"]["V9"]["from"] == "V1"
+
+
+def test_a_short_line_trailing_off_is_spoken_with_a_period_on_chatterbox():
+    from doblarr.stages.quality import engine_safe
+
+    assert engine_safe("Escuadrón Cinco...", "chatterbox") == "Escuadrón Cinco."
+    assert engine_safe("Bien… ", "chatterbox") == "Bien."
+    assert engine_safe("¿Y tú...?", "chatterbox") == "¿Y tú...?"          # a question stays
+    assert engine_safe("Teníamos a Ren con nosotros...", "chatterbox").endswith("...")
+    assert engine_safe("Escuadrón Cinco...", "qwen") == "Escuadrón Cinco..."
