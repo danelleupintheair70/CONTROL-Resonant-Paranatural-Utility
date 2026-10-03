@@ -112,7 +112,8 @@ def summarize(rows: list[dict]) -> dict:
     answered = [r for r in rows if r["answers"]]
     out = {"cases": len(rows), "answered": len(answered)}
     if answered:
-        out["mean_seconds"] = round(statistics.mean(r["seconds"] for r in answered[1:] or answered), 3)
+        warm = answered[1:] or answered  # the first call loads the model
+        out["mean_seconds"] = round(statistics.mean(r["seconds"] for r in warm), 3)
         out["first_call_seconds"] = answered[0]["seconds"]
     for qid in ("age", "language"):
         pairs = [(r["answers"][qid]["choice"], r["reference"][qid]) for r in answered

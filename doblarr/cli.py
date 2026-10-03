@@ -109,9 +109,9 @@ def _cmd_cast(args: argparse.Namespace, config: Config) -> int:
                 print(f"  {hit['url']}  {hit['title']} ({facts})")
             return 0
         if args.action == "link":
-            cast = published_cast.link(db, args.series, args.url, season=args.season)
-            print(f"linked {cast['title']}: {len(cast['characters'])} characters"
-                  + ("" if cast["complete"] else " (more exist; raise the limit)"))
+            published = published_cast.link(db, args.series, args.url, season=args.season)
+            print(f"linked {published['title']}: {len(published['characters'])} characters"
+                  + ("" if published["complete"] else " (more exist; raise the limit)"))
             return 0
         if args.action == "show":
             cast = published_cast.get(db, args.series, season=args.season)

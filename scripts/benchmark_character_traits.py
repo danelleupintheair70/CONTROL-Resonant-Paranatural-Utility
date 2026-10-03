@@ -88,7 +88,8 @@ def timed(fn):
     try:
         return fn(), None, round(time.perf_counter() - started, 2)
     except Exception as exc:  # noqa: BLE001 - recorded as a failed call
-        return None, f"{type(exc).__name__}: {str(exc)[:300]}", round(time.perf_counter() - started, 2)
+        took = round(time.perf_counter() - started, 2)
+        return None, f"{type(exc).__name__}: {str(exc)[:300]}", took
 
 
 def stage_vision(model: str, labels: dict, root: Path, out: Path, think: bool | None) -> None:
@@ -99,9 +100,9 @@ def stage_vision(model: str, labels: dict, root: Path, out: Path, think: bool | 
     for case in labels["cases"]:
         image = [str(root / case["image"])]
         payload = {"target_person": case["target"]}
-        direct, d_err, d_s = timed(lambda: client.ask(
+        direct, d_err, d_s = timed(lambda payload=payload, image=image: client.ask(
             Traits, DIRECT_INSTRUCTIONS, payload, max_tokens=600, images=image).model_dump())
-        desc, s_err, s_s = timed(lambda: client.ask(
+        desc, s_err, s_s = timed(lambda payload=payload, image=image: client.ask(
             Description, DESCRIBE_INSTRUCTIONS, payload, max_tokens=600, images=image).description)
         print(f"  {case['id']}: direct {d_s}s{' FAIL' if d_err else ''}, "
               f"describe {s_s}s{' FAIL' if s_err else ''}", flush=True)
@@ -126,7 +127,7 @@ def stage_decide(model: str, out: Path, device: str | None) -> None:
             if not row["description"]:
                 rows.append({"id": row["id"], "answers": None, "seconds": 0})
                 continue
-            answers, err, secs = timed(lambda: oracle.ask(
+            answers, err, secs = timed(lambda oracle=oracle, row=row: oracle.ask(
                 "character_traits", {"person": row["description"]}, questions))
             rows.append({"id": row["id"], "answers": answers, "seconds": secs,
                          "error": err or (None if answers else oracle.reason)})
@@ -157,7 +158,8 @@ def score_method(label: str, picks: dict, seconds: dict, labels: dict,
     right = sum(v[0] for v in per_q.values())
     total = sum(v[1] for v in per_q.values())
     out = {"method": label, "accuracy": round(right / total, 3), "correct": f"{right}/{total}",
-           "seconds_per_character": round(statistics.mean(seconds.values()), 2) if seconds else None,
+           "seconds_per_character":
+               round(statistics.mean(seconds.values()), 2) if seconds else None,
            "per_question": {q: f"{r}/{t}" for q, (r, t) in per_q.items()},
            "misses": misses}
     if confidence:
@@ -169,7 +171,7 @@ def stage_score(labels: dict, out: Path) -> list[dict]:
     board = []
     vision = {f.stem.removeprefix("vision__"): json.loads(f.read_text(encoding="utf-8"))
               for f in sorted(out.glob("vision__*.json"))}
-    for key, data in vision.items():
+    for data in vision.values():
         rows = {r["id"]: r for r in data["rows"]}
         board.append(score_method(
             f"direct: {data['model']}", {k: r["direct"] for k, r in rows.items()},
@@ -206,7 +208,8 @@ def write_report(board: list[dict], path: Path) -> None:
               "| method | " + " | ".join(QUESTIONS) + " |",
               "|---|" + "---|" * len(QUESTIONS)]
     for b in board:
-        lines.append(f"| {b['method']} | " + " | ".join(b["per_question"][q] for q in QUESTIONS) + " |")
+        cells = " | ".join(b["per_question"][q] for q in QUESTIONS)
+        lines.append(f"| {b['method']} | {cells} |")
     for b in board:
         lines += ["", f"## Misses: {b['method']}", ""] + [f"- {m}" for m in b["misses"]]
     path.write_text("\n".join(lines), encoding="utf-8")
