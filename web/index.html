@@ -191,6 +191,11 @@
       <div id="studioRoot" class="studio"></div>
     </section>
 
+    <!-- ===== Watch (one finished dub, every language) ===== -->
+    <section data-view="Watch" hidden>
+      <div id="watchRoot" class="watch"></div>
+    </section>
+
     <!-- ===== Dubs ===== -->
     <section data-view="Dubs" hidden>
       <div style="padding: 30px 26px 44px;">
@@ -343,17 +348,6 @@
       <button type="button" id="reviewSubmit" class="btn btn-primary" disabled>Render changes</button></div>
   </dialog>
 
-  <!-- Watch a produced dub/tease -->
-  <div id="watchModal" hidden style="position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:100;">
-    <div class="panel" style="width:min(860px,94vw);padding:20px 22px;">
-      <h3 id="watchTitle" style="margin:0 0 12px;font-size:18px;">Watch</h3>
-      <video id="watchVideo" controls autoplay style="width:100%;max-height:70vh;background:#000;border-radius:10px;"></video>
-      <p style="margin:12px 0 0;font-size:12.5px;color:var(--muted);">MKV playback depends on browser codecs — if this doesn't play, open the file from the output folder: <code id="watchPath" class="m" style="font-size:12px;user-select:all;"></code></p>
-      <div style="display:flex;justify-content:flex-end;margin-top:14px;">
-        <button type="button" class="btn btn-secondary" id="watchClose">Close</button>
-      </div>
-    </div>
-  </div>
 </div>
 
 <script type="module" src="/js/app.js"></script>
