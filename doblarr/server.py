@@ -51,7 +51,8 @@ if not WEB_DIR.is_dir():
 # The React UI while it replaces web/ (docs/react-migration.md): built into
 # ui/dist by `npm run build:ui`, served instead of web/ with DOBLARR_UI=react.
 if os.environ.get("DOBLARR_UI") == "react":
-    WEB_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
+    WEB_DIR = Path(os.environ.get("DOBLARR_UI_DIR")
+                   or Path(__file__).resolve().parent.parent / "ui" / "dist")
 SHUTDOWN_TIMEOUT = 5.0  # seconds to wait for worker/scheduler threads
 SSE_HEARTBEAT = 15.0    # seconds between `: ping` comments
 

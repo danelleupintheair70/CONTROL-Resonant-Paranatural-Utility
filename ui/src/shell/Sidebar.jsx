@@ -53,8 +53,8 @@ export function Sidebar() {
         <p className="star-nudge-title"><span aria-hidden="true">★</span> Enjoying Doblarr?</p>
         <p className="star-nudge-body">Please don&apos;t forget to star the repo. It&apos;s free and helps the project go a long way.</p>
         <div className="star-nudge-actions">
-          <a className="btn btn-primary" href={REPO_URL} target="_blank" rel="noopener noreferrer" onClick={starred}>Star on GitHub</a>
-          <button type="button" className="btn btn-ghost" onClick={later}>Not now</button>
+          <a className="btn btn-primary" href={REPO_URL} target="_blank" rel="noopener noreferrer" data-star-go onClick={starred}>Star on GitHub</a>
+          <button type="button" className="btn btn-ghost" data-star-later onClick={later}>Not now</button>
         </div>
       </div>
       <div className="sidefoot panel">
