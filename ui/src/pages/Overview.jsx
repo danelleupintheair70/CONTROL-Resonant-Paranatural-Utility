@@ -1,76 +1,297 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { ensure, hardwareQuery, jobsQuery, libraryQuery, statusQuery } from '../lib/queries.js';
-import { useJobs } from '../lib/jobs.js';
+import { api } from '../lib/api.js';
+import { audioLanguagesQuery, ensure, hardwareQuery, jobsQuery, libraryQuery, queryClient, statusQuery } from '../lib/queries.js';
+import { jobStatusClass, useJobs } from '../lib/jobs.js';
 import { useLogLines } from '../lib/events.js';
 import { hardwareSummary } from '../lib/hardware.js';
-import { itemKey, titleHref } from '../lib/library.js';
+import { languageName } from '../lib/languages.js';
+import { isShow, itemKey, titleHref } from '../lib/library.js';
 import { Poster } from '../components/Poster.jsx';
+import { queueDub } from './library/parts.jsx';
 
 export async function overviewLoader() {
-  // Jobs, counts and the GPU card are quick; recent titles wait on the library
-  // scan inside their own section, so a cold scan never holds the page.
+  // Jobs, counts and the GPU card are quick; the library scan and the audio
+  // track scan load inside their own sections, so a cold scan never holds the page.
   await Promise.all([ensure(jobsQuery), ensure(statusQuery).catch(() => null), ensure(hardwareQuery)]);
   return null;
 }
 
 const byRecent = (a, b) => (b.updated_at || '').localeCompare(a.updated_at || '');
+const refreshJobs = () => queryClient.invalidateQueries({ queryKey: ['jobs'] });
+const hhmm = j => (j.updated_at || '').slice(11, 16);
+const target = j => j.target_locale || j.target_lang;
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const RETRYABLE = new Set(['full', 'tease', 'audition', 'analyze']);
 
-function Stat({ id, value, label, labelId, accent, title }) {
+// "Shows · S01E02" jobs are titled after the show; the longest library title
+// the job's title starts with is its item.
+function itemFor(job, items) {
+  const t = String(job.title || '').toLowerCase();
+  return (items || []).filter(i => t.startsWith(String(i.title).toLowerCase()))
+    .sort((a, b) => b.title.length - a.title.length)[0];
+}
+
+// Finished dubs with a file to watch, newest first.
+const readyJobs = jobs => jobs.filter(j => j.status === 'done' && j.has_file && !String(j.kind || '').startsWith('studio_')).sort(byRecent);
+
+// Failed jobs nobody has re-run since: no newer job for the same title and target.
+function failedJobs(jobs) {
+  const sorted = [...jobs].sort(byRecent);
+  return sorted.filter((j, i) => j.status === 'failed'
+    && !sorted.slice(0, i).some(n => n.title === j.title && target(n) === target(j)));
+}
+
+function headline(ready, needs) {
+  if (!ready && !needs) return 'Nothing waiting on you';
+  const parts = [];
+  if (ready) parts.push(`${plural(ready, 'dub')} ready to hear`);
+  if (needs) parts.push(`${plural(needs, 'thing')} ${needs === 1 ? 'needs' : 'need'} you`);
+  return parts.join(', ');
+}
+
+function Card({ title, sub, link, children, className = '' }) {
   return (
-    <div className="panel stat-card" title={title}>
-      <p id={id} className={`m stat-value${accent ? ' stat-accent' : ''}`}>{value}</p>
-      <p id={labelId} className="stat-label">{label}</p>
+    <section className={`panel ov-card ${className}`}>
+      <div className="ov-card-head">
+        <h3>{title}</h3>
+        {sub && <span className="ov-card-sub">{sub}</span>}
+        {link}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ReadyRow({ job, item }) {
+  const lang = target(job);
+  return (
+    <div className="ov-ready">
+      <div className="ov-ready-poster">{item ? <Poster item={item} /> : <div className="poster-fallback" />}</div>
+      <div className="ov-ready-body">
+        {item && item.title !== job.title && <div className="ov-ready-show">{item.title}</div>}
+        <div className="ov-ready-title">{job.title}</div>
+        <div className="ov-tags">
+          {lang && <span className="tag tag-accent">{languageName(lang)}</span>}
+          {job.version_name && <span className="tag tag-neutral">{job.version_name}</span>}
+          <span className="tag tag-neutral">{hhmm(job) || 'done'}</span>
+        </div>
+        {job.message && <div className="ov-muted ov-small">{job.message}</div>}
+        <div className="ov-actions">
+          <Link to={`/watch/${encodeURIComponent(job.id)}`} className="btn btn-primary">Watch &amp; compare</Link>
+          {job.has_review && <Link to="/dubs" className="btn btn-secondary">Review{job.review_count ? ` (${job.review_count})` : ''}</Link>}
+        </div>
+      </div>
     </div>
   );
 }
 
-function RecentTitles({ jobs }) {
-  const titles = [...new Set([...jobs].sort(byRecent).map(j => j.title))].slice(0, 8);
-  const { data: library, isPending } = useQuery({ ...libraryQuery, enabled: titles.length > 0 });
-  if (!titles.length) return <div className="overview-empty">Nothing yet — queue a dub from the Library.</div>;
-  if (isPending) return <div className="overview-empty">Loading the library…</div>;
-  const items = titles.map(t => (library?.items || []).find(i => i.title === t)).filter(Boolean);
-  if (!items.length) return <div className="overview-empty">Recent jobs are for titles no longer in the scan.</div>;
-  return items.map(item => (
-    <Link key={itemKey(item)} to={titleHref(item)} className="poster-card poster-link">
-      <Poster item={item} />
-      <div className="poster-body"><div className="poster-title">{item.title}</div></div>
-    </Link>
-  ));
-}
-
-function InProgress({ jobs }) {
-  const active = jobs.filter(j => j.status === 'running' || j.status === 'queued');
-  if (!active.length) return <div className="panel overview-card overview-muted">Nothing in progress — queue a dub from the Library.</div>;
-  return active.map(j => (
-    <div key={j.id} className="panel overview-card">
-      <div className="progress-head">
-        <span className="progress-title">{j.title}</span>
-        <span className="m progress-langs">{j.source_lang} → {j.target_lang}</span>
-        <span className={`tag ${j.status === 'running' ? 'tag-accent' : 'tag-neutral'} progress-stage`}>
-          {j.status === 'running' ? (j.message || j.stage || 'running') : 'queued'}</span>
+function Ready({ ready, items }) {
+  return (
+    <Card title="Ready to review" sub="Listen before it goes to Plex" link={<Link to="/dubs" className="ov-link">All dubs</Link>}>
+      <div className="ov-stack" id="recentTitles">
+        {ready.length ? ready.slice(0, 3).map(j => <ReadyRow key={j.id} job={j} item={itemFor(j, items)} />)
+          : <div className="ov-empty">No finished dubs to watch yet.</div>}
       </div>
-      <div className="bar progress-bar"><span style={{ width: `${j.progress || 0}%` }} /></div>
-      <div className="m progress-pct">{j.progress || 0}%{j.status === 'running' && j.message ? ` — ${j.message}` : ''}</div>
-    </div>
-  ));
+    </Card>
+  );
 }
 
-const EVENT = { done: 'Dub completed', failed: 'Job failed', running: 'Processing', queued: 'Queued' };
-const EVENT_TAG = { done: 'tag-neutral', failed: 'tag-outline', running: 'tag-accent', queued: 'tag-neutral' };
+function NeedRow({ dot, title, sub, action }) {
+  return (
+    <div className="ov-need">
+      <span className={`ov-dot${dot ? ' ov-dot-accent' : ''}`} />
+      <div className="ov-need-text"><div className="ov-need-title">{title}</div>{sub && <div className="ov-muted ov-small">{sub}</div>}</div>
+      {action}
+    </div>
+  );
+}
+
+function RetryButton({ job }) {
+  const [state, setState] = useState('Retry');
+  async function retry() {
+    setState('Queuing…');
+    try {
+      await api('jobs', { method: 'POST', json: {
+        title: job.title, source: job.source || 'manual', source_lang: job.source_lang || 'auto',
+        target_lang: target(job), path: job.input_file || null, kind: job.kind || 'full',
+        overrides: job.overrides && Object.keys(job.overrides).length ? job.overrides : undefined,
+      } });
+      setState('Queued ✓');
+      refreshJobs();
+    } catch (err) {
+      setState('Retry');
+      window.alert('Could not queue it again: ' + err.message);
+    }
+  }
+  return <button type="button" className="btn btn-secondary ov-btn-sm" disabled={state !== 'Retry'} onClick={retry}>{state}</button>;
+}
+
+async function resumeQueue() {
+  try { await api('api/queue/resume', { method: 'POST' }); } catch (e) { window.alert(e.message); }
+  refreshJobs();
+}
+
+function Needs({ failed, pausedQueued, warnings }) {
+  const rows = [];
+  if (pausedQueued) rows.push(<NeedRow key="paused" dot title={`Queue paused with ${plural(pausedQueued, 'job')} waiting`}
+    sub="Nothing runs until the queue is resumed." action={<button type="button" className="btn btn-secondary ov-btn-sm" onClick={resumeQueue}>Resume</button>} />);
+  for (const j of failed) rows.push(<NeedRow key={j.id} dot title={`Job failed — ${j.title}`}
+    sub={[j.stage && `${j.stage} stage`, j.message].filter(Boolean).join(': ') || `${j.source_lang} → ${target(j)}`}
+    action={j.input_file && RETRYABLE.has(j.kind || 'full') ? <RetryButton job={j} /> : <Link to="/dubs" className="btn btn-secondary ov-btn-sm">Details</Link>} />);
+  for (const w of warnings) rows.push(<NeedRow key={w} title="Library source unavailable" sub={w}
+    action={<Link to="/settings/connections" className="btn btn-secondary ov-btn-sm">Settings</Link>} />);
+  return (
+    <Card title="Needs you" sub={rows.length ? plural(rows.length, 'thing') : null}>
+      <div className="ov-stack ov-stack-tight">{rows.length ? rows : <div className="ov-empty">Nothing needs you right now.</div>}</div>
+    </Card>
+  );
+}
+
+const TRACK_STATS = [['und', 'Tagged “und”', 'Language unknown to players'],
+  ['mismatched_tag', 'Tag ≠ what’s heard', 'The tag names another language'],
+  ['inconsistent_titles', 'Inconsistent titles', 'One language under several names'],
+  ['wrong_default', 'Wrong default track', 'Default isn’t the original or a dub']];
+
+// Hidden until the track scan answers; a library without Plex has no band.
+function AudioBand() {
+  const { data, isError } = useQuery({ ...audioLanguagesQuery, retry: false });
+  const totals = data?.totals;
+  if (isError || !totals?.tracks) return null;
+  const tiles = TRACK_STATS.filter(([k]) => k === 'und' || k === 'inconsistent_titles' || totals[k] > 0);
+  return (
+    <section className="ov-band" aria-label="Audio tracks across your library">
+      <div className="ov-band-head">
+        <div className="ov-band-text">
+          <div className="ov-band-kicker">Audio tracks across your library</div>
+          <div className="ov-band-title">{totals.to_fix
+            ? `${totals.to_fix.toLocaleString()} of ${totals.tracks.toLocaleString()} audio tracks are named inconsistently`
+            : `All ${totals.tracks.toLocaleString()} audio tracks are named consistently`}</div>
+        </div>
+        <Link to="/library/audio" className="btn btn-primary">Review audio languages</Link>
+      </div>
+      {totals.to_fix > 0 && (
+        <div className="ov-band-stats">
+          {tiles.map(([k, label, ex]) => (
+            <div key={k} className="ov-band-stat">
+              <div className="ov-band-n">{(totals[k] || 0).toLocaleString()}</div>
+              <div className="ov-band-k">{label}</div>
+              <div className="ov-band-ex">{ex}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ActiveJob({ job: j }) {
+  return (
+    <div className="ov-active">
+      <div className="ov-active-head">
+        <b className="ov-ellipsis">{j.title}</b>
+        <span className="m ov-muted ov-small">{j.source_lang} → {target(j)}</span>
+        <span className={`tag ${j.status === 'running' ? 'tag-accent' : 'tag-neutral'} ov-push`}>
+          {j.status === 'running' ? (j.stage || 'running') : 'queued'}</span>
+      </div>
+      <div className="bar"><span style={{ width: `${j.progress || 0}%` }} /></div>
+      <div className="m ov-muted ov-small">{j.progress || 0}%{j.status === 'running' && j.message ? ` — ${j.message}` : ''}</div>
+    </div>
+  );
+}
+
+function FlaggedRow({ item, on, toggle }) {
+  const show = isShow(item);
+  return (
+    <label className="ov-flag">
+      <input type="checkbox" checked={on} disabled={show} onChange={toggle} aria-label={`Queue ${item.title}`} />
+      <span className="ov-ellipsis"><b>{item.title}</b>{item.year ? <span className="ov-muted"> {item.year}</span> : null}</span>
+      {show ? <Link to={titleHref(item, 'episodes')} className="ov-small">Pick episodes</Link>
+        : <span className="m ov-muted ov-small">{item.original && item.original !== '??' ? item.original : 'auto'}</span>}
+    </label>
+  );
+}
+
+function Queue({ active, library, libraryPending, libraryError }) {
+  const [picked, setPicked] = useState([]);
+  const [state, setState] = useState({ busy: false, text: '' });
+  const flagged = (library?.items || []).filter(i => i.status === 'needs-dub');
+  const shown = flagged.slice(0, 6);
+  const selected = shown.filter(i => picked.includes(itemKey(i)));
+  const toggle = key => setPicked(p => (p.includes(key) ? p.filter(k => k !== key) : [...p, key]));
+
+  async function queue() {
+    setState({ busy: true, text: '' });
+    const failed = [];
+    for (const item of selected) {
+      try { await queueDub(item, 'full', library.target_languages); } catch (err) { failed.push(`${item.title}: ${err.message}`); }
+    }
+    setPicked([]);
+    setState({ busy: false, text: failed.length ? failed.join('; ') : `Queued ${plural(selected.length, 'title')}.` });
+  }
+
+  let list;
+  if (libraryError) list = <div className="ov-empty">The library scan is unavailable — check Settings › Connections.</div>;
+  else if (libraryPending) list = <div className="ov-empty">Loading the library…</div>;
+  else if (!flagged.length) list = <div className="ov-empty">No titles are flagged <span className="m">needs-dub</span>.</div>;
+  else list = shown.map(i => <FlaggedRow key={itemKey(i)} item={i} on={picked.includes(itemKey(i))} toggle={() => toggle(itemKey(i))} />);
+
+  return (
+    <Card title="Queue" sub={active.length ? `${active.filter(j => j.status === 'running').length} running · ${active.filter(j => j.status === 'queued').length} waiting` : 'Empty'}
+      link={<Link to="/library" className="ov-link">Library</Link>} className="ov-queue">
+      <div id="inProgress" className="ov-stack ov-stack-tight">
+        {active.length ? active.map(j => <ActiveJob key={j.id} job={j} />)
+          : <div className="ov-muted ov-small">Nothing is running. Pick flagged titles to start — they run one at a time.</div>}
+      </div>
+      <div className="ov-flags">{list}</div>
+      {flagged.length > 0 && (
+        <div className="ov-actions ov-queue-foot">
+          <button type="button" className="btn btn-primary" disabled={!selected.length || state.busy} onClick={queue}>
+            {state.busy ? 'Queuing…' : selected.length ? `Queue ${selected.length} selected` : 'Select titles'}</button>
+          {state.text && <span className="ov-muted ov-small" role="status">{state.text}</span>}
+          {flagged.length > shown.length && <Link to="/library" className="ov-small ov-push">See all {flagged.length} flagged</Link>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Worker({ hw, counts, paused }) {
+  const gpu = hardwareSummary(hw, hw?.memory);
+  const state = paused ? 'paused' : counts.running ? 'processing' : 'idle';
+  const tiles = [['Device', gpu.device], ['GPU memory', gpu.memory || '—'], ['Load', gpu.percent == null ? '—' : `${gpu.percent}%`]];
+  return (
+    <Card title="Worker" link={<span className={`tag ${state === 'processing' ? 'tag-accent' : state === 'paused' ? 'tag-outline' : 'tag-neutral'} ov-push`}>{state}</span>}>
+      <div className="ov-tiles" title={[gpu.label, ...(hw?.notes || [])].join('\n')}>
+        {tiles.map(([k, v]) => <div key={k} className="ov-tile"><div className="ov-muted ov-tiny">{k}</div><div className="ov-tile-v">{v}</div></div>)}
+      </div>
+      <div className="ov-muted ov-small">{gpu.label}{counts.queued ? ` · ${plural(counts.queued, 'job')} queued` : ''}. <Link to="/settings/hardware">Hardware settings</Link></div>
+    </Card>
+  );
+}
+
+const EVENT = { done: 'Dub completed', failed: 'Job failed', running: 'Processing', queued: 'Queued', cancelled: 'Cancelled' };
 
 function Activity({ jobs }) {
   const recent = [...jobs].sort(byRecent).slice(0, 6);
-  if (!recent.length) return <tr><td colSpan="4" className="overview-muted">No activity yet.</td></tr>;
-  return recent.map(j => (
-    <tr key={j.id}>
-      <td className="m activity-time">{(j.updated_at || '').slice(11, 16)}</td>
-      <td>{EVENT[j.status] || j.status}</td>
-      <td>{j.title}</td>
-      <td><span className={`tag ${EVENT_TAG[j.status] || 'tag-neutral'}`}>{j.status}</span></td>
-    </tr>
-  ));
+  return (
+    <Card title="Recent activity" link={<Link to="/dubs" className="ov-link">Jobs</Link>}>
+      <div id="activityBody">
+        {recent.length ? recent.map(j => (
+          <div key={j.id} className="ov-act">
+            <span className="m ov-muted ov-small">{hhmm(j)}</span>
+            <span className={`ov-dot${j.status === 'failed' || j.status === 'running' ? ' ov-dot-accent' : ' ov-dot-ink'}`} />
+            <div className="ov-act-text">
+              <div className="ov-ellipsis"><b>{EVENT[j.status] || j.status}</b> · {j.title}</div>
+              <div className="ov-muted ov-small ov-ellipsis">{[`${j.source_lang} → ${target(j)}`, j.version_name, j.message].filter(Boolean).join(' · ')}</div>
+            </div>
+            <span className={`tag ${jobStatusClass(j.status)}`}>{j.status}</span>
+          </div>
+        )) : <div className="ov-empty">No activity yet.</div>}
+      </div>
+    </Card>
+  );
 }
 
 function LogPanel() {
@@ -87,39 +308,50 @@ export function Overview() {
   const { data } = useJobs();
   const { data: status } = useQuery(statusQuery);
   const { data: hw } = useQuery(hardwareQuery);
+  const { data: library, isPending: libraryPending, isError: libraryError } = useQuery(libraryQuery);
   const jobs = data?.jobs || [];
   const counts = data?.counts || {};
-  const gpu = hardwareSummary(hw, hw?.memory);
-  // No scan yet means no needs-dub count; the library scan fills it.
-  const needsScan = status?.counts?.needs_dub == null;
-  const { data: library } = useQuery({ ...libraryQuery, enabled: needsScan });
-  const needsDub = status?.counts?.needs_dub ?? library?.counts?.needs_dub ?? '—';
+  const paused = !!data?.paused;
+  const ready = readyJobs(jobs);
+  const failed = failedJobs(jobs).slice(0, 4);
+  const active = jobs.filter(j => j.status === 'running' || j.status === 'queued')
+    .sort((a, b) => (a.status === 'running' ? -1 : 0) - (b.status === 'running' ? -1 : 0));
+  const pausedQueued = paused ? counts.queued || 0 : 0;
+  const warnings = library?.warnings || [];
+  const needs = failed.length + (pausedQueued ? 1 : 0) + warnings.length;
+  const needsDub = status?.counts?.needs_dub ?? library?.counts?.needs_dub;
+  const worker = paused ? 'The queue is paused.' : counts.running ? `The worker is processing ${plural(counts.running, 'job')}.` : 'The worker is idle.';
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
-    <div className="page">
-      <div className="cards4">
-        <Stat id="statRunning" value={counts.running || 0} label="Jobs running" accent />
-        <Stat id="statQueued" value={counts.queued || 0} label="Queued" />
-        <Stat id="statNeedsDub" value={needsDub} label={<>Flagged <span className="m">needs-dub</span></>} />
-        <Stat id="statGpu" labelId="statGpuLabel" value={gpu.percent == null ? '—' : `${gpu.percent}%`}
-          label={gpu.memory ? `${gpu.device} · ${gpu.memory}` : `${gpu.device} · ${gpu.label}`}
-          title={[gpu.label, ...(hw?.notes || [])].join('\n')} />
+    <div className="page ov">
+      <section className="ov-hero">
+        <div className="ov-hero-text">
+          <div className="ov-muted ov-date">{today}</div>
+          <h1 className="ov-h1">{headline(ready.length, needs)}</h1>
+          <div className="ov-muted ov-hero-sub">{worker}
+            {needsDub != null && <> <span id="statNeedsDub">{needsDub}</span> {needsDub === 1 ? 'title' : 'titles'} in your library {needsDub === 1 ? 'is' : 'are'} flagged <code className="m">needs-dub</code>.</>}
+          </div>
+        </div>
+        <div className="ov-actions">
+          {ready[0] && <Link to={`/watch/${encodeURIComponent(ready[0].id)}`} className="btn btn-secondary">Review next dub</Link>}
+          <Link to="/library" className="btn btn-primary">Queue from the library</Link>
+        </div>
+      </section>
+
+      <div className="ov-grid">
+        <Ready ready={ready} items={library?.items} />
+        <Needs failed={failed} pausedQueued={pausedQueued} warnings={warnings} />
       </div>
 
-      <h3 className="overview-heading">Recent titles</h3>
-      <div id="recentTitles" className="poster-grid overview-posters"><RecentTitles jobs={jobs} /></div>
+      <AudioBand />
 
-      <h3 className="overview-heading">In progress</h3>
-      <div id="inProgress" className="overview-stack"><InProgress jobs={jobs} /></div>
-
-      <h3 className="overview-heading overview-heading-tight">Recent activity</h3>
-      <div className="panel activity-panel">
-        <table className="table">
-          <thead><tr><th className="activity-col-time">Time</th><th>Event</th><th>Item</th><th className="activity-col-result">Result</th></tr></thead>
-          <tbody id="activityBody"><Activity jobs={jobs} /></tbody>
-        </table>
+      <div className="ov-grid">
+        <Queue active={active} library={library} libraryPending={libraryPending} libraryError={libraryError} />
+        <Worker hw={hw} counts={counts} paused={paused} />
       </div>
 
+      <Activity jobs={jobs} />
       <LogPanel />
     </div>
   );
