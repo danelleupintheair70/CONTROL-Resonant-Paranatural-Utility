@@ -6,6 +6,8 @@ import { scopeOptions } from '../lib/knowledge.js';
 
 const READY = ['completed', 'done', 'ready', 'success'];
 const FAILED = ['failed', 'error', 'cancelled', 'canceled'];
+const REGISTERS = [['', 'Unset'], ['formal', 'Formal'], ['neutral', 'Neutral'],
+  ['colloquial', 'Colloquial'], ['vulgar', 'Vulgar']];
 
 // Audition a text through the voice-catalog preview mechanism, polling until
 // ready. Polling stops when the component using it unmounts.
@@ -76,7 +78,7 @@ export function KnowledgeCorrection({
   const audioRef = useRef(null);
   const isTerm = kind === 'term';
   const [scopes] = useState(() => scopeOptions({ lineRef, titleRef, showRef }));
-  const [form, setForm] = useState({ phrase, source: sourceForm, replacement: '', scope: 0, text });
+  const [form, setForm] = useState({ phrase, source: sourceForm, replacement: '', scope: 0, text, register: '' });
   const [preview, setPreview] = useState('');
   const [resolved, setResolved] = useState('');
   const [status, setStatus] = useState('');
@@ -98,6 +100,7 @@ export function KnowledgeCorrection({
     const draftEngine = engine || 'chatterbox';
     return {
       entry: { phrase: form.phrase.trim(), kind, locale, source_form: isTerm ? form.source.trim() : '',
+        register: isTerm && form.register ? form.register : null,
         scope: scope.value, scope_ref: scope.ref },
       realization: isTerm ? null : { entry_id: 'draft', engine: draftEngine, replacement: form.replacement.trim() || ' ' },
       text: form.text, engine: draftEngine, voice, title_ref: titleRef, show_ref: showRef, line_ref: lineRef,
@@ -150,6 +153,10 @@ export function KnowledgeCorrection({
           : <label>Replacement spelling
             <input className="input correction-replacement" maxLength={300} placeholder="How it should be spelled for the speech engine"
               value={form.replacement} onChange={set('replacement')} /></label>}
+        {isTerm && <label>Register
+          <select className="input correction-register" aria-label="Register" value={form.register} onChange={set('register')}>
+            {REGISTERS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select></label>}
         <label>Apply this rule
           <select className="input correction-scope" aria-label="Rule scope" value={scopes[form.scope].value} onChange={set('scope')}>
             {scopes.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}

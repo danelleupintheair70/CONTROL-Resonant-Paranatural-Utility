@@ -385,6 +385,7 @@ def _portable_entry(entry: Entry) -> dict:
         "phrase": entry.phrase,
         "sense": entry.sense,
         "usage": entry.usage,
+        "register": entry.register,
         "examples": list(entry.examples),
         "pronunciation": entry.pronunciation,
         "ipa": entry.ipa,

@@ -117,7 +117,7 @@ function EntryDetail({ id }) {
     <div className="panel knowledge-panel knowledge-entry">
       <div className="knowledge-entry-head">
         <h3>{e.phrase || '(suppression)'}</h3>
-        <span className="m hint">{e.kind} · {languageName(e.locale)} · {e.scope}{e.scope_ref ? ` · ${e.scope_ref}` : ''} · revision {e.revision} · {STATUS_LABEL[e.status] || e.status}{e.origin === 'installed' ? ' · installed pack' : ''}</span>
+        <span className="m hint">{e.kind} · {languageName(e.locale)} · {e.scope}{e.scope_ref ? ` · ${e.scope_ref}` : ''}{e.register ? ` · ${e.register}` : ''} · revision {e.revision} · {STATUS_LABEL[e.status] || e.status}{e.origin === 'installed' ? ' · installed pack' : ''}</span>
         <span className="episode-actions knowledge-entry-actions">
           <button className="btn btn-ghost knowledge-retire" disabled={e.status === 'retired'} onClick={retire}>Retire</button>
         </span></div>
@@ -180,7 +180,7 @@ function Entries({ view, setView, locales }) {
                 <th className="knowledge-col-scope">Scope</th><th className="knowledge-col-status">Status</th><th className="knowledge-col-rules">Rules</th></tr></thead>
                 <tbody>{data.entries.length ? data.entries.map(e => (
                   <tr key={e.id} className="knowledge-row" data-id={e.id} onClick={() => setSelected(e.id)}>
-                    <td className="knowledge-strong">{e.phrase || '(suppression)'}{e.sense && <> <span className="hint">· {e.sense}</span></>}</td>
+                    <td className="knowledge-strong">{e.phrase || '(suppression)'}{e.sense && <> <span className="hint">· {e.sense}</span></>}{e.register && <> <span className="hint">· {e.register}</span></>}</td>
                     <td className="m knowledge-cell">{languageName(e.locale)}</td>
                     <td className="m knowledge-cell">{e.scope}</td>
                     <td><StatusTag status={e.status} /></td>

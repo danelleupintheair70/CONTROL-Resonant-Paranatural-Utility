@@ -67,6 +67,22 @@ def test_download_rejects_path_traversal(tmp_path):
         packs.download_pack(db, {}, "../config", tmp_path)
 
 
+def test_register_round_trips_through_packs(tmp_path):
+    db = Database(tmp_path / "test.db")
+    document = release()
+    document["entries"][0]["register"] = "colloquial"
+    document["content_sha256"] = packs.content_hash(document["entries"])
+    install(db, document)
+    assert ks.entries_at(db, {"test-term": 1})[0].register == "colloquial"
+    install(db, release("2", 2))  # a release without register still validates
+    assert ks.entries_at(db, {"test-term": 2})[0].register is None
+    bad = release("3", 3)
+    bad["entries"][0]["register"] = "street"
+    bad["content_sha256"] = packs.content_hash(bad["entries"])
+    with pytest.raises(packs.PackError):
+        install(db, bad)
+
+
 def test_recipe_pack_pin_survives_new_active_release(tmp_path):
     from doblarr.jobs import JobStore
 

@@ -15,6 +15,7 @@ KINDS = ("pronunciation", "term")
 SCOPES = ("line", "episode", "movie", "show", "personal", "pack")
 STATUSES = ("proposed", "reviewed", "needs-retest", "retired")
 ORIGINS = ("local", "installed")
+REGISTERS = ("formal", "neutral", "colloquial", "vulgar")
 
 # Scope priority, highest first (plan §5): an explicit line correction or
 # suppression, then the episode/movie recipe, inherited show rules, personal
@@ -34,6 +35,7 @@ class Entry:
     source_form: str = ""  # source wording a term translates (glossary guidance)
     sense: str = ""  # disambiguates multiple senses of one phrase
     usage: str = ""  # usage constraints / when not to use
+    register: str | None = None  # intended register of the wording (a term's tone)
     examples: tuple[str, ...] = ()
     pronunciation: str = ""  # human description of the intended sound
     ipa: str | None = None
@@ -58,6 +60,8 @@ class Entry:
             raise ValueError(f"status must be one of {STATUSES}")
         if self.origin not in ORIGINS:
             raise ValueError(f"origin must be one of {ORIGINS}")
+        if self.register is not None and self.register not in REGISTERS:
+            raise ValueError(f"register must be one of {REGISTERS}")
         if not self.phrase.strip() and not self.suppresses:
             raise ValueError("a rule needs a phrase (suppressions may omit it)")
         if self.scope in {"episode", "movie", "show", "line"} and not self.scope_ref:

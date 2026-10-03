@@ -18,6 +18,7 @@ def entry_to_overlay(entry: Entry, realizations: list[Realization]) -> RecipeEnt
         phrase=entry.phrase,
         sense=entry.sense,
         usage=entry.usage,
+        register=entry.register,  # type: ignore[arg-type]
         examples=list(entry.examples),
         pronunciation=entry.pronunciation,
         ipa=entry.ipa,
@@ -55,6 +56,7 @@ def overlay_to_entry(overlay: RecipeEntry, *, scope_ref: str) -> Entry:
         phrase=overlay.phrase,
         sense=overlay.sense,
         usage=overlay.usage,
+        register=overlay.register,
         examples=tuple(overlay.examples),
         pronunciation=overlay.pronunciation,
         ipa=overlay.ipa,

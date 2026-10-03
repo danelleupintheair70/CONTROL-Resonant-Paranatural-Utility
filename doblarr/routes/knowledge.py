@@ -20,6 +20,7 @@ from ..languages import parse as parse_language_tag
 KIND = Literal["pronunciation", "term"]
 SCOPE = Literal["line", "episode", "movie", "show", "personal", "pack"]
 STATUS = Literal["proposed", "reviewed", "needs-retest", "retired"]
+REGISTER = Literal["formal", "neutral", "colloquial", "vulgar"]
 
 _WRITABLE_SCOPES = ("line", "episode", "movie", "show", "personal")
 
@@ -36,6 +37,7 @@ def _entry_dict(entry: Entry) -> dict:
         "phrase": entry.phrase,
         "sense": entry.sense,
         "usage": entry.usage,
+        "register": entry.register,
         "examples": list(entry.examples),
         "pronunciation": entry.pronunciation,
         "ipa": entry.ipa,
@@ -76,6 +78,7 @@ class EntryIn(BaseModel):
     source_form: str = Field(default="", max_length=300)
     sense: str = Field(default="", max_length=300)
     usage: str = Field(default="", max_length=2000)
+    register: REGISTER | None = None
     examples: list[str] = Field(default_factory=list, max_length=20)
     pronunciation: str = Field(default="", max_length=2000)
     ipa: str | None = Field(default=None, max_length=300)
@@ -123,6 +126,7 @@ class EntryIn(BaseModel):
             source_form=self.source_form,
             sense=self.sense,
             usage=self.usage,
+            register=self.register,
             examples=tuple(self.examples),
             pronunciation=self.pronunciation,
             ipa=self.ipa,

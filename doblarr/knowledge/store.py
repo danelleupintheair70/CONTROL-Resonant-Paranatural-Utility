@@ -33,6 +33,7 @@ def _entry_from_row(row) -> Entry:
         phrase=row["phrase"],
         sense=row["sense"],
         usage=row["usage"],
+        register=row["register"],
         examples=tuple(json.loads(row["examples"])),
         pronunciation=row["pronunciation"],
         ipa=row["ipa"],
@@ -72,9 +73,9 @@ def save_entry(db: Database, entry: Entry) -> Entry:
     entry = Entry(**{**entry.__dict__, "revision": revision})
     db.execute(
         "INSERT INTO knowledge_entries (id, revision, kind, locale, coverage, source_lang,"
-        " source_form, phrase, sense, usage, examples, pronunciation, ipa, scope, scope_ref,"
-        " suppresses, status, origin, license, contributor, review_history, pack_id, updated_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " source_form, phrase, sense, usage, register, examples, pronunciation, ipa, scope,"
+        " scope_ref, suppresses, status, origin, license, contributor, review_history, pack_id,"
+        " updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             entry.id,
             entry.revision,
@@ -86,6 +87,7 @@ def save_entry(db: Database, entry: Entry) -> Entry:
             entry.phrase,
             entry.sense,
             entry.usage,
+            entry.register,
             json.dumps(list(entry.examples), ensure_ascii=False),
             entry.pronunciation,
             entry.ipa,
@@ -433,9 +435,9 @@ def insert_entry_version(db, entry: Entry) -> bool:
         return _entry_from_row(row) == entry
     db.execute(
         "INSERT INTO knowledge_entries (id, revision, kind, locale, coverage, source_lang,"
-        " source_form, phrase, sense, usage, examples, pronunciation, ipa, scope, scope_ref,"
-        " suppresses, status, origin, license, contributor, review_history, pack_id, updated_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " source_form, phrase, sense, usage, register, examples, pronunciation, ipa, scope,"
+        " scope_ref, suppresses, status, origin, license, contributor, review_history, pack_id,"
+        " updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             entry.id,
             entry.revision,
@@ -447,6 +449,7 @@ def insert_entry_version(db, entry: Entry) -> bool:
             entry.phrase,
             entry.sense,
             entry.usage,
+            entry.register,
             json.dumps(list(entry.examples), ensure_ascii=False),
             entry.pronunciation,
             entry.ipa,

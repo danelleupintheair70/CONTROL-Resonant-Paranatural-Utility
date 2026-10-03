@@ -221,6 +221,7 @@ class RecipeEntry(StrictModel):
     phrase: str = Field(min_length=1, max_length=300)
     sense: str = Field(default="", max_length=300)
     usage: str = Field(default="", max_length=2000)
+    register: Literal["formal", "neutral", "colloquial", "vulgar"] | None = None
     examples: list[str] = Field(default_factory=list, max_length=20)
     pronunciation: str = Field(default="", max_length=2000)
     ipa: str | None = None
