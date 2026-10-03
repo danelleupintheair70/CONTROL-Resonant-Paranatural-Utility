@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { api, castOf, frameUrl, pickFrames, trackLabel, videoUrl, weak, whyText } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { castOf, frameUrl, pickFrames, trackLabel, videoUrl, weak, whyText } from '../../lib/media.js';
 import { queryClient } from '../../lib/queries.js';
 import { CharacterPicker } from '../../components/CharacterPicker.jsx';
 import { MediaPlayer } from '../../components/MediaPlayer.jsx';

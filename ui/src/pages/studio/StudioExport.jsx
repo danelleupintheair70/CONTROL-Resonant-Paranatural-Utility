@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 import { exportQuery } from './queries.js';
 
 // Export: exactly what the chosen version contains, what is stale, and what

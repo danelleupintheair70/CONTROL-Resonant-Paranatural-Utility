@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { Link, redirect, useLoaderData, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { api, castParams, jobsFor, languageName, parseTitlePath, resolveTitleTab, titlePath } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { castParams, jobsFor } from '../../lib/identity.js';
+import { languageName } from '../../lib/languages.js';
+import { parseTitlePath, resolveTitleTab, titlePath } from '../../lib/title-routing.js';
 import { configQuery, ensure, queryClient } from '../../lib/queries.js';
 import { useJobs } from '../../lib/jobs.js';
 import { useOpenStudio } from '../../lib/studio.js';

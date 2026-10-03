@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
 import { Breakdown } from './Breakdown.jsx';
 

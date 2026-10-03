@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { api } from './legacy.js';
+import { api } from './api.js';
 
 // Open (or reopen) the studio for an episode file; the server keys it by media.
 // Returns a function taking { path, title, jobId, seriesRef }.

@@ -1,5 +1,5 @@
 import { apiUrl } from './api.js';
-import { safeGet } from './dom.js';
+import { safeGet } from './storage.js';
 
 // One audio element for the whole review, deliberately.
 //

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 import { isShow } from '../../lib/library.js';
 import { LangChips } from './parts.jsx';
 

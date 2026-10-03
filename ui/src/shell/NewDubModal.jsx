@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { api } from '../lib/legacy.js';
+import { api } from '../lib/api.js';
 import { queryClient } from '../lib/queries.js';
 
 // Queue a title by hand: what the library scan doesn't know about.

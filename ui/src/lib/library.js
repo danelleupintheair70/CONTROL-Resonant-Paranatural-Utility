@@ -1,4 +1,4 @@
-import { resolveTitleTab, titlePath } from './legacy.js';
+import { resolveTitleTab, titlePath } from './title-routing.js';
 
 // Stable identity for a library item in the URL: an external id when the
 // source provides one, else the title (+ year) as text.

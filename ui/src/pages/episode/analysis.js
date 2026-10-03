@@ -1,4 +1,5 @@
-import { apiUrl, safeGet } from '../../lib/legacy.js';
+import { apiUrl } from '../../lib/api.js';
+import { safeGet } from '../../lib/storage.js';
 
 // Labels and small helpers shared by the episode analysis views.
 

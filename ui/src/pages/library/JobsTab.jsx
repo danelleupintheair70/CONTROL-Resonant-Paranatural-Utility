@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { jobsFor } from '../../lib/legacy.js';
+import { jobsFor } from '../../lib/identity.js';
 import { jobStatusClass, useJobs } from '../../lib/jobs.js';
 
 // The last jobs for this title's file (or any episode of a show's folder).

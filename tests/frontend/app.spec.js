@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mockLibraryItems } from './title-mocks.js';
-import { FIELD_BY_KEY } from '../../web/js/settings-model.js';
+import { FIELD_BY_KEY } from '../../ui/src/lib/settings-model.js';
 
 const LIBRARY = {
   target_languages: ['en', 'es'], counts: { needs_dub: 1 }, warnings: [],

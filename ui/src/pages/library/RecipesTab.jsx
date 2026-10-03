@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { api, castParams } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { castParams } from '../../lib/identity.js';
 
 const ENGINES = ['chatterbox', 'chatterbox_turbo', 'qwen', 'qwen_custom_voice', 'kokoro', 'luxtts', 'tada'];
 

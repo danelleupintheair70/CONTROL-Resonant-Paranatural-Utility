@@ -1,5 +1,5 @@
-/* Knowledge page: the inline styles of web/js/knowledge.js, as classes.
-   Voices pages use web/styles/pages/voices.css and knowledge.css as they are. */
+/* Knowledge page classes. Voices pages use ui/src/styles/pages/voices.css
+   and knowledge.css as they are. */
 .knowledge-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
 .knowledge-head h3 { font-size: 18px; margin: 0; }
 .knowledge-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }

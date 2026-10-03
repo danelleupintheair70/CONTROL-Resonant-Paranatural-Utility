@@ -2,6 +2,14 @@
 # are added). ffmpeg is included for extract/mux/mix. For Demucs, whisperx and
 # pyannote on an NVIDIA GPU, use the GPU variant: Dockerfile.gpu, started with
 # docker-compose.gpu.yml (see README "GPU").
+# The web UI (React), built once and copied into the app image.
+FROM node:22-slim AS ui
+WORKDIR /src
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY ui ./ui
+RUN npm run build:ui
+
 FROM python:3.11-slim
 
 RUN apt-get update \
@@ -14,7 +22,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY doblarr ./doblarr
-COPY web ./web
+COPY --from=ui /src/ui/dist ./ui/dist
 
 # Run as a non-root user (uid/gid 1000). Bind-mounted volumes must be writable
 # by uid 1000 on the host, e.g.:  mkdir -p config data && chown -R 1000:1000 data

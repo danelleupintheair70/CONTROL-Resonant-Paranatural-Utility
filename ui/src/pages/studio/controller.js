@@ -1,4 +1,5 @@
-import { api, safeGet } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { safeGet } from '../../lib/storage.js';
 import { queryClient } from '../../lib/queries.js';
 import { createStudioPlayer } from './player.js';
 import { studioQuery } from './queries.js';

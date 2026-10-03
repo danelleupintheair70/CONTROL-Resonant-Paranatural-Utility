@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { formatTime, locate, reelLayout } from '../lib/legacy.js';
+import { formatTime, locate, reelLayout } from '../lib/media.js';
 
 // A large popup player for any reel of media clips: the video, a timeline with
 // a mark at every clip, a side list of the clips (passed, playing, upcoming)

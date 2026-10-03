@@ -5,11 +5,10 @@
   "scripts": {
     "dev:ui": "vite --config ui/vite.config.js",
     "build:ui": "vite build --config ui/vite.config.js",
-    "lint": "eslint web/js ui/src tests/frontend playwright.config.js playwright.ui.config.js ui/vite.config.js",
+    "lint": "eslint ui tests/frontend playwright.config.js",
     "test": "node --test tests/frontend/*.test.js",
-    "test:browser": "playwright test",
-    "check": "npm run lint && npm test && npm run test:browser",
-    "test:browser:ui": "npm run build:ui && playwright test --config playwright.ui.config.js"
+    "test:browser": "npm run build:ui && playwright test",
+    "check": "npm run lint && npm test && npm run test:browser"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

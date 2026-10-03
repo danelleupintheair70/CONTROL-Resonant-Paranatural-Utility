@@ -2,7 +2,8 @@
 # Doblarr local dev helper (Linux / macOS / Git Bash)
 #
 #   ./dev.sh setup          install Python + Node deps
-#   ./dev.sh serve          run the web UI + API (http://127.0.0.1:6363)
+#   ./dev.sh serve          build the web UI, run it + the API (http://127.0.0.1:6363)
+#   ./dev.sh ui             web UI dev server with live reload (http://127.0.0.1:5363)
 #   ./dev.sh test           Python tests (pytest)
 #   ./dev.sh test-web       frontend unit tests (node --test)
 #   ./dev.sh test-browser   Playwright browser tests
@@ -43,7 +44,11 @@ case "$cmd" in
         step "playwright install chromium" npx playwright install chromium
         ;;
     serve)
+        step "build web UI" npm run build:ui
         exec "$PYTHON" -m doblarr serve "$@"
+        ;;
+    ui)
+        exec npm run dev:ui
         ;;
     test)
         exec "$PYTHON" -m pytest -q "$@"

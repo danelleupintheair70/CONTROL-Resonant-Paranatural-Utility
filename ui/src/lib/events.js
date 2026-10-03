@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
-import { apiUrl, safeGet } from './legacy.js';
+import { apiUrl } from './api.js';
+import { safeGet } from './storage.js';
 import { queryClient } from './queries.js';
 
 // Live updates from /api/events (SSE). Job events refresh the jobs cache, scan

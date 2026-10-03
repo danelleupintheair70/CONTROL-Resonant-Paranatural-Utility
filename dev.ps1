@@ -1,7 +1,8 @@
 # Doblarr local dev helper (Windows / PowerShell)
 #
 #   .\dev.ps1 setup          install Python + Node deps
-#   .\dev.ps1 serve          run the web UI + API (http://127.0.0.1:6363)
+#   .\dev.ps1 serve          build the web UI, run it + the API (http://127.0.0.1:6363)
+#   .\dev.ps1 ui             web UI dev server with live reload (http://127.0.0.1:5363)
 #   .\dev.ps1 test           Python tests (pytest)
 #   .\dev.ps1 test-web       frontend unit tests (node --test)
 #   .\dev.ps1 test-browser   Playwright browser tests
@@ -44,7 +45,11 @@ switch ($Command) {
         Invoke-Step "playwright install chromium" { npx playwright install chromium }
     }
     "serve" {
+        Invoke-Step "build web UI" { npm run build:ui }
         & $Python -m doblarr serve @Rest
+    }
+    "ui" {
+        npm run dev:ui
     }
     "test" {
         & $Python -m pytest -q @Rest

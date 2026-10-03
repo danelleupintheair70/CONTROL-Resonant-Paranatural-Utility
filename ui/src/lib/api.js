@@ -1,4 +1,4 @@
-import { safeGet, safeSet } from './dom.js';
+import { safeGet, safeSet } from './storage.js';
 
 export function apiUrl(path) {
   return '/api/' + path.replace(/^\/?api\//, '').replace(/^\//, '');

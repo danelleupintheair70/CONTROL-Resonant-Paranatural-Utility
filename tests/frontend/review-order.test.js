@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { defaultOrder, orderRows } from '../../web/js/review-order.js';
+import { defaultOrder, orderRows } from '../../ui/src/lib/review.js';
 
 const rows = [
   { index: 0, start: 1 },

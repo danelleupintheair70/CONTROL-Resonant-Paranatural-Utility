@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { baseLanguage, languageMatches } from '../../web/js/voice-picker.js';
+import { baseLanguage, languageMatches } from '../../ui/src/lib/languages.js';
 
 test('regional locales match voices tagged with the base language', () => {
   assert.equal(baseLanguage('es-MX'), 'es');

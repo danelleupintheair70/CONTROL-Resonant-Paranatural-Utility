@@ -41,3 +41,10 @@ def test_real_assets_still_served(client):
 
 def test_api_routes_unaffected(client):
     assert client.get("/api/health").json()["ok"] is True
+
+
+def test_hashed_assets_cache_forever_and_the_page_revalidates(client):
+    asset = client.get("/assets/index-abc123.js")
+    assert asset.status_code == 200
+    assert "immutable" in asset.headers["cache-control"]
+    assert client.get("/library").headers["cache-control"] == "no-cache"

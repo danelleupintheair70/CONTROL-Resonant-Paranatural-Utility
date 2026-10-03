@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { api, lighten } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { lighten } from '../../lib/voices.js';
 import { configQuery, queryClient } from '../../lib/queries.js';
 import { isShow } from '../../lib/library.js';
 import { castQuery, identityBody, voicesQuery } from './queries.js';

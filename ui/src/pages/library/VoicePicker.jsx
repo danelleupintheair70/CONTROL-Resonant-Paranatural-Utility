@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl, safeGet } from '../../lib/legacy.js';
+import { api, apiUrl } from '../../lib/api.js';
+import { safeGet } from '../../lib/storage.js';
+import { baseLanguage, languageMatches } from '../../lib/languages.js';
 
 // Voices are tagged with base languages (es); a regional target (es-MX) matches them.
-const baseLanguage = code => String(code || '').split('-')[0].toLowerCase();
-const languageMatches = (voiceLang, target) => baseLanguage(voiceLang) === baseLanguage(target);
 const AGES = ['unknown', 'child', 'young', 'adult', 'older'];
 const GENDERS = ['unknown', 'male', 'female', 'neutral'];
 const QWEN = ['qwen', 'qwen_custom_voice'];

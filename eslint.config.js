@@ -7,12 +7,12 @@ const rules = {
   'no-duplicate-imports': 'error',
 };
 
-export default [{
-  files: ['web/js/**/*.js', 'tests/frontend/**/*.js', 'playwright.config.js', 'playwright.ui.config.js', 'ui/vite.config.js'],
+export default [{ ignores: ['ui/dist/**', 'ui/dist-*/**'] }, {
+  files: ['tests/frontend/**/*.js', 'playwright.config.js', 'ui/vite.config.js'],
   languageOptions: { globals: { ...globals.browser, ...globals.node } },
   rules,
 }, {
-  // The React UI (docs/react-migration.md).
+  // The web UI (React).
   files: ['ui/src/**/*.{js,jsx}'],
   languageOptions: {
     globals: globals.browser,

@@ -1,4 +1,4 @@
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 
 // The studio's server reads. The session overview stays cached only while the
 // studio is open (a short gcTime), so reopening it reads the server again.

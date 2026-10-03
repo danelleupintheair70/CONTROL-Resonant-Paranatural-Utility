@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, apiUrl, baseOf, safeGet, scopeOptions } from '../lib/legacy.js';
+import { api, apiUrl } from '../lib/api.js';
+import { baseLanguage as baseOf } from '../lib/languages.js';
+import { safeGet } from '../lib/storage.js';
+import { scopeOptions } from '../lib/knowledge.js';
 
 const READY = ['completed', 'done', 'ready', 'success'];
 const FAILED = ['failed', 'error', 'cancelled', 'canceled'];

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLoaderData, useParams } from 'react-router';
-import { api, apiUrl, safeGet } from '../../lib/legacy.js';
+import { api, apiUrl } from '../../lib/api.js';
+import { safeGet } from '../../lib/storage.js';
 
 // One finished dub, watched in the browser (doblarr/watch.py): every audio
 // track one click away at the same moment, the original's subtitles, the

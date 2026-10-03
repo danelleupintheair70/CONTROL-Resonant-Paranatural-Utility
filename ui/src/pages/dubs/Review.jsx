@@ -1,5 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { api, createScenePlayer, defaultOrder, FILTERS, matchesFilter, ORDERS, orderRows } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { createScenePlayer } from '../../lib/scene-player.js';
+import { defaultOrder, FILTERS, matchesFilter, ORDERS, orderRows } from '../../lib/review.js';
 import { LineEditor } from './LineEditor.jsx';
 import { ScenePanel } from './ScenePanel.jsx';
 import { collectScene, createSceneState, resetSceneState } from './scene-collect.js';

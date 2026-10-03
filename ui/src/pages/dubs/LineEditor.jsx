@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 import { KnowledgeCorrection } from '../../components/KnowledgeCorrection.jsx';
 import { EnvelopePanel } from './EnvelopePanel.jsx';
 

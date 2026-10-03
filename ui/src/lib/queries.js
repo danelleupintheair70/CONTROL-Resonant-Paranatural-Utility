@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
-import { api, loadLanguages } from './legacy.js';
+import { api } from './api.js';
+import { loadLanguages } from './languages.js';
 
 // One cache for every page. Loaders fill it before a route renders
 // (`queryClient.ensureQueryData`); components read it with useQuery, and the

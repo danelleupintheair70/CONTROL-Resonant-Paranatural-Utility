@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
-import { languageName, loadLanguages, targetChoices } from '../../web/js/languages.js';
+import { languageName, loadLanguages, targetChoices } from '../../ui/src/lib/languages.js';
 
 const originalFetch = globalThis.fetch;
 beforeEach(() => {

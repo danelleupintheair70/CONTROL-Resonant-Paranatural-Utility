@@ -32,8 +32,10 @@ a.navitem { text-decoration: none; }
   font: 14px system-ui, sans-serif; }
 
 .page { padding: 30px 26px 44px; }
+.app > .page { min-height: 100vh; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); }
 .route-error { padding: 22px 24px; }
 .route-error-title { margin: 0; font-weight: 600; }
+.route-error-back { margin-top: 12px; }
 .muted-note { padding: 22px 10px; color: var(--muted); }
 
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center;

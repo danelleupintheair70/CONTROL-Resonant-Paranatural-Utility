@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ensure, queryClient } from '../../lib/queries.js';
-import { api, baseOf, entriesQuery, languageName, pageCount } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { baseLanguage as baseOf, languageName } from '../../lib/languages.js';
+import { entriesQuery, pageCount } from '../../lib/knowledge.js';
 import { KnowledgeCorrection, useVoiceSample } from '../../components/KnowledgeCorrection.jsx';
 import { catalogQuery, coverageQuery } from './queries.js';
 import { Narrative } from './Narrative.jsx';

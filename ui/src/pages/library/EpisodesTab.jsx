@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { api, languageName, targetChoices } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { languageName, targetChoices } from '../../lib/languages.js';
 import { queryClient } from '../../lib/queries.js';
 import { seriesEpisodesQuery } from './queries.js';
 

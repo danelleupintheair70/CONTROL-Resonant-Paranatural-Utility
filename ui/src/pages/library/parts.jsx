@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
 import { statusClass } from '../../lib/library.js';
 import { planQuery } from './queries.js';

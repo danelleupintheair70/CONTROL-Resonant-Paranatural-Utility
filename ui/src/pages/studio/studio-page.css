@@ -1,5 +1,5 @@
 /* Studio page: the inline styles of the vanilla studio, as classes.
-   The studio's own look stays in web/styles/pages/studio.css. */
+   The studio's own look stays in ui/src/styles/pages/studio.css. */
 .studio-title-text { min-width: 0; }
 .studio-role + .studio-role { margin-left: 4px; }
 .studio-cast-picks { display: contents; }

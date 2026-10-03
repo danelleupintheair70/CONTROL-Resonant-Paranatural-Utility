@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { FIELD_BY_KEY, PLAN_FIELDS, TABS } from '../../web/js/settings-model.js';
-import { SOURCES } from '../../web/js/scene-player.js';
+import { FIELD_BY_KEY, PLAN_FIELDS, TABS } from '../../ui/src/lib/settings-model.js';
+import { SOURCES } from '../../ui/src/lib/scene-player.js';
 
 // Settings describe presentation only, so what these check is that every
 // control a person can reach corresponds to a real config key and says what it
@@ -92,7 +92,7 @@ test('the Hardware tab holds the device and memory controls', () => {
 });
 
 test('device choices come from the probe, with a fallback and the saved value kept', async () => {
-  const { applyDeviceOptions, deviceChoices } = await import('../../web/js/settings-model.js');
+  const { applyDeviceOptions, deviceChoices } = await import('../../ui/src/lib/settings-model.js');
   assert.deepEqual(FIELD_BY_KEY['compute.device'].o, ['auto', 'cpu', 'cuda', 'mps']);
   assert.deepEqual(deviceChoices({ devices: [] }), ['auto', 'cpu']);
   const hw = { devices: [

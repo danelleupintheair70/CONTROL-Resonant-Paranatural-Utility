@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 import { queryClient } from '../../lib/queries.js';
 import { probeQuery } from './queries.js';
 

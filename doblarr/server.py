@@ -45,14 +45,14 @@ from .services import Services
 from .store import Database
 
 log = logging.getLogger("doblarr.server")
+# The web UI is the React build (ui/, `npm run build:ui`). An installed
+# package carries it as doblarr/web; a checkout serves ui/dist.
+# DOBLARR_UI_DIR points at another build (the browser tests use it).
 WEB_DIR = Path(__file__).resolve().parent / "web"
 if not WEB_DIR.is_dir():
-    WEB_DIR = Path(__file__).resolve().parent.parent / "web"
-# The React UI while it replaces web/ (docs/react-migration.md): built into
-# ui/dist by `npm run build:ui`, served instead of web/ with DOBLARR_UI=react.
-if os.environ.get("DOBLARR_UI") == "react":
-    WEB_DIR = Path(os.environ.get("DOBLARR_UI_DIR")
-                   or Path(__file__).resolve().parent.parent / "ui" / "dist")
+    WEB_DIR = Path(__file__).resolve().parent.parent / "ui" / "dist"
+if os.environ.get("DOBLARR_UI_DIR"):
+    WEB_DIR = Path(os.environ["DOBLARR_UI_DIR"])
 SHUTDOWN_TIMEOUT = 5.0  # seconds to wait for worker/scheduler threads
 SSE_HEARTBEAT = 15.0    # seconds between `: ping` comments
 
@@ -182,11 +182,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(watch_routes.build_router(config, store))
     app.include_router(api)
 
-    # The UI has no build step, so its files keep their names across updates.
-    # Without this a browser reuses imported modules from its heuristic cache
-    # and runs an older page against a newer server; "no-cache" still answers
-    # unchanged files with a 304 from their ETag.
+    # index.html and the public files keep their names across updates, so they
+    # revalidate ("no-cache" still answers unchanged files with a 304 from
+    # their ETag); otherwise a browser could run an older page against a newer
+    # server. Built assets carry a content hash in their names and never change.
     REVALIDATE = {"Cache-Control": "no-cache"}
+    IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
 
     # SPA fallback (History API routing): any GET that isn't /api/* and doesn't
     # name a real file gets index.html. Registered before the catch-all mount;
@@ -200,7 +201,9 @@ def create_app(config: Config | None = None) -> FastAPI:
             try:
                 if candidate.is_file() and candidate.resolve().is_relative_to(
                         WEB_DIR.resolve()):
-                    return FileResponse(candidate, headers=REVALIDATE)  # a real asset
+                    # Vite names built assets by content hash, so they never change.
+                    headers = IMMUTABLE if full_path.startswith("assets/") else REVALIDATE
+                    return FileResponse(candidate, headers=headers)  # a real asset
             except OSError:
                 pass
             if "." in full_path.rsplit("/", 1)[-1]:
@@ -211,6 +214,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     if WEB_DIR.exists():
         app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
     else:
-        log.warning("web dir not found at %s — UI will not be served", WEB_DIR)
+        log.warning("web UI not found at %s — run `npm run build:ui`", WEB_DIR)
 
     return app

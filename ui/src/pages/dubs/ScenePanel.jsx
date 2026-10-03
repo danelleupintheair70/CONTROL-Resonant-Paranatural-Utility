@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, SOURCES } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { SOURCES } from '../../lib/scene-player.js';
 
 // The scene panel inside the review editor: hear the exchange, switch between
 // the original and the dub at the same position, inspect a finding, choose a

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ensure, libraryQuery } from '../../lib/queries.js';
-import { characterFor, seriesOfShow, showOfSeries, voiceFor } from '../../lib/legacy.js';
+import { characterFor, seriesOfShow, showOfSeries, voiceFor } from '../../lib/voices.js';
 import { catalogQuery, charactersQuery } from './queries.js';
 import { dotStyle, voiceTitle, VoiceTags } from './VoiceParts.jsx';
 

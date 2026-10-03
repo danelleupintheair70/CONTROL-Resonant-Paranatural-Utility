@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 import { configQuery, ensure, jobsQuery, queryClient } from '../../lib/queries.js';
 import { jobStatusClass, useJobs } from '../../lib/jobs.js';
 import { useOpenStudio } from '../../lib/studio.js';

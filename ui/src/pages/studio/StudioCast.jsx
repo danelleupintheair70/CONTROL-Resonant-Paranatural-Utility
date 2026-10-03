@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, apiUrl, safeGet } from '../../lib/legacy.js';
+import { api, apiUrl } from '../../lib/api.js';
+import { safeGet } from '../../lib/storage.js';
 import { queryClient } from '../../lib/queries.js';
 import { castingQuery, studioVoicesQuery } from './queries.js';
 

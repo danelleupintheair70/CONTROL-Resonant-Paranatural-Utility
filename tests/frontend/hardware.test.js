@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { cpuReason, hardwareSummary } from '../../web/js/hardware.js';
+import { cpuReason, hardwareSummary } from '../../ui/src/lib/hardware.js';
 
 const GB = 1024 ** 3;
 
@@ -36,7 +36,7 @@ test('a card only faster-whisper can use says which stage', () => {
 });
 
 test('the settings block lists devices, libraries and why it is CPU-only', async () => {
-  const { hardwareDetails } = await import('../../web/js/hardware.js');
+  const { hardwareDetails } = await import('../../ui/src/lib/hardware.js');
   const lines = hardwareDetails({
     torch: { installed: true, version: '2.8.0+cpu', cuda: null },
     devices: [{ id: 'cuda:0', name: 'RTX 4090', total_bytes: 24 * GB, free_bytes: 20 * GB, usable_by: ['transcribe'] }],

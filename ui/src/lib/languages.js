@@ -31,3 +31,7 @@ export function targetChoices(targets, current) {
     : [];
   return [...new Set([...targets, ...regional, ...(current ? [current] : [])])];
 }
+
+// "es-MX" → "es": voices and knowledge are tagged with base languages.
+export const baseLanguage = code => String(code || '').split('-')[0].toLowerCase();
+export const languageMatches = (voiceLang, target) => baseLanguage(voiceLang) === baseLanguage(target);

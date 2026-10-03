@@ -1,4 +1,4 @@
-// The voice orb (WebGL), moved from web/js/orb.js for the React UI; the drawing code is unchanged.
+// The voice orb (WebGL).
 // An animated voice orb that reacts to what is playing.
 //
 // Ported from the ElevenLabs UI `Orb` component (React + three.js) to plain

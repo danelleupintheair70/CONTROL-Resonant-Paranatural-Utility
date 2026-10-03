@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { languageName, PLAN_FIELDS, targetChoices } from '../../lib/legacy.js';
+import { languageName, targetChoices } from '../../lib/languages.js';
+import { PLAN_FIELDS } from '../../lib/settings-model.js';
 import { configQuery } from '../../lib/queries.js';
 
 const configValue = (config, dotted) =>

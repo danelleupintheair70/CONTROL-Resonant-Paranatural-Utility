@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { ensure, hardwareQuery, jobsQuery, libraryQuery, statusQuery } from '../lib/queries.js';
 import { useJobs } from '../lib/jobs.js';
 import { useLogLines } from '../lib/events.js';
-import { hardwareSummary } from '../lib/legacy.js';
+import { hardwareSummary } from '../lib/hardware.js';
 import { itemKey, titleHref } from '../lib/library.js';
 import { Poster } from '../components/Poster.jsx';
 

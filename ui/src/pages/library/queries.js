@@ -1,4 +1,5 @@
-import { api, castParams } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
+import { castParams } from '../../lib/identity.js';
 import { queryClient } from '../../lib/queries.js';
 import { itemKey } from '../../lib/library.js';
 

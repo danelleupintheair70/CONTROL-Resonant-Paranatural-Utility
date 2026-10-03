@@ -1,15 +1,21 @@
 """Shared isolated API clients; workers start only in explicit lifespan tests."""
 
 import contextlib
+import os
 import sys
+from pathlib import Path
 
 import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from doblarr import hardware
-from doblarr.config import Config
-from doblarr.server import create_app
+# The server's static routes are tested against a stand-in page, so the Python
+# suite needs no Node build of the real UI (ui/dist). Set before the import.
+os.environ.setdefault("DOBLARR_UI_DIR", str(Path(__file__).parent / "fixtures" / "web"))
+
+from doblarr import hardware  # noqa: E402
+from doblarr.config import Config  # noqa: E402
+from doblarr.server import create_app  # noqa: E402
 
 # The offline fixture below hides torch as sys.modules["torch"] = None. Newer
 # SciPy inspects that entry while it is first imported (scikit-learn imports

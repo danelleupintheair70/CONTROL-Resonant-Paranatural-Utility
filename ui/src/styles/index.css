@@ -1,0 +1,23 @@
+/* Doblarr styles: one file per area, loaded in this order (later wins ties).
+ *   base/        tokens (colours, type, dark theme), elements, app layout
+ *   components/  pieces used on several pages
+ *   pages/       one file per screen
+ * Plain CSS with custom properties and native nesting. Page components import
+ * their own extra classes (ui/src/pages/**.css). Add a file here, never append
+ * to an unrelated one. */
+
+@import url("./base/tokens.css");
+@import url("./base/elements.css");
+@import url("./pages/library.css");
+@import url("./base/layout.css");
+@import url("./pages/review.css");
+@import url("./pages/title.css");
+@import url("./components/star.css");
+@import url("./pages/studio.css");
+@import url("./pages/voices.css");
+@import url("./pages/analysis.css");
+@import url("./pages/knowledge.css");
+@import url("./pages/watch.css");
+@import url("./components/media-player.css");
+@import url("./components/character-picker.css");
+@import url("./components/frame-strip.css");

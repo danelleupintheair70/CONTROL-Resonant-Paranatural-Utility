@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl, lighten, palette, safeGet, SAMPLE, seedOf } from '../../lib/legacy.js';
+import { api, apiUrl } from '../../lib/api.js';
+import { lighten, palette, SAMPLE, seedOf } from '../../lib/voices.js';
+import { safeGet } from '../../lib/storage.js';
 import { createOrb, primeAudio } from './orb.js';
 
 // What the voices pages share: a voice's colours and orb, hearing a voice,

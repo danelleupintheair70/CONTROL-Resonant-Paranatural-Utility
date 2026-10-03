@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Link, redirect, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { configQuery, ensure, hardwareQuery, languagesQuery, queryClient } from '../lib/queries.js';
-import { api, applyDeviceOptions, FIELD_BY_KEY, hardwareDetails, isBoolField, TABS } from '../lib/legacy.js';
+import { api } from '../lib/api.js';
+import { applyDeviceOptions, FIELD_BY_KEY, isBoolField, TABS } from '../lib/settings-model.js';
+import { hardwareDetails } from '../lib/hardware.js';
 
 const configValue = (config, dotted) =>
   dotted.split('.').reduce((o, k) => (o && o[k] !== undefined ? o[k] : undefined), config);

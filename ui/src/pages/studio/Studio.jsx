@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 import { clock, createStudioController, stamp, TRANSPORT_VIEWS, VIEWS } from './controller.js';
 import { studioQuery } from './queries.js';
 import { StudioOverview } from './StudioOverview.jsx';

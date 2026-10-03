@@ -1,4 +1,8 @@
-import { useRouteError } from 'react-router';
+import { isRouteErrorResponse, Link, useMatches, useRouteError } from 'react-router';
+import { safeGet } from '../lib/storage.js';
+
+const SECTION_PATH = { Overview: '/', Library: '/library', Dubs: '/dubs', Voices: '/voices',
+  Knowledge: '/knowledge', Settings: '/settings' };
 
 // Covers the app until the first route's data is in, so a deep link renders
 // its page once instead of passing through Overview and partial states.
@@ -9,25 +13,31 @@ export function BootScreen() {
 // A loader that failed: say what failed, keep the shell around it.
 export function RouteError() {
   const error = useRouteError();
-  const message = error?.status === 404 ? (error.data || 'Not found') : (error?.message || String(error));
+  const section = useMatches().findLast(m => m.handle?.nav)?.handle.nav;
+  // A thrown redirect/response carries text; a failed api() call is an Error
+  // whose message already reads well (its `data` is the raw JSON body).
+  const message = isRouteErrorResponse(error)
+    ? (typeof error.data === 'string' ? error.data : error.statusText || 'Not found')
+    : (error?.message || String(error));
   return (
     <div className="page">
       <div className="panel route-error" role="alert">
         <p className="route-error-title">This page couldn&apos;t load.</p>
         <p className="hint">{message}</p>
+        {section && section !== 'Overview' && (
+          <Link className="btn btn-ghost route-error-back" to={SECTION_PATH[section]}>← {section}</Link>
+        )}
       </div>
     </div>
   );
 }
 
-// Routes still served by the vanilla UI until their phase lands.
-export function NotPorted() {
+// The last resort, when the shell itself failed: the same panel in the app's
+// frame and theme, so it never renders unstyled.
+export function RootError() {
   return (
-    <div className="page">
-      <div className="panel route-error">
-        <p className="route-error-title">Not moved to React yet.</p>
-        <p className="hint">This page still lives in the vanilla UI. See docs/react-migration.md.</p>
-      </div>
+    <div className="app" data-theme={safeGet('doblarr.theme', 'light') === 'dark' ? 'dark' : 'light'}>
+      <RouteError />
     </div>
   );
 }

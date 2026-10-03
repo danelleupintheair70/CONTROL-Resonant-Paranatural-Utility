@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 
 // The names and terms an episode keeps saying (doblarr/key_terms.py): how this
 // dub says each one, how the official dub in the same language says it when

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Outlet, useMatches, useNavigation } from 'react-router';
-import { safeGet, safeSet } from '../lib/legacy.js';
+import { safeGet, safeSet } from '../lib/storage.js';
 import { Sidebar } from './Sidebar.jsx';
 import { NewDubModal } from './NewDubModal.jsx';
 

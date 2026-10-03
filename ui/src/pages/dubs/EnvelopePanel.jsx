@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, apiUrl, safeGet } from '../../lib/legacy.js';
+import { api, apiUrl } from '../../lib/api.js';
+import { safeGet } from '../../lib/storage.js';
 
 // One line's voice envelope in review: what was chosen and why, what the
 // render actually did, the other candidates, and the same take heard four

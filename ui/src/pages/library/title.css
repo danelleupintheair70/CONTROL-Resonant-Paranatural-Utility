@@ -1,6 +1,6 @@
 /* Title page: the inline styles of the vanilla title templates, as classes.
    Layout shared with the vanilla page (.title-hero, .episode-*, .narrator-*,
-   .voice-picker) stays in web/styles/pages/title.css. */
+   .voice-picker) stays in ui/src/styles/pages/title.css. */
 .title-root { padding: 22px 26px 46px; display: flex; flex-direction: column; gap: 18px; }
 .title-missing { padding: 22px 24px; color: var(--muted); }
 

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { pickerOptions } from '../lib/legacy.js';
+import { pickerOptions } from '../lib/characters.js';
 
 // Picking who a voice is, from the show's cast instead of typing it again.
 //

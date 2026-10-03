@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { queryClient } from '../../lib/queries.js';
-import { anchorsText, api, apiUrl, safeGet } from '../../lib/legacy.js';
+import { anchorsText } from '../../lib/knowledge.js';
+import { api, apiUrl } from '../../lib/api.js';
+import { safeGet } from '../../lib/storage.js';
 
 // The template catalogue: voice envelopes, background policies and presets.
 // A template is data; editing one saves a new version and saved dubs keep the

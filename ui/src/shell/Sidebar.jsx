@@ -2,13 +2,12 @@ import { useState } from 'react';
 import { NavLink, useMatches } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { hardwareQuery } from '../lib/queries.js';
-import { hardwareSummary, nudgeDue, REPO_URL, safeSet } from '../lib/legacy.js';
+import { hardwareSummary } from '../lib/hardware.js';
+import { nudgeDue, REPO_URL, SNOOZE_KEY, SNOOZE_MS, STARRED_KEY } from '../lib/star.js';
+import { safeSet } from '../lib/storage.js';
 
 const NAV = [['Overview', '/'], ['Library', '/library'], ['Dubs', '/dubs'], ['Voices', '/voices'],
   ['Knowledge', '/knowledge'], ['Settings', '/settings']];
-const STARRED_KEY = 'doblarr.starNudge.starred';
-const SNOOZE_KEY = 'doblarr.starNudge.snoozedUntil';
-const SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
 
 // The section a page belongs to: a title lives under Library, studio and watch under Dubs.
 function useSection() {

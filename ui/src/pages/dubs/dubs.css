@@ -1,5 +1,5 @@
 /* Dubs page (the queue) and the review dialog's extras. The review itself is
-   styled by web/styles/pages/review.css. */
+   styled by ui/src/styles/pages/review.css. */
 .dubs-toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; align-items: center; }
 .dubs-worker { margin-left: auto; }
 .dubs-panel { padding: 6px 18px 10px; }

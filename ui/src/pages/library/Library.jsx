@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLoaderData, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 import { ensure, libraryQuery, queryClient } from '../../lib/queries.js';
 import { useJobs } from '../../lib/jobs.js';
 import { isShow, itemKey, titleHref } from '../../lib/library.js';

@@ -1,8 +1,6 @@
-import { api } from './api.js';
-
-// What the hardware probe (/api/capabilities.hardware) says, in the few words
-// the sidebar and overview have room for. Never shows a GPU the probe did not
-// find: a CPU-only machine says so, and why.
+// What the hardware probe (/api/hardware) says, in the few words the sidebar
+// and overview have room for. Never shows a GPU the probe did not find: a
+// CPU-only machine says so, and why.
 
 const GB = 1024 ** 3;
 
@@ -38,29 +36,6 @@ export function hardwareSummary(hw, memory = null) {
     memory: used != null ? `${gb(used)} / ${gb(total)} GB` : '',
     percent: used != null && total ? Math.round((used / total) * 100) : null,
   };
-}
-
-export function renderHardware(hw, memory = null) {
-  const s = hardwareSummary(hw, memory);
-  const worker = document.getElementById('workerStatus');
-  if (worker) worker.textContent = `worker online · ${s.device}`;
-  const stat = document.getElementById('statGpu');
-  if (stat) stat.textContent = s.percent == null ? '—' : `${s.percent}%`;
-  const label = document.getElementById('statGpuLabel');
-  if (label) label.textContent = s.memory ? `${s.device} · ${s.memory}` : `${s.device} · ${s.label}`;
-  const card = label?.closest('.panel');
-  if (card) card.title = [s.label, ...(hw?.notes || [])].join('\n');
-}
-
-export async function loadHardware({ refresh = false } = {}) {
-  try {
-    const hw = await api(refresh ? 'hardware?refresh=1' : 'hardware');
-    renderHardware(hw, hw.memory);
-    return hw;
-  } catch {
-    renderHardware(null);
-    return null;
-  }
 }
 
 // Lines for the read-only "This machine" block on the Hardware settings tab.

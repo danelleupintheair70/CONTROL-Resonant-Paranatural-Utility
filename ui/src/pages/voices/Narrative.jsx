@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { libraryQuery, queryClient } from '../../lib/queries.js';
-import { api } from '../../lib/legacy.js';
+import { api } from '../../lib/api.js';
 
 // Title knowledge: what an episode's lines establish (who is who, what
 // happens, how characters speak), reviewed by a person before it is used.

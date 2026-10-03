@@ -1,9 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// The React UI (see docs/react-migration.md). `npm run dev:ui` serves it with
-// /api proxied to a running `doblarr serve`; `npm run build:ui` writes
-// ui/dist, which the server serves when DOBLARR_UI=react.
+// The web UI. `npm run dev:ui` serves it with /api proxied to a running
+// `doblarr serve`; `npm run build:ui` writes ui/dist, which the server serves.
 export default defineConfig({
   root: import.meta.dirname,
   plugins: [react()],

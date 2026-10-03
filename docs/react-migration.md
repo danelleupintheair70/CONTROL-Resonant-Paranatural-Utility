@@ -1,64 +1,57 @@
-# Moving the web UI to React
+# The React UI
 
-The vanilla UI in `web/` grew page by page, and its routing shows it: a deep
-link such as `/title/<key>/episode/<id>/analysis` first paints Overview (the
-only section not `hidden` in `index.html`), waits for `/api/languages`, then
-downloads the whole library to find one show, then every episode of the series
-to find one, and each step repaints the page. The new UI loads what a route
-needs first and renders it once.
+The web UI moved from vanilla JavaScript modules in `web/` to React in `ui/`
+in October 2026. The vanilla routing was the reason: a deep link such as
+`/title/<key>/episode/<id>/analysis` first painted Overview, waited for the
+language list, downloaded the whole library to find one show, then every
+episode of the series to find one, and repainted the page at each step.
 
-## Stack
+## How a page loads now
 
-- **Vite + React 19, plain JS/JSX.** Same language as today, so the pure
-  modules (`settings-model.js`, `title-routing.js`, `review-order.js`, …) and
-  their `node --test` suites move over unchanged.
-- **React Router (data mode).** Every route declares a `loader`; the router
-  resolves it before rendering. A boot screen covers the app until the first
-  route is ready, and later navigations show one progress bar, never a half
-  page.
-- **TanStack Query** as the cache behind the loaders (`ensureQueryData`), so
-  going back to a page is instant and SSE events invalidate exactly the data
-  they change.
-- **Existing CSS.** `web/styles/**` is imported as is, so pages look the same;
-  inline `style=""` strings from the template literals become classes as each
-  page is ported.
+- Every route in `ui/src/router.jsx` declares a `loader`. React Router runs it
+  before the route renders, so a page draws once with its data.
+- The first load shows one boot screen (`#boot`, painted by `ui/index.html`
+  before any script runs). Later navigations keep the current page and show a
+  thin progress bar until the next one is ready.
+- Loaders fill one TanStack Query cache (`ui/src/lib/queries.js`, plus a
+  `queries.js` per area). Components read it with `useQuery`; the SSE stream
+  (`ui/src/lib/events.js`) invalidates what an event changed, and job lists
+  poll only while the stream is down.
+- An episode page reads `GET /api/library/item/{key}` and
+  `GET /api/series/{tvdb_id}/episodes/{episode_id}` instead of the whole
+  library and series.
+- Data a page can show later (the library behind Overview's recent titles, a
+  character's "where they talk") loads inside its own section, so a cold
+  library scan never holds a page.
 
-## Consistency bar
+## Layout
 
-The Playwright specs in `tests/frontend/*.spec.js` select by role, label and
-text, with the API mocked through `page.route`. They are the acceptance test:
-a page is ported when its specs pass against the React build. Specs change only
-where a page now calls a narrower endpoint (the mock follows the request), never
-to loosen an assertion.
+- `ui/src/shell/`: sidebar, header, boot screen, new-dub dialog.
+- `ui/src/pages/<area>/`: one folder per area with its `routes.jsx`, page
+  components, `queries.js` and CSS (library + title, episode, dubs, voices +
+  knowledge, studio). Overview and Settings sit directly in `pages/`.
+- `ui/src/components/`: pieces several areas use (media player, character
+  picker, knowledge correction).
+- `ui/src/lib/`: API transport, storage, query cache, events, and pure
+  helpers tested with `node --test`.
+- `ui/src/styles/`: the shared CSS carried over from `web/styles` unchanged;
+  page-specific classes live next to their components.
 
-## Layout during the move
+## Building and serving
 
-- `ui/` holds the new app (`ui/src`, `ui/index.html`, `vite.config.js`).
-  `npm run dev:ui` proxies `/api` to the running server.
-- `web/` keeps serving production until cutover, so the app is never half
-  migrated for anyone using it.
-- The server serves `ui/dist` instead of `web/` when `DOBLARR_UI=react` is
-  set, which is how the specs run against the new build.
+- `npm run dev:ui` serves the UI with live reload on :5363 and proxies `/api`
+  to a running server on :6363.
+- `npm run build:ui` writes `ui/dist`, which `doblarr serve` serves from a
+  checkout. A wheel carries it as `doblarr/web` (`setup.py`), and both
+  Dockerfiles build it in a Node stage.
+- Built assets have content-hashed names and are served `immutable`;
+  `index.html` and the public files revalidate.
 
-## Server endpoints for single items
+## Consistency
 
-- `GET /api/library/item/{key}`: one library item by its URL key
-  (`tmdb-…`, `tvdb-…`, `t-<title>-<year>`), read from the scan cache.
-- `GET /api/series/{tvdb_id}/episodes/{episode_id}`: one episode with its
-  parent show, so an episode page never pulls the whole series.
-
-## Phases
-
-1. **Shell.** Vite scaffold, router, sidebar, top bar, theme, boot screen,
-   event stream, server flag, Playwright project for the React build.
-   Overview and Settings.
-2. **Library and Title.** Library grid with filters; title page with its tabs
-   (episodes, plan, voices, jobs, meta, recipes) on the single-item endpoints.
-3. **Episode.** Analysis, evidence, terms, scene review: the route the move
-   started from.
-4. **Dubs.** Jobs table, queue controls, review, Watch.
-5. **Voices and Knowledge.**
-6. **Studio.** The largest page (cast, player, experiments, export).
-7. **Cutover.** `ui/dist` becomes the served UI; `web/js` and `index.html`
-   are deleted; Dockerfiles gain a Node build stage; CI, `MANIFEST.in`,
-   `dev.ps1`/`dev.sh` and the README follow.
+The browser specs in `tests/frontend/*.spec.js` were the acceptance bar during
+the move: each page was ported until its specs passed against the React build,
+with the element ids, labels and text they select kept. Spec changes were
+limited to mocking the two new single-item endpoints
+(`tests/frontend/title-mocks.js`) and reading the settings field list from
+Node instead of the page.

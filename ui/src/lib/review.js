@@ -1,6 +1,4 @@
-// How the review list is ordered. `likely` puts the lines most likely to need
-// a listen first (each row's review_priority, from doblarr.decisions); lines
-// that tie keep their place on the timeline. `timeline` is the episode order.
+// How the review list is ordered and filtered.
 
 export const ORDERS = [
   ['likely', 'Likeliest problems first'],
@@ -19,4 +17,17 @@ export function orderRows(rows, order) {
 export function defaultOrder(data) {
   return data?.settings?.review_order && data.segments?.some(s => s.review_priority?.score)
     ? 'likely' : 'timeline';
+}
+
+export const FILTERS = [
+  ['all', 'All lines'], ['flagged', 'Any finding'], ['content', 'Wording'],
+  ['timing', 'Timing'], ['technical', 'Audio'], ['performance', 'Performance'],
+  ['delivery', 'Delivery'],
+];
+
+export function matchesFilter(row, filter) {
+  if (filter === 'all') return true;
+  const findings = row.cue?.findings || [];
+  if (filter === 'flagged') return findings.length > 0 || row.issues.length > 0;
+  return findings.some(f => f.kind === filter && f.disposition !== 'obsolete');
 }

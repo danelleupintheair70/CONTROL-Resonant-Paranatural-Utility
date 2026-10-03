@@ -5,7 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queries.js';
 import { startEventStream } from './lib/events.js';
 import { router } from './router.jsx';
-import '../../web/styles.css';
+import './styles/index.css';
 import './shell/shell.css';
 import './pages/overview.css';
 import './pages/settings.css';
