@@ -96,6 +96,13 @@ The supplied license is a declaration that maintainers must verify, not a legal
 assessment. A French Canadian fixture demonstrates adding another locale through
 data without a new translation branch.
 
+Title research ([title-research.md](title-research.md)) produces candidates
+too. Terms named in a cited answer are saved as `proposed` entries scoped to the
+show or film, which stay inactive until reviewed. Each run also writes
+`work/research/<run>/candidates.jsonl` in the same row format as above, plus
+`register`, so the terms can be turned into proposed pack shards with the tool
+above.
+
 Appoint a maintainer for each new locale and directed source pair through the
 repository review process. Record their identity, language competence and reviewed
 dimensions in entry review history. No maintainers have been appointed or external
