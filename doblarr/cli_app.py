@@ -26,6 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from pathlib import Path
 
 from .config import Config
@@ -212,7 +213,7 @@ def report(version: dict, counters: dict, names: dict[str, str]) -> tuple[list[s
     stretched = int(counters.get("stretched_lines") or 0)
     over = int(counters.get("timing_flags") or 0)
     collisions = int((counters.get("conversation") or {}).get("collisions") or 0)
-    open_codes = Counter()
+    open_codes: Counter[str] = Counter()
     for cue in version.get("cues") or []:
         for finding in cue.get("findings") or []:
             if finding.get("disposition") in (None, "open"):
@@ -456,8 +457,9 @@ def add_parsers(sub) -> None:
     d.add_argument("--lines", action="store_true", help="print every line")
 
 
-COMMANDS = {"voices": cmd_voices, "queue": cmd_queue, "jobs": cmd_jobs, "report": cmd_report,
-            "dubref": cmd_dubref}
+COMMANDS: dict[str, Callable[..., int]] = {
+    "voices": cmd_voices, "queue": cmd_queue, "jobs": cmd_jobs, "report": cmd_report,
+    "dubref": cmd_dubref}
 LOCAL = {"dubref"}
 
 
