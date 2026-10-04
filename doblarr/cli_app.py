@@ -281,6 +281,22 @@ def report(version: dict, counters: dict, names: dict[str, str]) -> tuple[list[s
     return out, failures
 
 
+def overruns(version: dict) -> list[tuple[float, int]]:
+    """(seconds past the slot, line) measured on the timed audio that was mixed."""
+    segments = {s["index"]: s for s in version["script"]["segments"]}
+    out = []
+    for cue in version.get("cues") or []:
+        seg = segments.get(cue["index"])
+        renders = {r["role"]: r for r in (cue.get("audio") or {}).get("renders") or []}
+        timed = renders.get("phrased") or renders.get("fitted")
+        if seg is None or not timed or not timed.get("duration"):
+            continue
+        extra = timed["duration"] - (seg["end"] - seg["start"])
+        if extra > 0.05:
+            out.append((extra, cue["index"]))
+    return out
+
+
 def cmd_report(args, api: Api) -> int:
     job = _job(api, args.job)
     if job["status"] != "done" or not job.get("version_file"):
@@ -297,14 +313,7 @@ def cmd_report(args, api: Api) -> int:
     print("\n".join(lines))
     if args.worst:
         segments = {s["index"]: s for s in version["script"]["segments"]}
-        worst = []
-        for cue in version.get("cues") or []:
-            for f in cue.get("findings") or []:
-                if f.get("disposition") in (None, "open") and f["code"] == "timing_overflow":
-                    ev = f.get("evidence") or {}
-                    clip, slot = ev.get("clip_seconds"), ev.get("slot_seconds")
-                    if clip and slot:
-                        worst.append((clip / ev.get("stretch", 1.0) - slot, cue["index"]))
+        worst = overruns(version)
         print("Longest overruns")
         for extra, index in sorted(worst, reverse=True)[:args.worst]:
             seg = segments.get(index, {})

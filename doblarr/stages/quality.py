@@ -63,6 +63,7 @@ def apply_findings(seg, detector: str, inputs: str, observed: list[tuple]) -> No
     longer reported becomes `obsolete` rather than disappearing.
     """
     codes = {code for code, *_ in observed}
+    latest = {code: row for code, *row in observed}
     for found in seg.findings:
         if found.detector != detector:
             continue
@@ -71,6 +72,10 @@ def apply_findings(seg, detector: str, inputs: str, observed: list[tuple]) -> No
                 found.history.append({"at": now(), "from": found.disposition,
                                       "to": "open", "reason": "inputs changed"})
                 found.disposition = "open"
+            if found.inputs != inputs:
+                # The same problem measured on different audio: the evidence
+                # must describe the audio that is there now.
+                _kind, found.severity, found.confidence, found.evidence = latest[found.code]
             found.inputs = inputs
         elif found.disposition != "obsolete":
             found.history.append({"at": now(), "from": found.disposition,
@@ -345,17 +350,39 @@ def _rambled(stats: dict, seg) -> bool:
     return duration > max(2.5, 3 * needed)
 
 
+def _preserve(seg) -> None:
+    """Copy the current take to a file of its own before a retry replaces it.
+
+    A regeneration writes the line's usual file name, so without this every
+    earlier attempt would point at the newest audio and "keep the best
+    attempt" could only ever keep the last one.
+    """
+    import shutil
+
+    take = seg.audio.selected() if seg.audio.takes else None
+    if take is None or take.raw is None or not take.raw.exists() or not take.take_id:
+        return
+    source = Path(take.raw.path)
+    if take.take_id[:12] in source.stem:
+        return
+    kept = source.with_name(f"{source.stem}.{take.take_id[:12]}{source.suffix}")
+    shutil.copy2(source, kept)
+    take.raw.path = str(kept)
+    if seg.audio_clip and Path(seg.audio_clip) == source:
+        seg.audio_clip = kept
+
+
 def _keep_best(seg, tried) -> bool:
     """Select the best attempt if it is not the current one; True if changed."""
-    best = min(tried, key=lambda row: (row[0], row[1]))
+    best = min(tried, key=lambda row: row[:3])
     current = tried[-1]
-    if best[2] == current[2] or (best[0], best[1]) == (current[0], current[1]):
+    if best[3] == current[3] or best[:3] == current[:3]:
         return False
-    take = seg.audio.take(best[2])
+    take = seg.audio.take(best[3])
     if take is None or take.raw is None or not take.raw.exists():
         return False
     seg.audio.selection = Selection(take_id=take.take_id, reason="best of attempts",
-                                    actor="quality", previous=current[2], at=now())
+                                    actor="quality", previous=current[3], at=now())
     seg.audio.invalidate_after(RAW)
     seg.audio_clip = Path(take.raw.path)
     return True
@@ -475,7 +502,7 @@ def run(
                                                                     Path(seg.audio_clip)))
                            for seg in job.segments if seg.audio_clip])
     for seg in job.segments:
-        tried: list[tuple[int, float, str]] = []  # (retryable issues, -similarity, take)
+        tried: list[tuple[int, float, float, str]] = []  # issues, overshoot, -voice, take
         for attempt in range(attempts + 1):
             if cancel is not None and cancel.is_set():
                 raise JobCancelled("cancelled during clip checks")
@@ -505,8 +532,11 @@ def run(
             if "unexpected_duration" in issues and _rambled(stats, seg):
                 retryable.add("unexpected_duration")
             current = seg.audio.selection.take_id if seg.audio.selection else ""
-            tried.append((len(retryable), -(similarity if similarity is not None else 0.0),
-                          current))
+            # Fewest retryable issues first, then the take that needs the
+            # least squeezing into its slot, then the one closest to the voice.
+            overshoot = max(0.0, float(stats.get("duration") or 0.0) - seg.duration * 1.3)
+            tried.append((len(retryable), round(overshoot, 1),
+                          -(similarity if similarity is not None else 0.0), current))
             if not retryable or attempt >= attempts or regenerate is None:
                 break
             # Retries share one budget with timing repairs and extra candidate
@@ -521,6 +551,7 @@ def run(
             seg.verification.attempts += 1
             if checkpoint:
                 checkpoint()
+            _preserve(seg)
             regenerate(seg)
             job.metrics["quality_retries"] = job.metrics.get("quality_retries", 0) + 1
         if len(tried) > 1 and _keep_best(seg, tried):

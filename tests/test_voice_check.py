@@ -56,12 +56,12 @@ def test_drifted_take_is_retried_and_the_closer_one_kept(tmp_path, monkeypatch):
 def test_a_worse_retry_does_not_replace_the_better_take(tmp_path, monkeypatch):
     job = _job(tmp_path)
     # Both drift; the first is closer to the voice, so it stays.
-    _similarity(monkeypatch, {"take0.wav": 0.2, "take1.wav": 0.05})
+    _similarity(monkeypatch, {"take0.wav": 0.2, "take0.t0.wav": 0.2, "take1.wav": 0.05})
     quality.run(job, normalize=False, regenerate=_regenerate(tmp_path), voice_check=True)
     seg = job.segments[0]
     assert seg.audio.selection.take_id == "t0"
     assert seg.audio.selection.reason == "best of attempts"
-    assert Path(seg.audio_clip).name == "take0.wav"
+    assert Path(seg.audio_clip).name == "take0.t0.wav"
     assert "voice_drift" in seg.issues
     assert job.metrics["quality_best_kept"] == 1
 
@@ -107,3 +107,39 @@ def test_a_voice_that_scores_low_everywhere_is_not_drifting():
     assert check.drifted(-0.05, "borrowed")      # far below its own typical score
     assert check.drifted(0.2, "own")             # too few samples: the plain floor
     assert not check.drifted(0.3, None)
+
+
+def test_a_finding_seen_again_on_new_audio_carries_the_new_evidence():
+    seg = Segment(0, 0, 1, "Ya voy")
+    quality.apply_findings(seg, "d/1", "a", [("timing_overflow", "timing", "warning", None,
+                                              {"clip_seconds": 10.8})])
+    quality.apply_findings(seg, "d/1", "b", [("timing_overflow", "timing", "warning", None,
+                                              {"clip_seconds": 1.7})])
+    (found,) = seg.findings
+    assert found.evidence == {"clip_seconds": 1.7} and found.inputs == "b"
+
+
+def test_the_kept_attempt_is_its_own_audio_when_retries_reuse_the_file(tmp_path, monkeypatch):
+    job = DubJob(tmp_path / "movie.mkv", "ja", "es")
+    job.speakers = {"SPEAKER_00": Speaker("SPEAKER_00", reference_clip=tmp_path / "ref.wav")}
+    line = wav(tmp_path / "line_0000.wav", 5000, 1)
+    seg = Segment(0, 0, 1, "Mina, ven", speaker="SPEAKER_00", audio_clip=line)
+    seg.audio.takes.append(Take(take_id="first", raw=Artifact(role=RAW, path=str(line))))
+    seg.audio.selection = Selection(take_id="first")
+    job.segments = [seg]
+    # Score by length: the first take (1 s) is close to the voice, retries (2 s) are not.
+    def by_length(self, speaker, take):
+        return 0.5 if quality.inspect_pcm(take)["duration"] < 1.5 else 0.05
+
+    monkeypatch.setattr(voice_check.VoiceCheck, "similarity", by_length)
+
+    def regenerate(seg):   # like synthesis: the same file name, new audio
+        wav(line, 5000, 2)
+        n = len(seg.audio.takes)
+        seg.audio.takes.append(Take(take_id=f"retry{n}", raw=Artifact(role=RAW, path=str(line))))
+        seg.audio.selection = Selection(take_id=f"retry{n}")
+        seg.audio_clip = line
+
+    quality.run(job, normalize=False, regenerate=regenerate, voice_check=True, max_retries=2)
+    assert seg.audio.selection.take_id == "first"
+    assert quality.inspect_pcm(Path(seg.audio_clip))["duration"] == 1

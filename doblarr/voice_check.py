@@ -61,7 +61,7 @@ class VoiceCheck:
         self.references = references
         self.minimum = float(minimum)
         self._refs: dict[str, object] = {}
-        self._seen: dict[tuple[str, str], float | None] = {}
+        self._seen: dict[tuple, float | None] = {}
         self.baselines: dict[str, float] = {}
 
     def calibrate(self, rows: list[tuple[str, float | None]]) -> None:
@@ -85,7 +85,12 @@ class VoiceCheck:
         """Cosine similarity of `take` to the speaker's reference; None = unknown."""
         import numpy as np
 
-        key = (speaker, str(take))
+        # A line's takes share one file name, so the key must say which audio.
+        try:
+            info = Path(take).stat()
+            key = (speaker, str(take), info.st_mtime_ns, info.st_size)
+        except OSError:
+            return None
         if key in self._seen:
             return self._seen[key]
         ref = self._reference(speaker)
