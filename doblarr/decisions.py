@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -643,22 +644,51 @@ def sound_tags(job, oracle: Oracle, config: dict) -> int:
 # -- 6. timing rewrites ------------------------------------------------------------
 
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
-_NAME = re.compile(r"(?<![.!?¿¡:;]\s)(?<!^)\b([A-ZÁÉÍÓÚÑÜ][\w'’-]+)")
+_WORD = re.compile(r"\b([A-ZÁÉÍÓÚÑÜ][\w'’-]+)")
+# What may sit between a sentence's end and its first word: Spanish opening
+# marks, quotes, dialogue dashes and spaces ("… ¿Quieres", "- ¡Ese").
+_OPENERS = "¿¡\"'“”‘’«»([-–— \t\n"
+_SENTENCE_END = ".!?…:;"
 
 REWRITE_QUESTION = noul("Does the shorter line keep the meaning of the original line, "
                         "with no key fact, name or number lost?")
 
 
+def _fold(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", text.casefold())
+                   if unicodedata.category(c) != "Mn")
+
+
+def _names(text: str) -> list[str]:
+    """Capitalised words that are not just the first word of a sentence."""
+    found = []
+    for match in _WORD.finditer(text):
+        before = text[:match.start()].rstrip(_OPENERS)
+        if not before or before[-1] in _SENTENCE_END:
+            continue
+        found.append(match.group(1))
+    return found
+
+
+def _kept(name: str, shorter: str) -> bool:
+    """A name survives with its honorific dropped or its ending changed."""
+    base = _fold(name.split("-")[0].rstrip("'’"))
+    words = re.findall(r"[\w']+", _fold(shorter))
+    if base in words or base in _fold(shorter):
+        return True
+    stem = base[:max(4, len(base) - 3)]
+    return len(base) >= 5 and any(w.startswith(stem) for w in words)
+
+
 def rewrite_rule(original: str, shorter: str) -> str | None:
     """Why a rewrite must be rejected on its words alone, or None."""
-    kept = shorter.casefold()
     for number in _NUMBER.findall(original):
         if number not in shorter:
             return f"dropped the number {number}"
-    for name in _NAME.findall(original.strip()):
+    for name in _names(original.strip()):
         if name.startswith("I'") or name.startswith("I’") or name.upper() == "OK":
             continue  # a capital that is grammar, not a name
-        if name.casefold() not in kept:
+        if not _kept(name, shorter):
             return f"dropped the name {name}"
     return None
 

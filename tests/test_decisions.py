@@ -320,6 +320,14 @@ def test_an_unknown_event_on_the_ledger_gets_its_type():
     ("Tell Ginko we leave at 5.", "Tell Ginko soon.", True),      # a number dropped
     ("Espera. Mañana vamos a Madrid con Ana.", "Mañana, Madrid con Ana.", False),
     ("Well, I'm sure. OK then.", "Sure.", False),                 # grammar capitals
+    ("¿Quieres venir?", "¿Vienes?", False),                       # opener, not a name
+    ("¿Qué? ¿Dijiste algo?", "¿Qué? ¿Dices algo?", False),
+    ("- Ese temperamento. - ¡Para nada!", "- Ese genio. - ¡Nada!", False),
+    ("Espera... Pero Mina dijo que no.", "Mina dijo que no.", False),
+    ("Como pensé, Mina-chan no cambió.", "Mina no cambió.", False),  # honorific only
+    ("Ya casi son los Exámenes Kaito.", "Ya casi es el Examen Kaito.", False),
+    ("- Es la segunda Tomoe. - ¡Qué!", "- Es la segunda. - ¡Qué!", True),
+    ("Vamos con Ren al puerto.", "Vamos al puerto.", True),
 ])
 def test_rewrites_that_drop_names_or_numbers(original, shorter, rejected):
     assert (decisions.rewrite_rule(original, shorter) is not None) is rejected
