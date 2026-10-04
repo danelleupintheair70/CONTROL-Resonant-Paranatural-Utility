@@ -383,6 +383,9 @@ def _keep_best(seg, tried) -> bool:
         return False
     seg.audio.selection = Selection(take_id=take.take_id, reason="best of attempts",
                                     actor="quality", previous=current[3], at=now())
+    # Back to the revision that made it, so a later synthesis of the same
+    # words asks for this take (and finds it) instead of the rejected one.
+    seg.revision = take.line_revision
     seg.audio.invalidate_after(RAW)
     seg.audio_clip = Path(take.raw.path)
     return True

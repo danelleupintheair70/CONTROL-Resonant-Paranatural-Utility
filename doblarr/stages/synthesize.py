@@ -840,6 +840,22 @@ def run(
         line_sampling = _sampling(client, voice_engine, sampling, cast, seg.speaker)
         if line_sampling:
             signature["sampling"] = line_sampling
+        # A take already made for exactly this request and kept in a file of
+        # its own (an earlier attempt the quality stage preferred) is reused
+        # rather than replaced by whatever the line's usual file holds now.
+        known = seg.audio.take(take_id(generation_fingerprint(signature), 0))
+        if (not force and known is not None and known.raw is not None
+                and known.raw.exists() and Path(known.raw.path) != dest):
+            previous = seg.audio.selection.take_id if seg.audio.selection else None
+            if previous != known.take_id:
+                seg.audio.selection = Selection(take_id=known.take_id, reason="auto",
+                                                previous=previous, at=now())
+                seg.audio.invalidate_after(RAW)
+            seg.audio_clip = Path(known.raw.path)
+            count("tts_cache_hits")
+            log.info("  line %d/%d kept (earlier attempt %s)", position, total,
+                     known.take_id)
+            return
         receipt = dest.with_suffix(".json")
         try:
             saved = json.loads(receipt.read_text()) if receipt.exists() else {}
