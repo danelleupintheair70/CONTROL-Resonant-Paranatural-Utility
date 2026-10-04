@@ -129,6 +129,10 @@ class TranslateModel(_Section):
     reference_policy: Literal["original_only", "reference_suggestions",
                               "follow_edition"] = "original_only"
     reference_file: str = ""       # studio-built aligned reference for this episode
+    # When the episode file carries a published dub in the target language,
+    # transcribe it and translate along it (doblarr.dub_reference): follow its
+    # names and phrasing, only borrow phrasing (suggest), or ignore it (off).
+    published_dub: Literal["follow", "suggest", "off"] = "follow"
     holdout_files: list[str] = []  # evaluation-only text no request may carry
 
 

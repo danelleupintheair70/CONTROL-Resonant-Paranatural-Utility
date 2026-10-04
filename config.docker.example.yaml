@@ -47,6 +47,9 @@ compute:
   log_memory: true              # log allocated/reserved GPU memory around each stage
 
 translate:
+  # The episode's own dub in the target language, when the file has one:
+  # follow its names and phrasing (follow), borrow phrasing only (suggest), or off.
+  published_dub: follow
   prepass: "off"                # off | summary | summary_terms: one bounded read of the
                                 # script before translating (extra provider calls, cached)
 

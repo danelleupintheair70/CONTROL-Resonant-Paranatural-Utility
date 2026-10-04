@@ -166,3 +166,52 @@ def reference(ref: dict) -> dict:
 def reference_file(script: Path, stream: int) -> Path:
     return script.with_name(script.name.replace(".script.json",
                                                 f".dubref.{stream}.reference.json"))
+
+
+MODES = {"follow": "follow_edition", "suggest": "reference_suggestions"}
+
+
+def published_track(evidence: list[dict], language: str) -> dict | None:
+    """The verified dub track in `language`, a Latin-American one first."""
+    tracks = [t for t in evidence or []
+              if t.get("lang") == language and t.get("state") == "verified"]
+    tracks.sort(key=lambda t: "latin" not in str(t.get("title") or "").casefold())
+    return tracks[0] if tracks else None
+
+
+def ensure(folder: Path, stem: str, track: dict, lines: list[dict], language: str,
+           model: str = "large-v3", device: str = "cuda") -> tuple[dict, Path] | None:
+    """The dub's reference for an episode, transcribed once and then reused.
+
+    The transcript is cached in `<stem>.dubref.<stream>.json` next to the
+    extracted track and keyed by that file's size and time, so a re-extracted
+    track is heard again and an unchanged one never is.
+    """
+    from .artifacts import stamp
+
+    stream = int(track["stream"])
+    audio = folder / f"{stem}.audio{stream}.16k.wav"
+    if not audio.is_file():
+        return None
+    cache = folder / f"{stem}.dubref.{stream}.json"
+    saved = {}
+    if cache.is_file():
+        try:
+            saved = json.loads(cache.read_text(encoding="utf-8"))
+        except ValueError:
+            saved = {}
+    key = {"audio": stamp(audio), "model": model, "version": VERSION}
+    if saved.get("key") == key:
+        words = saved["words"]
+    else:
+        log.info("dub reference: transcribing %s track %d", language, stream)
+        words = transcribe(audio, language, model, device)
+        cache.write_text(json.dumps({"key": key, "words": words}, ensure_ascii=False),
+                         encoding="utf-8")
+    offset, rate = float(track.get("offset") or 0.0), float(track.get("rate") or 1.0)
+    ref = {"language": language, "stream": stream, "offset": offset, "rate": rate,
+           "words": words, "lines": assign(words, lines, offset, rate)}
+    payload = reference(ref)
+    target = folder / f"{stem}.dubref.{stream}.reference.json"
+    target.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    return ref, target

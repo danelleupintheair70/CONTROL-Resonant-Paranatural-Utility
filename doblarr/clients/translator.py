@@ -535,7 +535,8 @@ def translation_options(translate: dict) -> dict:
                if not (k == "slang" and not v)
                and not (k == "reference_policy" and v in ("", "original_only"))
                and not (k == "reference_file" and not v)
-               and k != "holdout_files"}
+               # The published-dub switch shows up as the reference it builds.
+               and k not in ("holdout_files", "published_dub")}
     if options.get("reference_file"):
         if options.get("reference_policy") in (None, "original_only"):
             options.pop("reference_file")

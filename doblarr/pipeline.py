@@ -353,6 +353,10 @@ def run_job(
         save_script(job, effective_work)
 
     def _translate():
+        nonlocal references
+        published = _published_dub(job, config, Path(shared_work), translator, dry_run)
+        if published is not None:
+            references = published
         translation_work = (
             (work / "audition-base" if edits else effective_work)
             if job.kind == "audition"
@@ -1323,6 +1327,66 @@ def _stage_outputs(job: DubJob, stage: str, work: Path) -> dict:
     if stage == "features":
         return {"features": str((job.metrics.get("features") or {}).get("path") or "")}
     return {}
+
+
+def _published_dub(job, config, shared_work: Path, translator, dry_run: bool) -> dict | None:
+    """Translate along the episode's own published dub, when it carries one.
+
+    The voice grouping already extracted every dub track and verified its
+    alignment (`<stem>.speakers.json`); a verified track in the target language
+    is transcribed once (doblarr.dub_reference) and becomes this job's aligned
+    reference. `translate.published_dub` picks how it is used: `follow` keeps
+    the dub's names and phrasing where the source's meaning allows, `suggest`
+    only borrows phrasing, `off` never reads it. An explicit
+    `translate.reference_file` always wins.
+    """
+    import json
+
+    from . import dub_reference
+    from .artifacts import read_json
+    from .stages.common import work_stem
+
+    settings = config["translate"]
+    policy = dub_reference.MODES.get(str(settings.get("published_dub", "follow") or "off"))
+    if (policy is None or dry_run or not job.segments or settings.get("reference_file")
+            or (job.script_is_target and not job.translation_options.get("adapt_region"))):
+        return None
+    stem = work_stem(job)
+    evidence = read_json(shared_work / f"{stem}.speakers.json").get("track_evidence") or []
+    track = dub_reference.published_track(evidence, job.target_lang)
+    if track is None:
+        return None
+    lines = [{"index": s.index, "start": s.start, "end": s.end} for s in job.segments]
+    try:
+        found = dub_reference.ensure(shared_work, stem, track, lines, job.target_lang)
+    except Exception as exc:  # noqa: BLE001 - a reference is help, never a requirement
+        log.warning("published dub: could not read track %s (%s); translating without it",
+                    track.get("stream"), exc)
+        return None
+    if found is None:
+        return None
+    ref, path = found
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not payload.get("groups"):
+        return None
+    options = translation_options({**settings, "reference_policy": policy,
+                                   "reference_file": str(path)})
+    options["target_locale"] = job.target_locale
+    if options != job.translation_options:
+        # Translations made without the reference are not what it would say.
+        for seg in job.segments:
+            seg.text_translated = None
+            seg.translation_provenance = {}
+        job.translation_options = options
+    translator.direction = {**getattr(translator, "direction", {}),
+                            "reference_policy": policy, "reference_file": str(path)}
+    heard = sum(1 for line in ref["lines"] if line["text"])
+    job.metrics["published_dub"] = {"stream": ref["stream"], "title": track.get("title"),
+                                    "policy": policy, "lines_heard": heard,
+                                    "lines": len(ref["lines"])}
+    log.info("published dub: following track %s (%s), %d/%d lines heard", ref["stream"],
+             track.get("title"), heard, len(ref["lines"]))
+    return payload
 
 
 def _load_references(translate: dict) -> dict | None:

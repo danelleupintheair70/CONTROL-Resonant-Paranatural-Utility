@@ -74,6 +74,9 @@ voicestudio:
 
 # Translation
 translate:
+  # The episode's own dub in the target language, when the file has one:
+  # follow its names and phrasing (follow), borrow phrasing only (suggest), or off.
+  published_dub: follow
   provider: claude              # claude | prompture | voicebox | passthrough (stub)
   batch_size: 12
   chars_per_second: 14

@@ -32,6 +32,7 @@ SETTING_KEYS = (
     "translate.adapt_region",
     "translate.slang",
     "translate.direction",
+    "translate.published_dub",
     "translate.character_notes",
     "translate.chars_per_second",
     "voicebox.seed",
