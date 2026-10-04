@@ -6,6 +6,7 @@
     doblarr queue FILE --to es-419 [--version NAME] [--set key=value ...] [--wait]
     doblarr jobs [--watch JOB_ID]
     doblarr report JOB_ID [--worst 15]          # objective checks of a finished dub
+    doblarr dubref FILE [--track 5] [--compare JOB_ID]   # what the published dub says
 
 They share the server's queue, database and speech service, so a dub queued
 here shows up in the web UI and the other way round. `report` is the check a
@@ -322,6 +323,92 @@ def cmd_report(args, api: Api) -> int:
     return 1 if failures else 0
 
 
+# -- published dub reference ---------------------------------------------------------
+
+
+def _episode_files(config: Config, video: str, locale: str):
+    stem = Path(video).stem
+    media = Path(config.work_dir) / "media"
+    scripts = sorted(media.glob(f"*/{locale}/{stem}.script.json"),
+                     key=lambda p: p.stat().st_mtime, reverse=True)
+    if not scripts:
+        raise ApiError(f"no {locale} script for {stem}; analyse or dub the episode first")
+    script = scripts[0]
+    folder = script.parent.parent
+    evidence = {}
+    speakers = folder / f"{stem}.speakers.json"
+    if speakers.is_file():
+        data = json.loads(speakers.read_text(encoding="utf-8"))
+        evidence = {t["stream"]: t for t in data.get("track_evidence") or []}
+    return script, folder, stem, evidence
+
+
+def cmd_dubref(args, config: Config) -> int:
+    from . import dub_reference
+
+    script, folder, stem, evidence = _episode_files(config, args.file, args.locale)
+    tracks = {s: e for s, e in evidence.items() if e.get("lang") == args.locale.split("-")[0]}
+    stream = args.track if args.track is not None else next(
+        (s for s, e in tracks.items() if "latin" in (e.get("title") or "").casefold()), None)
+    if stream is None:
+        stream = next(iter(tracks), None)
+    if stream is None:
+        raise ApiError("no dub track in this language was found next to the episode; "
+                       "pass --track N")
+    audio = folder / f"{stem}.audio{stream}.16k.wav"
+    if not audio.is_file():
+        raise ApiError(f"{audio.name} is not extracted yet; regroup the episode's voices "
+                       "with its dub tracks first")
+    found = evidence.get(stream) or {}
+    if found and found.get("state") != "verified":
+        raise ApiError(f"track {stream} is not verified as aligned ({found.get('state')})")
+    out = dub_reference.sidecar(script, stream)
+    if out.is_file() and not args.refresh:
+        ref = json.loads(out.read_text(encoding="utf-8"))
+    else:
+        print(f"transcribing track {stream} ({found.get('title', '?')}) with "
+              f"{args.model} ...", flush=True)
+        ref = dub_reference.build(script, audio, stream, args.locale.split("-")[0],
+                                  float(found.get("offset") or 0.0),
+                                  float(found.get("rate") or 1.0), args.model, args.device)
+    lines = ref["lines"]
+    heard = [ln for ln in lines if ln["text"]]
+    target = dub_reference.reference_file(script, stream)
+    target.write_text(json.dumps(dub_reference.reference(ref), ensure_ascii=False, indent=1),
+                      encoding="utf-8")
+    print(f"{found.get('title', 'track ' + str(stream))}: {len(heard)}/{len(lines)} lines "
+          f"heard -> {out.name}")
+    print(f"to translate along it: --set translate.reference_policy=follow_edition "
+          f"--set \"translate.reference_file={target}\"")
+    ours = {}
+    if args.compare:
+        job = _job(Api(config), args.compare)
+        version = json.loads(Path(job["version_file"]).read_text(encoding="utf-8"))
+        ours = {s["index"]: s for s in version["script"]["segments"]}
+        cues = {c["index"]: c for c in version.get("cues") or []}
+    print("Names and terms the dub repeats: " + ", ".join(
+        f"{w} {n}" for w, n in dub_reference.frequent_names(lines)[:40]))
+    if ours:
+        longer = shorter = 0
+        for ln in heard:
+            seg = ours.get(ln["index"])
+            renders = {r["role"]: r for r in (cues.get(ln["index"], {}).get("audio") or {})
+                       .get("renders") or []}
+            timed = (renders.get("fitted") or {}).get("duration")
+            if seg and timed and ln["seconds"]:
+                longer += timed > ln["seconds"] * 1.25
+                shorter += timed < ln["seconds"] * 0.8
+        print(f"Against our dub: {longer} lines run 25% longer than the published one, "
+              f"{shorter} 20% shorter")
+    if args.lines:
+        for ln in lines:
+            seg = ours.get(ln["index"])
+            print(f"{ln['index']:4d}  dub: {ln['text'][:90]}")
+            if seg:
+                print(f"      us:  {seg['text'][:90]}")
+    return 0
+
+
 # -- wiring -------------------------------------------------------------------------
 
 
@@ -356,12 +443,28 @@ def add_parsers(sub) -> None:
     r.add_argument("job", help="job id (a prefix is enough)")
     r.add_argument("--worst", type=int, default=10, help="list the N longest overruns")
 
+    d = sub.add_parser("dubref", help="transcribe an episode's published dub track and "
+                                      "line it up with our script")
+    d.add_argument("file")
+    d.add_argument("--locale", default="es-419")
+    d.add_argument("--track", type=int, default=None, help="stream index (default: Latino)")
+    d.add_argument("--model", default="large-v3")
+    d.add_argument("--device", default="cuda")
+    d.add_argument("--refresh", action="store_true", help="transcribe again")
+    d.add_argument("--compare", default=None, metavar="JOB_ID",
+                   help="put a finished dub's lines next to the published ones")
+    d.add_argument("--lines", action="store_true", help="print every line")
 
-COMMANDS = {"voices": cmd_voices, "queue": cmd_queue, "jobs": cmd_jobs, "report": cmd_report}
+
+COMMANDS = {"voices": cmd_voices, "queue": cmd_queue, "jobs": cmd_jobs, "report": cmd_report,
+            "dubref": cmd_dubref}
+LOCAL = {"dubref"}
 
 
 def run(args: argparse.Namespace, config: Config) -> int:
     try:
+        if args.command in LOCAL:
+            return COMMANDS[args.command](args, config)
         return COMMANDS[args.command](args, Api(config))
     except ApiError as exc:
         print(exc, file=sys.stderr)
