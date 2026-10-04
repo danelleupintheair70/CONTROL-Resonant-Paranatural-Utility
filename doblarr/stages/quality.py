@@ -323,10 +323,17 @@ def _voice(seg, checker, stats: dict, issues: list) -> float | None:
     return similarity
 
 
+# Letters per second of ordinary dubbed speech (translate.chars_per_second).
+SPOKEN_RATE = 14.0
+
+
 def _rambled(stats: dict, seg) -> bool:
-    """The take is at least twice its slot and over two seconds."""
+    """The take lasts over 2.5 s and three times what its words need."""
+    from ..pacing import text_units
+
     duration = float(stats.get("duration") or 0.0)
-    return duration > max(2.0, seg.duration * 2)
+    needed = text_units(seg.tts_text or seg.text_translated or seg.text_src) / SPOKEN_RATE
+    return duration > max(2.5, 3 * needed)
 
 
 def _keep_best(seg, tried) -> bool:
