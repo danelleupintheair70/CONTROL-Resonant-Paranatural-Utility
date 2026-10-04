@@ -322,6 +322,9 @@ class TimingModel(_Section):
     snap_onsets: bool = False
     max_stretch: float = 1.3
     min_stretch: float = 1.0        # 1.0 = never slow speech down
+    # How a line is time-compressed: ffmpeg's atempo, or the Rubber Band
+    # phase vocoder, which stays smoother on voiced speech past ~1.15x.
+    stretcher: Literal["atempo", "rubberband"] = "atempo"
     handle_ms: float = 40           # margin kept each side of a phrase
     min_pause: float = 0.12         # floor for a redistributable gap
     protect_pause: float = 0.45     # a gap at least this long is performance

@@ -8,8 +8,8 @@ line compound into a warble nobody asked for.
 
 Three things it refuses to do:
 
-- **Assume the stretch it asked for is the stretch it got.** `atempo` is a
-  request. The output is measured and `actual_duration` is what was measured,
+- **Assume the stretch it asked for is the stretch it got.** A tempo filter
+  is a request. The output is measured and `actual_duration` is what was measured,
   so a plan that missed is visible instead of asserted.
 - **Fit by deleting.** When the words genuinely do not fit, the line is
   repaired within the shared request budget — an already-generated take that
@@ -27,7 +27,7 @@ import threading
 import wave
 from pathlib import Path
 
-from .. import pacing
+from .. import pacing, stretch
 from .. import phrases as planner
 from ..artifacts import digest, matches, record, stamp
 from ..cues import PHRASED, Artifact, Selection, now
@@ -37,7 +37,7 @@ from ..fingerprints import processing as processing_fingerprint
 from ..models import DubJob
 from . import boundaries
 from .common import Plan, dry, stage
-from .fit_timing import _atempo_chain, _duration
+from .fit_timing import _duration
 from .quality import apply_findings
 
 log = logging.getLogger("doblarr.phrase_timing")
@@ -166,12 +166,14 @@ def _select(seg, take) -> None:
         seg.audio_clip = Path(take.raw.path)
 
 
-def _render(seg, plan, source: Path, cancel) -> Path:
+def _render(seg, plan, source: Path, cancel, stretcher: str = stretch.DEFAULT) -> Path:
     """Cut, tempo and re-place every piece in one ffmpeg pass."""
     speech = [p for p in plan.pieces if p["kind"] == "speech"]
     request = {"source": stamp(source), "planner": planner.PLANNER,
                "pieces": [[p["in"][0], p["in"][1], p["factor"], p["at"]] for p in speech],
                "duration": plan.planned_duration, "version": 1}
+    if stretcher != stretch.DEFAULT:
+        request["stretcher"] = stretcher
     dest = source.parent / "phrased" / f"{source.stem}.{digest(request)[:12]}.wav"
     if matches([dest], request):
         return dest
@@ -184,7 +186,7 @@ def _render(seg, plan, source: Path, cancel) -> Path:
         start, end = piece["in"]
         chain = [f"atrim=start={start:.4f}:end={end:.4f}", "asetpts=PTS-STARTPTS"]
         if abs(piece["factor"] - 1.0) > 1e-4:
-            chain.append(_atempo_chain(piece["factor"]))
+            chain.append(stretch.tempo_filter(piece["factor"], stretcher))
         length = piece["out"]
         fade = min(JOIN_FADE, max(0.0, length / 8))
         if index > 0 and fade > 0:
@@ -290,8 +292,9 @@ def run(
         return None
     if dry_run:
         return dry("would plan each line's phrases and render its timing recipe")
-    log.info("phrase timing over %d lines (max stretch %.2fx)",
-             len(job.segments), config["max_stretch"])
+    stretcher = stretch.resolve(config["stretcher"])
+    log.info("phrase timing over %d lines (max stretch %.2fx, %s)",
+             len(job.segments), config["max_stretch"], stretcher)
     rendered = repaired = fallbacks = infeasible = 0
     edits = {**{str(k): dict(v) for k, v in config["phrases"].items() if isinstance(v, dict)},
              **job.timing_edits}
@@ -347,7 +350,7 @@ def run(
             _findings(seg, plan)
             continue
         assert source is not None
-        dest = _render(seg, plan, source, cancel)
+        dest = _render(seg, plan, source, cancel, stretcher)
         _observe(plan, dest, config, cancel)
         if plan.state != "infeasible":
             plan.state = "applied"
@@ -361,7 +364,8 @@ def run(
             "input": upstream.fingerprint if upstream else "",
             "pieces": [[p["in"][0], p["in"][1], p["factor"], p["at"]]
                        for p in plan.pieces if p["kind"] == "speech"],
-            "duration": plan.planned_duration, "planner": planner.PLANNER})
+            "duration": plan.planned_duration, "planner": planner.PLANNER,
+            **({"stretcher": stretcher} if stretcher != stretch.DEFAULT else {})})
         seg.audio.put_render(Artifact(
             role=PHRASED, path=str(dest), fingerprint=plan.inputs,
             derived_from=upstream.role if upstream else "",

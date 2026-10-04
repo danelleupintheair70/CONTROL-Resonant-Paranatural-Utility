@@ -88,6 +88,7 @@ timing:
   mode: whole                    # whole | phrase
   max_stretch: 1.3               # most a phrase is ever compressed
   min_stretch: 1.0               # 1.0 = never slow speech down; only a hard anchor can
+  stretcher: atempo              # atempo | rubberband (smoother speech; needs ffmpeg with librubberband)
   handle_ms: 40                  # margin kept each side of a phrase, so joins keep consonants
   min_pause: 0.12                # a redistributable gap never shrinks below this
   protect_pause: 0.45            # a gap at least this long is performance, and is kept

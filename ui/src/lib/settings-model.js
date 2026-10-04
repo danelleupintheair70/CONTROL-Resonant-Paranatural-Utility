@@ -123,6 +123,7 @@ const TABS = [
     C("timing.mode", "Timing approach", ["whole", "phrase"], "Whole compresses an overrunning line evenly end to end. By phrase gives back the padding between phrases first, keeps a pause that is performance, and compresses speech only where it still has to. Only one of the two runs."),
     N("timing.max_stretch", "Most to compress a phrase", "1.3 means up to 30% faster."),
     N("timing.min_stretch", "Slowest a phrase may be played", "1 never slows speech down; only an anchor you set can."),
+    C("timing.stretcher", "How a line is sped up", ["atempo", "rubberband"], "Atempo is ffmpeg's built-in stretcher. Rubber Band keeps voices smoother when a line is compressed a lot; it needs an ffmpeg built with it and falls back to atempo otherwise."),
     N("timing.protect_pause", "A pause this long is performance (seconds)", "Longer gaps are kept. Shorter ones are the breathing a synthesizer puts around punctuation and may be tightened."),
     N("timing.min_pause", "Shortest a tightened gap may become (seconds)"),
     N("timing.handle_ms", "Phrase margin (ms)", "Kept each side of a phrase so a join does not clip a consonant."),

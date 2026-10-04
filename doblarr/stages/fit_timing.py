@@ -3,8 +3,9 @@
 Strategy (cheapest first):
   1. If translation already fits, leave it (short clips too — the mix pads the
      rest of the slot with the background bed).
-  2. If long, time-compress with ffmpeg atempo (no pitch change), clamped to
-     MAX_STRETCH so the voice still sounds natural.
+  2. If long, time-compress (no pitch change) with `timing.stretcher` — ffmpeg
+     atempo by default, or Rubber Band — clamped to MAX_STRETCH so the voice
+     still sounds natural.
   3. If still long after max stretch, keep the clamped clip and log a warning —
      the mix places clips by start time, so the overlap is audible and must be
      visible in the logs.
@@ -25,7 +26,7 @@ import threading
 import wave
 from pathlib import Path
 
-from .. import pacing
+from .. import pacing, stretch
 from ..cues import FITTED, Artifact
 from ..ffmpeg import run_ffmpeg, run_ffprobe
 from ..fingerprints import processing as processing_fingerprint
@@ -64,16 +65,7 @@ def _duration(path: Path, cancel: threading.Event | None = None) -> float:
 
 def _atempo_chain(factor: float) -> str:
     """atempo only accepts 0.5-2.0; chain filters for larger corrections."""
-    parts = []
-    f = factor
-    while f > 2.0:
-        parts.append("atempo=2.0")
-        f /= 2.0
-    while f < 0.5:
-        parts.append("atempo=0.5")
-        f /= 0.5
-    parts.append(f"atempo={f:.4f}")
-    return ",".join(parts)
+    return stretch.atempo_chain(factor)
 
 
 DETECTOR = "fit-timing/1"
@@ -105,7 +97,7 @@ def stand_down(job, reason: str) -> None:
 
 
 def _register_fit(seg, dest: Path, actual: float, factor: float,
-                  policy: dict | None = None) -> None:
+                  policy: dict | None = None, stretcher: str = stretch.DEFAULT) -> None:
     """Record the time-fitted derivative and the immutable input it came from.
 
     `policy` is the pacing that chose the factor. It is absent with pacing off,
@@ -116,6 +108,8 @@ def _register_fit(seg, dest: Path, actual: float, factor: float,
                "factor": round(factor, 4), "slot": seg.duration, "version": 1}
     if policy is not None:
         request["pacing"] = policy
+    if stretcher != stretch.DEFAULT:
+        request["stretcher"] = stretcher
     seg.audio.put_render(Artifact(
         role=FITTED,
         path=str(dest),
@@ -295,8 +289,9 @@ def run(
     # `pacing: off` is the earlier behaviour exactly, constant ceiling included.
     steady = config["pacing"] == "speaker"
     max_stretch = config["max_stretch"] if steady else MAX_STRETCH
-    log.info("fit_timing over %d clips (max stretch %.2fx, pacing %s)",
-             len(job.segments), max_stretch, config["pacing"])
+    stretcher = stretch.resolve((options or {}).get("stretcher"))
+    log.info("fit_timing over %d clips (max stretch %.2fx, pacing %s, %s)",
+             len(job.segments), max_stretch, config["pacing"], stretcher)
     if dry_run:
         return dry("would measure each clip vs slot and time-stretch to fit")
 
@@ -358,7 +353,8 @@ def run(
             factor = min(actual / s.duration, MAX_STRETCH)
         if actual / factor > s.duration * FIT_SLACK:
             s.issues.append("timing_overflow")
-        dest = src.parent / "fit" / f"{src.stem}.{factor:.4f}.wav"
+        suffix = "" if stretcher == stretch.DEFAULT else f".{stretcher}"
+        dest = src.parent / "fit" / f"{src.stem}.{factor:.4f}{suffix}.wav"
         measured.append((s, actual, factor))
         plan.append((s, src, dest, actual, factor))
 
@@ -379,7 +375,7 @@ def run(
     for s, src, dest, actual, factor in plan:
         policy = _policy(config, bases.get(paced[id(s)].group)) if steady else None
         if cached(dest, src, force):
-            _register_fit(s, dest, actual, factor, policy)
+            _register_fit(s, dest, actual, factor, policy, stretcher)
             s.audio_clip = dest
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -390,7 +386,7 @@ def run(
                 "-i",
                 str(src),
                 "-af",
-                _atempo_chain(factor),
+                stretch.tempo_filter(factor, stretcher),
                 "-ac",
                 "2",
                 "-ar",
@@ -402,7 +398,7 @@ def run(
             cancel=cancel,
         )
         temp.replace(dest)
-        _register_fit(s, dest, actual, factor, policy)
+        _register_fit(s, dest, actual, factor, policy, stretcher)
         if actual > s.duration * max_stretch * FIT_SLACK:
             over = actual / max_stretch - s.duration
             nxt = next((t for t in by_start if t.start >= s.end), None)
@@ -422,7 +418,8 @@ def run(
             )
         else:
             log.info(
-                "  line %d: %.2fs -> %.2fs (atempo %.2f)", s.index, actual, actual / factor, factor
+                "  line %d: %.2fs -> %.2fs (%s %.2f)", s.index, actual, actual / factor,
+                stretcher, factor
             )
         s.audio_clip = dest
     return None

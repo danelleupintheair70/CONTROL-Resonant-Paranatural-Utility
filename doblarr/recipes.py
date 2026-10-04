@@ -85,6 +85,7 @@ SETTING_KEYS = (
     "timing.mode",
     "timing.max_stretch",
     "timing.min_stretch",
+    "timing.stretcher",
     "timing.handle_ms",
     "timing.min_pause",
     "timing.protect_pause",
