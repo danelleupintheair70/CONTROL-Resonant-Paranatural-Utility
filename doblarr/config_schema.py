@@ -260,6 +260,11 @@ class QualityModel(_Section):
     # lines; 0 keeps the historical behavior of checking none of them.
     asr_sample: float = 0.0
     max_retries: int = 1
+    # Compare every take with its speaker's reference clip and retry one that
+    # no longer sounds like that voice (doblarr.voice_check). With retries the
+    # best attempt is kept, not the last.
+    voice_check: bool = False
+    voice_min_similarity: float = 0.25
     # Extra provider requests one job may spend across quality retries, timing
     # repairs and later candidate takes. 0 = counted but never capped, which is
     # exactly the behavior before the budget existed.

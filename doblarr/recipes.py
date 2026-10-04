@@ -40,6 +40,8 @@ SETTING_KEYS = (
     "quality.dialogue_lufs",
     "quality.asr",
     "quality.max_retries",
+    "quality.voice_check",
+    "quality.voice_min_similarity",
     "quality.asr_sample",
     "quality.request_budget",
     # Level policy travels; the measured numbers and the per-cue manual gains
@@ -295,6 +297,7 @@ class DubRecipe(StrictModel):
         ranges = {
             "dub.max_fit_attempts": (0, 10),
             "quality.max_retries": (0, 10),
+            "quality.voice_min_similarity": (0, 1),
             "quality.request_budget": (0, 10000),
             "boundaries.handle_ms": (0, 1000),
             "boundaries.max_trim_seconds": (0, 30),

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .. import verify as content
 from .. import vocalization
+from .. import voice_check as voices
 from ..artifacts import digest, matches, read_json, record, stamp
 from ..cues import (
     NORMALIZED,
@@ -18,6 +19,7 @@ from ..cues import (
     TRIMMED,
     Artifact,
     Finding,
+    Selection,
     Verification,
     finding_id,
     now,
@@ -30,7 +32,7 @@ from ..telemetry import write_json
 from . import boundaries
 
 ACOUSTIC_ISSUES = {"silence", "clipping", "unexpected_duration", "text_mismatch", "repetition",
-                   "extra_sound"}
+                   "extra_sound", "voice_drift"}
 
 # Structured classification for the legacy issue strings. Severity is about
 # consequence; confidence (where a detector can state one) is separate.
@@ -44,6 +46,9 @@ ISSUE_KINDS = {
     # A giggle or hum the line never asked for. Recognition leaves those out,
     # so the content check alone passes such a take (see doblarr.vocalization).
     "extra_sound": ("content", "warning"),
+    # A take that no longer sounds like its speaker's reference clip (see
+    # doblarr.voice_check). Retryable: another sample usually comes back.
+    "voice_drift": ("technical", "warning"),
     # A line heard faster or slower than its character's other lines in the
     # scene (see doblarr.pacing). Information: the timing owner decides.
     "pace_jump": ("timing", "info"),
@@ -305,6 +310,35 @@ def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=No
     return issues, stats, False, verification_fingerprint(request)
 
 
+def _voice(seg, checker, stats: dict, issues: list) -> float | None:
+    """Measure the take against its speaker's voice; flag a drift in `issues`."""
+    similarity = checker.similarity(seg.speaker, Path(seg.audio_clip))
+    stats["voice_similarity"] = similarity
+    take = seg.audio.selected() if seg.audio.selection else None
+    if take is not None and similarity is not None:
+        take.checks = {**take.checks, "voice_similarity": similarity,
+                       "voice_detector": voices.DETECTOR}
+    if checker.drifted(similarity) and "voice_drift" not in issues:
+        issues.append("voice_drift")
+    return similarity
+
+
+def _keep_best(seg, tried) -> bool:
+    """Select the best attempt if it is not the current one; True if changed."""
+    best = min(tried, key=lambda row: (row[0], row[1]))
+    current = tried[-1]
+    if best[2] == current[2] or (best[0], best[1]) == (current[0], current[1]):
+        return False
+    take = seg.audio.take(best[2])
+    if take is None or take.raw is None or not take.raw.exists():
+        return False
+    seg.audio.selection = Selection(take_id=take.take_id, reason="best of attempts",
+                                    actor="quality", previous=current[2], at=now())
+    seg.audio.invalidate_after(RAW)
+    seg.audio_clip = Path(take.raw.path)
+    return True
+
+
 def verification_findings(seg) -> None:
     """Publish this cue's verification as structured findings.
 
@@ -392,8 +426,15 @@ def run(
     boundary_options=None,
     own_levels=False,
     sample=0.0,
+    voice_check=False,
+    voice_min_similarity=voices.MIN_SIMILARITY,
 ):
     """Check every generated clip, verify its words, and prepare its boundaries.
+
+    `voice_check` also compares each take with its speaker's reference clip
+    and treats a take that drifted from the voice like any other retryable
+    issue. When a line was generated more than once, the best attempt is kept
+    rather than the last one: fewest retryable issues, then closest voice.
 
     `own_levels` hands loudness to the post-fit level owner (Plan 03): the
     pre-fit normalization below is the legacy path and the two never both run,
@@ -404,7 +445,9 @@ def run(
     if asr not in content.POLICIES:
         raise ValueError("quality.asr must be off, suspicious or all")
     attempts = max(0, min(3, int(max_retries)))
+    checker = voices.for_job(job, voice_min_similarity) if voice_check else None
     for seg in job.segments:
+        tried: list[tuple[int, float, str]] = []  # (retryable issues, -similarity, take)
         for attempt in range(attempts + 1):
             if cancel is not None and cancel.is_set():
                 raise JobCancelled("cancelled during clip checks")
@@ -413,6 +456,9 @@ def run(
                 budget=budget, sample=sample)
             key = "quality_cache_hits" if hit else "quality_checked"
             job.metrics[key] = job.metrics.get(key, 0) + 1
+            similarity = None
+            if checker is not None and "silence" not in issues:
+                similarity = _voice(seg, checker, stats, issues)
             seg.issues = [i for i in seg.issues if i not in ACOUSTIC_ISSUES] + issues
             apply_findings(seg, DETECTOR, checked, [
                 (code, *ISSUE_KINDS.get(code, ("technical", "warning")),
@@ -425,6 +471,9 @@ def run(
             # working while review can show where a word actually went.
             verification_findings(seg)
             retryable = set(issues) - {"unexpected_duration"}
+            current = seg.audio.selection.take_id if seg.audio.selection else ""
+            tried.append((len(retryable), -(similarity if similarity is not None else 0.0),
+                          current))
             if not retryable or attempt >= attempts or regenerate is None:
                 break
             # Retries share one budget with timing repairs and extra candidate
@@ -441,6 +490,17 @@ def run(
                 checkpoint()
             regenerate(seg)
             job.metrics["quality_retries"] = job.metrics.get("quality_retries", 0) + 1
+        if len(tried) > 1 and _keep_best(seg, tried):
+            job.metrics["quality_best_kept"] = job.metrics.get("quality_best_kept", 0) + 1
+            issues, stats, _hit, checked = check_clip(
+                seg, job.target_lang, vb, asr, pronunciations, cancel,
+                budget=budget, sample=sample, verify=False)
+            if checker is not None:
+                _voice(seg, checker, stats, issues)
+            seg.issues = [i for i in seg.issues if i not in ACOUSTIC_ISSUES] + issues
+            apply_findings(seg, DETECTOR, checked, [
+                (code, *ISSUE_KINDS.get(code, ("technical", "warning")), None, dict(stats))
+                for code in issues])
         # Boundary preparation runs after the raw checks have had their say —
         # an empty or failed generation must be rejected, not cropped into
         # something that looks usable — and before anything measures the clip

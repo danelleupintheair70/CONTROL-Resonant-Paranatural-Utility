@@ -104,6 +104,8 @@ const TABS = [
     C("quality.asr", "Verify generated words", ["off", "suspicious", "all"], "Speech recognition adds processing time; mismatches are review suggestions."),
     N("quality.asr_sample", "Also verify this fraction of clean lines", "Between 0 and 1. The same lines are picked on every run, so coverage is comparable."),
     N("quality.max_retries", "Quality retry attempts"),
+    B("quality.voice_check", "Retry takes that drift from the voice", "Compares each take with its character's reference clip. A take that no longer sounds like them is generated again, and the closest attempt is kept."),
+    N("quality.voice_min_similarity", "Least voice similarity", "Between 0 and 1. A Spanish take of a Japanese voice usually scores about 0.5; below 0.25 it often sounds like someone else."),
     N("quality.request_budget", "Extra speech requests per job", "Shared cap across recognition, quality retries, timing repairs and alternative takes. 0 means no cap."),
   ]), group("Performance levels", [
     C("levels.mode", "Dialogue level approach", ["legacy", "off", "consistent", "follow_source", "manual"], "Legacy keeps the loudness pass before timing correction. The others move it after timing, so a quiet performance stays quiet. Only one of the two runs."),

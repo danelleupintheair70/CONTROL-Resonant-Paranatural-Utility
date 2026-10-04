@@ -177,6 +177,10 @@ quality:
   # `suspicious`. Deterministic per line, so a rerun checks the same ones.
   asr_sample: 0.0
   max_retries: 1
+  # Compare each take with its speaker's reference clip; a take that no longer
+  # sounds like that voice is retried, and the best attempt is kept.
+  voice_check: false
+  voice_min_similarity: 0.25     # cosine similarity; cross-language clones sit ~0.5
   # Extra speech requests one job may spend in total across quality retries and
   # timing repairs. 0 = no cap (counted only), which matches earlier releases.
   request_budget: 0
