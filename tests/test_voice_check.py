@@ -77,3 +77,22 @@ def test_missing_reference_measures_as_unknown(tmp_path):
     check = voice_check.VoiceCheck({"SPEAKER_00": tmp_path / "missing.wav"})
     assert check.similarity("SPEAKER_00", tmp_path / "take.wav") is None
     assert not check.drifted(None) and check.drifted(0.1) and not check.drifted(0.4)
+
+
+def test_a_take_far_longer_than_its_line_is_retried(tmp_path):
+    job = DubJob(tmp_path / "movie.mkv", "ja", "es")
+    first = wav(tmp_path / "take0.wav", 5000, 5)        # 5 s for a 1 s line
+    seg = Segment(0, 0, 1, "Ya voy", audio_clip=first)
+    seg.audio.takes.append(Take(take_id="t0", raw=Artifact(role=RAW, path=str(first))))
+    seg.audio.selection = Selection(take_id="t0")
+    job.segments = [seg]
+
+    def regenerate(seg):
+        path = wav(tmp_path / "take1.wav", 5000, 1)
+        seg.audio.takes.append(Take(take_id="t1", raw=Artifact(role=RAW, path=str(path))))
+        seg.audio.selection = Selection(take_id="t1")
+        seg.audio_clip = path
+
+    quality.run(job, normalize=False, regenerate=regenerate)
+    assert seg.audio.selection.take_id == "t1"
+    assert "unexpected_duration" not in seg.issues

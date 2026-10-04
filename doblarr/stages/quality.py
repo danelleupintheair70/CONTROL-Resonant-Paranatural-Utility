@@ -323,6 +323,12 @@ def _voice(seg, checker, stats: dict, issues: list) -> float | None:
     return similarity
 
 
+def _rambled(stats: dict, seg) -> bool:
+    """The take is at least twice its slot and over two seconds."""
+    duration = float(stats.get("duration") or 0.0)
+    return duration > max(2.0, seg.duration * 2)
+
+
 def _keep_best(seg, tried) -> bool:
     """Select the best attempt if it is not the current one; True if changed."""
     best = min(tried, key=lambda row: (row[0], row[1]))
@@ -470,7 +476,12 @@ def run(
             # legacy strings cannot; both are published so old filters keep
             # working while review can show where a word actually went.
             verification_findings(seg)
+            # A take far longer than its line is a generation that rambled or
+            # trailed off into breath, and a new sample usually comes back
+            # right; a merely short take is not worth another request.
             retryable = set(issues) - {"unexpected_duration"}
+            if "unexpected_duration" in issues and _rambled(stats, seg):
+                retryable.add("unexpected_duration")
             current = seg.audio.selection.take_id if seg.audio.selection else ""
             tried.append((len(retryable), -(similarity if similarity is not None else 0.0),
                           current))

@@ -11,6 +11,13 @@
     doblarr research SERIES_ID "QUESTION" [--depth quick|standard|deep]
     doblarr scripts SERIES_ID [--sources fandom,screenplays,kitsunekko,opensubtitles,dubbing]
     doblarr titles SERIES_ID [--refresh]  # the title's ids and other names
+
+Against a running server (see doblarr.cli_app):
+
+    doblarr voices FILE [--lines] [--name SPEAKER_01=NAME] [--move 12,14=NAME]
+    doblarr queue FILE --to es-419 [--version NAME] [--set key=value] [--wait]
+    doblarr jobs [--watch JOB_ID]
+    doblarr report JOB_ID                 # PASS/WARN/FAIL checks of a finished dub
 """
 
 from __future__ import annotations
@@ -340,6 +347,9 @@ def build_parser() -> argparse.ArgumentParser:
     ti = sub.add_parser("titles", help="a title's catalogue ids and other names")
     ti.add_argument("series")
     ti.add_argument("--refresh", action="store_true", help="look them up again (online)")
+
+    from . import cli_app
+    cli_app.add_parsers(sub)
     return p
 
 
@@ -361,6 +371,9 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_scripts(args, config)
     if args.command == "titles":
         return _cmd_titles(args, config)
+    from . import cli_app
+    if args.command in cli_app.COMMANDS:
+        return cli_app.run(args, config)
     return 2
 
 
