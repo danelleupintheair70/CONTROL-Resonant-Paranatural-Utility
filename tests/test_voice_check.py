@@ -96,3 +96,14 @@ def test_a_take_far_longer_than_its_line_is_retried(tmp_path):
     quality.run(job, normalize=False, regenerate=regenerate)
     assert seg.audio.selection.take_id == "t1"
     assert "unexpected_duration" not in seg.issues
+
+
+def test_a_voice_that_scores_low_everywhere_is_not_drifting():
+    check = voice_check.VoiceCheck({})
+    # A borrowed voice: every take sits near 0.15 against this run's reference.
+    check.calibrate([("borrowed", 0.14), ("borrowed", 0.16), ("borrowed", 0.15),
+                     ("borrowed", 0.17), ("own", 0.5)])
+    assert not check.drifted(0.13, "borrowed")
+    assert check.drifted(-0.05, "borrowed")      # far below its own typical score
+    assert check.drifted(0.2, "own")             # too few samples: the plain floor
+    assert not check.drifted(0.3, None)

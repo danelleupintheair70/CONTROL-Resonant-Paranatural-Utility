@@ -21,9 +21,15 @@ from pathlib import Path
 
 log = logging.getLogger("doblarr.voice_check")
 
-DETECTOR = "voice-similarity/1"
+DETECTOR = "voice-similarity/2"
 MIN_SIMILARITY = 0.25
 MIN_SECONDS = 0.5   # shorter takes carry too little voice to judge
+# A voice's takes are compared with each other as well as with the floor: a
+# voice borrowed from another group, or cast from another episode, scores low
+# on every take against this run's reference clip, and that is not a drift.
+# Only a take this far below its voice's typical score counts.
+MARGIN = 0.15
+MIN_SAMPLES = 4
 
 
 @cache
@@ -55,6 +61,19 @@ class VoiceCheck:
         self.references = references
         self.minimum = float(minimum)
         self._refs: dict[str, object] = {}
+        self._seen: dict[tuple[str, str], float | None] = {}
+        self.baselines: dict[str, float] = {}
+
+    def calibrate(self, rows: list[tuple[str, float | None]]) -> None:
+        """Each voice's typical similarity, from (voice, similarity) rows."""
+        import statistics
+
+        by_voice: dict[str, list[float]] = {}
+        for voice, value in rows:
+            if value is not None:
+                by_voice.setdefault(voice, []).append(value)
+        self.baselines = {voice: statistics.median(values)
+                          for voice, values in by_voice.items() if len(values) >= MIN_SAMPLES}
 
     def _reference(self, speaker: str):
         if speaker not in self._refs:
@@ -66,6 +85,9 @@ class VoiceCheck:
         """Cosine similarity of `take` to the speaker's reference; None = unknown."""
         import numpy as np
 
+        key = (speaker, str(take))
+        if key in self._seen:
+            return self._seen[key]
         ref = self._reference(speaker)
         if ref is None:
             return None
@@ -74,12 +96,16 @@ class VoiceCheck:
         except Exception as exc:  # noqa: BLE001 - an unreadable take is unknown
             log.debug("voice check: cannot read %s: %s", take, exc)
             return None
-        if v is None:
-            return None
-        return round(float(np.dot(v, ref)), 4)
+        value = None if v is None else round(float(np.dot(v, ref)), 4)
+        self._seen[key] = value
+        return value
 
-    def drifted(self, similarity: float | None) -> bool:
-        return similarity is not None and similarity < self.minimum
+    def floor(self, voice: str | None = None) -> float:
+        typical = self.baselines.get(voice) if voice else None
+        return self.minimum if typical is None else min(self.minimum, typical - MARGIN)
+
+    def drifted(self, similarity: float | None, voice: str | None = None) -> bool:
+        return similarity is not None and similarity < self.floor(voice)
 
 
 def for_job(job, minimum: float = MIN_SIMILARITY) -> VoiceCheck:

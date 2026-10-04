@@ -310,7 +310,16 @@ def check_clip(seg, language, vb=None, asr="off", pronunciations=None, cancel=No
     return issues, stats, False, verification_fingerprint(request)
 
 
-def _voice(seg, checker, stats: dict, issues: list) -> float | None:
+def _voice_of(seg, job) -> str:
+    """The voice a take was generated with: its profile, else its speaker."""
+    take = seg.audio.selected() if seg.audio.selection or seg.audio.takes else None
+    if take is not None and take.profile:
+        return take.profile
+    speaker = (job.speakers or {}).get(seg.speaker)
+    return (speaker.voicebox_profile_id if speaker else None) or seg.speaker
+
+
+def _voice(seg, checker, stats: dict, issues: list, voice: str | None = None) -> float | None:
     """Measure the take against its speaker's voice; flag a drift in `issues`."""
     similarity = checker.similarity(seg.speaker, Path(seg.audio_clip))
     stats["voice_similarity"] = similarity
@@ -318,7 +327,7 @@ def _voice(seg, checker, stats: dict, issues: list) -> float | None:
     if take is not None and similarity is not None:
         take.checks = {**take.checks, "voice_similarity": similarity,
                        "voice_detector": voices.DETECTOR}
-    if checker.drifted(similarity) and "voice_drift" not in issues:
+    if checker.drifted(similarity, voice) and "voice_drift" not in issues:
         issues.append("voice_drift")
     return similarity
 
@@ -459,6 +468,12 @@ def run(
         raise ValueError("quality.asr must be off, suspicious or all")
     attempts = max(0, min(3, int(max_retries)))
     checker = voices.for_job(job, voice_min_similarity) if voice_check else None
+    if checker is not None:
+        # Measure every current take first, so each voice's typical score is
+        # known before any one take is judged against it.
+        checker.calibrate([(_voice_of(seg, job), checker.similarity(seg.speaker,
+                                                                    Path(seg.audio_clip)))
+                           for seg in job.segments if seg.audio_clip])
     for seg in job.segments:
         tried: list[tuple[int, float, str]] = []  # (retryable issues, -similarity, take)
         for attempt in range(attempts + 1):
@@ -471,7 +486,7 @@ def run(
             job.metrics[key] = job.metrics.get(key, 0) + 1
             similarity = None
             if checker is not None and "silence" not in issues:
-                similarity = _voice(seg, checker, stats, issues)
+                similarity = _voice(seg, checker, stats, issues, _voice_of(seg, job))
             seg.issues = [i for i in seg.issues if i not in ACOUSTIC_ISSUES] + issues
             apply_findings(seg, DETECTOR, checked, [
                 (code, *ISSUE_KINDS.get(code, ("technical", "warning")),
@@ -514,7 +529,7 @@ def run(
                 seg, job.target_lang, vb, asr, pronunciations, cancel,
                 budget=budget, sample=sample, verify=False)
             if checker is not None:
-                _voice(seg, checker, stats, issues)
+                _voice(seg, checker, stats, issues, _voice_of(seg, job))
             seg.issues = [i for i in seg.issues if i not in ACOUSTIC_ISSUES] + issues
             apply_findings(seg, DETECTOR, checked, [
                 (code, *ISSUE_KINDS.get(code, ("technical", "warning")), None, dict(stats))
