@@ -12,12 +12,23 @@
     doblarr scripts SERIES_ID [--sources fandom,screenplays,kitsunekko,opensubtitles,dubbing]
     doblarr titles SERIES_ID [--refresh]  # the title's ids and other names
 
-Against a running server (see doblarr.cli_app):
+The whole process, or one step of it (see doblarr.commands):
 
-    doblarr voices FILE [--lines] [--name SPEAKER_01=NAME] [--move 12,14=NAME]
-    doblarr queue FILE --to es-419 [--version NAME] [--set key=value] [--wait]
-    doblarr jobs [--watch JOB_ID]
-    doblarr report JOB_ID                 # PASS/WARN/FAIL checks of a finished dub
+    doblarr make FILE_OR_FOLDER --to es-419   # doctor, analyze, lookup, voices, dub, fix, report
+    doblarr doctor                        # every service and tool a run needs
+    doblarr analyze FILE                  # separate, transcribe, group voices (once)
+    doblarr lookup SERIES                 # catalogue ids, published cast, characters
+    doblarr voices FILE [--name SPEAKER_01=NAME] [--move 12,14=NAME]
+    doblarr queue FILE --to es-419 [--set key=value] [--wait]
+    doblarr jobs [--watch JOB]
+    doblarr report JOB                    # PASS/WARN/FAIL checks of a finished dub
+    doblarr fix JOB                       # re-voice the lines the report flags
+    doblarr line JOB INDEX [--text T | --retake | --voice V] [--clip out.wav]
+    doblarr dubref FILE [--compare JOB]   # what the file's own dub says
+    doblarr terms SERIES [add SOURCE=PHRASE | approve ID | retire ID]
+    doblarr settings [get KEY | set KEY=VALUE ...]
+
+Every one of these takes --json.
 """
 
 from __future__ import annotations
@@ -348,8 +359,8 @@ def build_parser() -> argparse.ArgumentParser:
     ti.add_argument("series")
     ti.add_argument("--refresh", action="store_true", help="look them up again (online)")
 
-    from . import cli_app
-    cli_app.add_parsers(sub)
+    from . import commands
+    commands.add_parsers(sub)
     return p
 
 
@@ -371,9 +382,9 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_scripts(args, config)
     if args.command == "titles":
         return _cmd_titles(args, config)
-    from . import cli_app
-    if args.command in cli_app.COMMANDS:
-        return cli_app.run(args, config)
+    from . import commands
+    if args.command in commands.COMMANDS:
+        return commands.run(args, config)
     return 2
 
 
