@@ -37,7 +37,7 @@ from ..fingerprints import processing as processing_fingerprint
 from ..models import DubJob
 from . import boundaries
 from .common import Plan, dry, stage
-from .fit_timing import _duration
+from .fit_timing import _duration, written_by_hand
 from .quality import apply_findings
 
 log = logging.getLogger("doblarr.phrase_timing")
@@ -428,6 +428,9 @@ def _repair(job, seg, plan, config, translator, regenerate, checkpoint, budget,
         job.metrics["phrase_take_repairs"] = job.metrics.get("phrase_take_repairs", 0) + 1
         return "take"
     if translator is None or regenerate is None or not hasattr(translator, "shorten"):
+        return None
+    if written_by_hand(seg):
+        plan.reason = f"{plan.reason}; not reworded: a person wrote this line"
         return None
     if budget is not None and not budget.charge("timing_repair"):
         job.metrics["timing_repairs_refused"] = job.metrics.get("timing_repairs_refused", 0) + 1

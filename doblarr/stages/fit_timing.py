@@ -214,11 +214,18 @@ def _steady_factors(entries, config: dict, max_stretch: float, repair, cancel):
     return [rows[id(s)] for s, _src, _actual in entries], factors, paced, bases
 
 
+def written_by_hand(seg) -> bool:
+    """A line a person wrote in review: compressed if it must be, never reworded."""
+    return (seg.translation_provenance or {}).get("method") == "manual"
+
+
 def _repair(job, s, src, actual, ceiling, translator, regenerate, checkpoint,
             max_attempts, budget, cancel, accept_rewrite=None) -> tuple[Path, float]:
     """Shorten and regenerate a line while it needs more than `ceiling` x its slot."""
     from ..clients.translator import TranslationError
 
+    if written_by_hand(s):
+        return src, actual
     for _ in range(max(0, min(5, int(max_attempts)))):
         if actual <= s.duration * ceiling:
             break
