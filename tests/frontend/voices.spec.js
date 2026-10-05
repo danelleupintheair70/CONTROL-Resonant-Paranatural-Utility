@@ -86,3 +86,21 @@ test('a voice nobody cast yet can be cast as a character of a show', async ({ pa
   expect(traits).toMatchObject({ key: 'profile:vb-x', character: 'Ren', show: 'tvdb-81234', show_name: 'Harbor Lights' });
   await expect(page).toHaveURL(/\/voices\/character%3Achr-r$/);
 });
+
+test('a character shows who voices them in published versions, as reference only', async ({ page, request }) => {
+  const made = await (await request.post('/api/characters', { data: { series_id: 'show:tvdb:81234', name: 'Mina' } })).json();
+  await routes(page);
+  await page.route(`**/api/characters/${made.id}/profile`, async route => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.character.published = { source: 'anilist', voice_actors: [
+      { name: 'Aki Sora', language: 'Japanese', sources: ['anilist', 'ann'] },
+      { name: 'Lucia Prado', language: 'Spanish', sources: ['ann'] }] };
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto(`/voices/character:${made.id}`);
+  const block = page.locator('[data-published-voices]');
+  await expect(block).toContainText('Japanese: Aki Sora per anilist, ann');
+  await expect(block).toContainText('Spanish: Lucia Prado per ann');
+  await expect(block).toContainText('never picks a voice');
+});

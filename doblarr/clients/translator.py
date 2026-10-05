@@ -62,6 +62,17 @@ class _InvalidTranslation(ValueError):
     """Structured reply does not map exactly to the requested segments."""
 
 
+def _labeled_glossary(glossary: dict | None) -> dict:
+    """Glossary for the request: a term with a declared register is labeled
+    ("pana (colloquial)") so the model knows the intended tone."""
+    return {
+        source: (
+            f"{value['term']} ({value['register']})" if isinstance(value, dict) else value
+        )
+        for source, value in (glossary or {}).items()
+    }
+
+
 class TranslationError(ArrClientError):
     """No valid translation was produced after bounded attempts."""
 
@@ -170,7 +181,7 @@ class PromptureTranslator:
                 for i, line in enumerate(lines, 1)
             ],
             "context": context or [],
-            "glossary": glossary or {},
+            "glossary": _labeled_glossary(glossary),
         }
         if synopsis:
             request["synopsis"] = {"text": synopsis, "generated": True}
@@ -524,7 +535,8 @@ def translation_options(translate: dict) -> dict:
                if not (k == "slang" and not v)
                and not (k == "reference_policy" and v in ("", "original_only"))
                and not (k == "reference_file" and not v)
-               and k != "holdout_files"}
+               # The published-dub switch shows up as the reference it builds.
+               and k not in ("holdout_files", "published_dub")}
     if options.get("reference_file"):
         if options.get("reference_policy") in (None, "original_only"):
             options.pop("reference_file")

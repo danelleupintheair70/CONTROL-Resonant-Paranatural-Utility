@@ -40,6 +40,7 @@ def add_rule(
     sense="",
     source_form="",
     origin="local",
+    register=None,
 ):
     return save_entry(
         db,
@@ -55,6 +56,7 @@ def add_rule(
             sense=sense,
             source_form=source_form,
             origin=origin,
+            register=register,
         ),
     )
 
@@ -379,6 +381,19 @@ def test_ambiguous_term_senses_are_not_applied(tmp_path):
     db.close()
 
 
+def test_glossary_terms_carry_a_declared_register(tmp_path):
+    db = make_db(tmp_path)
+    add_rule(db, phrase="pana", kind="term", source_form="buddy", locale="es-VE",
+             status="reviewed", register="colloquial")
+    add_rule(db, phrase="Ginko", kind="term", source_form="ギンコ", status="reviewed")
+    sel = selection(db, locale="es-VE")
+    assert sel.glossary_terms(["buddy and ギンコ walk out"]) == {
+        "buddy": {"term": "pana", "register": "colloquial"},
+        "ギンコ": "Ginko",
+    }
+    db.close()
+
+
 # -- storage and freezing ----------------------------------------------------
 
 
@@ -429,6 +444,20 @@ def test_v5_knowledge_tables_and_indexes_exist(tmp_path):
     assert {"knowledge_entries", "knowledge_realizations"} <= tables
     indexes = {r["name"] for r in db.query("SELECT name FROM sqlite_master WHERE type='index'")}
     assert "idx_knowledge_entries_lookup" in indexes
+    db.close()
+
+
+def test_register_round_trips_through_storage(tmp_path):
+    db = make_db(tmp_path)
+    entry = add_rule(db, phrase="pana", kind="term", source_form="buddy",
+                     locale="es-VE", register="colloquial")
+    from doblarr.knowledge import latest_entries
+
+    assert latest_entries(db)[0].register == "colloquial"
+    revised = save_entry(db, Entry(**{**entry.__dict__, "register": None}))
+    assert revised.revision == 2 and latest_entries(db)[0].register is None
+    with pytest.raises(ValueError, match="register"):
+        add_rule(db, phrase="x", register="street")
     db.close()
 
 

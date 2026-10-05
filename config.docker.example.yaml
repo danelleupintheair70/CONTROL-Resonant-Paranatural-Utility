@@ -47,6 +47,9 @@ compute:
   log_memory: true              # log allocated/reserved GPU memory around each stage
 
 translate:
+  # The episode's own dub in the target language, when the file has one:
+  # follow its names and phrasing (follow), borrow phrasing only (suggest), or off.
+  published_dub: follow
   prepass: "off"                # off | summary | summary_terms: one bounded read of the
                                 # script before translating (extra provider calls, cached)
 
@@ -88,6 +91,7 @@ timing:
   mode: whole                    # whole | phrase
   max_stretch: 1.3               # most a phrase is ever compressed
   min_stretch: 1.0               # 1.0 = never slow speech down; only a hard anchor can
+  stretcher: atempo              # atempo | rubberband (smoother speech; needs ffmpeg with librubberband)
   handle_ms: 40                  # margin kept each side of a phrase, so joins keep consonants
   min_pause: 0.12                # a redistributable gap never shrinks below this
   protect_pause: 0.45            # a gap at least this long is performance, and is kept

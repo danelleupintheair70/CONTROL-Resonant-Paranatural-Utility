@@ -4,7 +4,9 @@ Settings → Translation controls the writing. The same settings can be overridd
 for a title or episode and travel with exported recipes:
 
 - **Spanish region:** `es-419` for neutral Latin America, `es-MX` for Mexico,
-  `es-ES` for Spain, or `auto` to leave the regional choice unspecified.
+  `es-AR` for Argentina (Rioplatense, with voseo), `es-CO` for Colombia,
+  `es-CL` for Chile, `es-ES` for Spain, or `auto` to leave the regional choice
+  unspecified.
 - **Dialogue style:** `natural` for idiomatic dialogue, `faithful` for closer
   source wording and cultural references, or `localized` for adapted idioms.
 - **Dialogue direction:** a short editorial brief, such as “restrained anime

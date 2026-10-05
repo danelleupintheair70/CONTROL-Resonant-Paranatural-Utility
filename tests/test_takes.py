@@ -211,3 +211,35 @@ def test_unknown_role_is_a_real_state(tmp_path):
     seg.audio.put_render(Artifact(role=UNKNOWN, path=str(tmp_path / "x.wav"), proven=False))
     assert seg.audio.current().role == UNKNOWN
     assert seg.audio.raw() is None
+
+
+def test_a_kept_earlier_attempt_survives_a_later_synthesis(tmp_path, monkeypatch):
+    """Quality keeps attempt 1 over attempt 2; synthesizing again must reuse it,
+    not swap the rejected attempt back in because it is the newest file."""
+    from doblarr import voice_check
+
+    job = _job(tmp_path)
+    job.speakers["SPEAKER_00"].reference_clip = tmp_path / "ref.wav"
+    engine = Engine()
+    work = tmp_path / "work"
+    synthesize.run(job, engine, work)
+    seg = job.segments[0]
+    first = seg.audio.selected().take_id
+    # calibration, attempt 1, attempt 2: both drift, the first less so
+    scores = iter([0.2, 0.2, 0.05])
+    monkeypatch.setattr(voice_check.VoiceCheck, "similarity",
+                        lambda self, speaker, take: next(scores, 0.05))
+    monkeypatch.setattr(voice_check.VoiceCheck, "calibrate", lambda self, rows: None)
+    seg.revision = 0
+
+    def regenerate(s):
+        synthesize.run(job, engine, work)
+
+    monkeypatch.setattr(quality, "_rambled", lambda stats, seg: False)
+    quality.run(job, normalize=False, regenerate=regenerate, voice_check=True,
+                voice_min_similarity=0.3, max_retries=1)
+    assert seg.audio.selected().take_id == first
+    calls = len(engine.calls)
+    synthesize.run(job, engine, work)   # e.g. a timing repair re-runs synthesis
+    assert seg.audio.selected().take_id == first
+    assert len(engine.calls) == calls   # reused, not regenerated

@@ -30,6 +30,7 @@ import logging
 import math
 import re
 
+from . import stretch
 from .cues import (
     CLIP,
     SOURCE,
@@ -89,6 +90,7 @@ def settings(options: dict | None) -> dict:
         "handle": max(0.0, float(values.get("handle_ms", 40)) / 1000),
         "repair": bool(values.get("repair", True)),
         "collision_gap": float(values.get("collision_gap", 0.0)),
+        "stretcher": stretch.normalize(values.get("stretcher")),
         "phrases": dict(values.get("phrases") or {}),
         "overlaps": dict(values.get("overlaps") or {}),
     }

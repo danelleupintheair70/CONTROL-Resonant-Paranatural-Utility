@@ -1,0 +1,33 @@
+name: Docker CI
+
+# The app image builds: Node stage (the UI) and Python stage. release.yml gates
+# on it and builds the published images itself; a dev → main/master pull
+# request skips it because the push already built that commit.
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'Dockerfile.gpu'
+      - '.dockerignore'
+      - 'requirements.txt'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'ui/**'
+      - '.github/workflows/docker-ci.yml'
+  workflow_call:
+
+concurrency:
+  group: docker-ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: docker build
+    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t doblarr:ci .

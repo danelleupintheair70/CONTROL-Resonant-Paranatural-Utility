@@ -226,7 +226,8 @@ def apply(job, result: dict | None, glossary: dict | None) -> str | None:
     # TODO(prepass): route term candidates into the inactive title-draft system
     # (knowledge/title_drafts.py) once drafts can carry a job-derived source
     # identity and localized proposals without an accepted shared revision.
-    decided = {k.casefold(): v for k, v in (glossary or {}).items()}
+    decided = {k.casefold(): v["term"] if isinstance(v, dict) else v
+               for k, v in (glossary or {}).items()}
     candidates = []
     for term in result.get("terms", []):
         row = dict(term)

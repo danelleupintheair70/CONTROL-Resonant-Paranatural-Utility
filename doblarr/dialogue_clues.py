@@ -21,7 +21,10 @@ READER = "dialogue-clues/1"
 ANSWER_GAP = 6.0         # seconds: a reply later than this is not an answer
 LOOKAHEAD = 2            # lines after a call where the answer may come
 
-HONORIFIC = r"(?:-(?:sama|sensei|san|kun|chan|dono|senpai|sempai|nee|nii|neechan|niichan))"
+# Sibling honorifics are also written as their own word: "Naruto Nii-chan".
+_SIBLING = r"(?:[Oo]?[Nn](?:ii|ee)(?:-?(?:chan|san|sama))?)"
+HONORIFIC = (r"(?:-(?:sama|sensei|san|kun|chan|dono|senpai|sempai|nee|nii|neechan|niichan"
+             rf"|nee-chan|nii-chan)|\s{_SIBLING}\b)")
 # A name called out: at the start or after a pause, alone up to the next
 # punctuation ("Mina!", "Well done, Mina.", "Yes, Ren-sama!"), or anywhere
 # with an honorific ("Kaito-sensei's").
@@ -37,6 +40,7 @@ Wait Listen Look Show Come Go Stop Next Good Nice Great Right Sure Fine Nothing 
 Absolutely Really Seriously However Besides Anyway Still Just Maybe Not Let Lets Don't Yeah
 Captain Sir Madam Lord Lady Master Sensei Teacher Boss Chief Sister Brother Mom Dad Father Mother
 Grandpa Grandma Uncle Aunt Doctor Mister Miss Status Opponent Exactly Mm Uh Um Whoa Wow Damn
+Nii Nee Onii Onee Niichan Neechan
 """
 _NOT_NAMES = frozenset(_WORDS.split())
 

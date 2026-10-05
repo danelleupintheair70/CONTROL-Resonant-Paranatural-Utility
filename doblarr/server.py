@@ -25,6 +25,8 @@ from .library_service import LibraryService
 from .logging_setup import attach_log_stream
 from .routes import adaptive as adaptive_routes
 from .routes import analysis as analysis_routes
+from .routes import audio_languages as audio_language_routes
+from .routes import cast as cast_routes
 from .routes import characters as character_routes
 from .routes import configuration as configuration_routes
 from .routes import jobs as job_routes
@@ -34,6 +36,7 @@ from .routes import library as library_routes
 from .routes import memory as memory_routes
 from .routes import narrative as narrative_routes
 from .routes import packs as pack_routes
+from .routes import research as research_routes
 from .routes import series as series_routes
 from .routes import studio as studio_routes
 from .routes import templates as template_routes
@@ -165,6 +168,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     api.include_router(configuration_routes.build_router(config, library, services))
     api.include_router(library_routes.build_router(config, library, services, worker))
+    api.include_router(audio_language_routes.build_router(config, library, services, worker))
     api.include_router(language_routes.build_router())
     api.include_router(knowledge_routes.build_router(config, services, db))
     api.include_router(pack_routes.build_router(config, services, db))
@@ -177,6 +181,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     api.include_router(catalog_routes.build_router(config, services, db))
     api.include_router(character_routes.build_router(config, services, db))
     api.include_router(narrative_routes.build_router(config, store))
+    api.include_router(cast_routes.build_router(config, db))
+    api.include_router(research_routes.build_router(config, store, bus))
     api.include_router(template_routes.build_router(config, db))
     api.include_router(adaptive_routes.build_router(config, store, bus))
     api.include_router(watch_routes.build_router(config, store))

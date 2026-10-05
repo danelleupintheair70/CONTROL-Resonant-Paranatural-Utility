@@ -135,3 +135,17 @@ def test_services_container():
     assert svc.speech.timeout == 5
     svc.invalidate()
     assert svc.radarr is not first        # rebuilt after invalidate
+
+
+def test_voicebox_sends_chatterbox_sampling_and_refuses_it_elsewhere(monkeypatch):
+    calls = mock_session(monkeypatch, [FakeResp(200, json_data={"id": "g1"})])
+    vb = VoiceboxClient("http://v")
+    assert vb.generate("p", "hola", "es", engine="chatterbox",
+                       sampling={"cfg_weight": 0.0, "exaggeration": None}) == "g1"
+    assert calls[0]["json"] == {"profile_id": "p", "text": "hola", "language": "es",
+                                "engine": "chatterbox", "cfg_weight": 0.0}
+    try:
+        vb.generate("p", "hola", "es", engine="qwen", sampling={"cfg_weight": 0.0})
+        raise AssertionError("expected VoiceboxError")
+    except VoiceboxError as exc:
+        assert "chatterbox" in str(exc)

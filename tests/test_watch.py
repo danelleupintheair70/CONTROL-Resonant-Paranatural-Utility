@@ -50,6 +50,8 @@ def test_a_dub_is_watched_in_any_language_and_notes_are_kept(tmp_path, client_fa
     tracks = {t["title"] or t["lang"]: t for t in info["tracks"]}
     assert tracks["Spanish AI"]["ours"] and tracks["ja"]["original"]
     assert info["loudness"]["spans"] == []
+    assert info["job"]["source"] == "ja" and info["job"]["target"] == "es"
+    assert info["job"]["has_review"] is False and info["job"]["version"] == ""
     clip = client.get(f"/api/watch/{job.id}/audio/{tracks['Spanish AI']['stream']}.mp4",
                       headers={"Range": "bytes=0-99"})
     assert clip.status_code == 206 and len(clip.content) == 100

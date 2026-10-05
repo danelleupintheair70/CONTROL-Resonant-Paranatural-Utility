@@ -63,6 +63,10 @@ class SpeechClient(ArrClient):
         """Whether `engine` can be given a delivery instruction at all."""
         return False
 
+    def supports_sampling(self, engine: str) -> bool:
+        """Whether `engine` takes exaggeration / cfg_weight / temperature overrides."""
+        return False
+
     def supports_cloning(self, engine: str) -> bool | None:
         """Whether `engine` clones from a reference; None when the service cannot say."""
         return None
@@ -106,7 +110,7 @@ class SpeechClient(ArrClient):
     # -- generation -------------------------------------------------------
     def generate(self, profile_id: str, text: str, language: str, seed: int | None = None,
                  model_size: str | None = None, engine: str | None = None,
-                 instruct: str | None = None) -> str:
+                 instruct: str | None = None, sampling: dict | None = None) -> str:
         """Start one generation; return an id for `generation_status`/`fetch_audio`."""
         raise NotImplementedError
 

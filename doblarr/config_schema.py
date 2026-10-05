@@ -94,6 +94,12 @@ class VoiceboxModel(_Section):
     concurrency: int = 1
     seed: int | None = None
     preview_engine: str = "kokoro"
+    # Chatterbox sampling (needs the jhd3197/voicebox fork). None keeps the
+    # engine default (0.5 / 0.5 / 0.8); a cast entry can override each one.
+    # cfg_weight near 0 stops a Japanese reference's accent leaking into Spanish.
+    exaggeration: float | None = None  # 0.25-2.0
+    cfg_weight: float | None = None  # 0-1
+    temperature: float | None = None  # 0.05-5.0
 
 
 class TranslateModel(_Section):
@@ -103,7 +109,7 @@ class TranslateModel(_Section):
     batch_size: int = 12
     chars_per_second: float = 14
     glossary: dict[str, str] = {}
-    locale: Literal["auto", "es-419", "es-MX", "es-ES"] = "auto"
+    locale: Literal["auto", "es-419", "es-MX", "es-VE", "es-AR", "es-CO", "es-CL", "es-ES"] = "auto"
     adaptation: Literal["natural", "faithful", "localized"] = "natural"
     adapt_region: bool = False
     # Regional slang in the dub. Off keeps wording understandable across the
@@ -123,6 +129,10 @@ class TranslateModel(_Section):
     reference_policy: Literal["original_only", "reference_suggestions",
                               "follow_edition"] = "original_only"
     reference_file: str = ""       # studio-built aligned reference for this episode
+    # When the episode file carries a published dub in the target language,
+    # transcribe it and translate along it (doblarr.dub_reference): follow its
+    # names and phrasing, only borrow phrasing (suggest), or ignore it (off).
+    published_dub: Literal["follow", "suggest", "off"] = "follow"
     holdout_files: list[str] = []  # evaluation-only text no request may carry
 
 
@@ -254,6 +264,11 @@ class QualityModel(_Section):
     # lines; 0 keeps the historical behavior of checking none of them.
     asr_sample: float = 0.0
     max_retries: int = 1
+    # Compare every take with its speaker's reference clip and retry one that
+    # no longer sounds like that voice (doblarr.voice_check). With retries the
+    # best attempt is kept, not the last.
+    voice_check: bool = False
+    voice_min_similarity: float = 0.25
     # Extra provider requests one job may spend across quality retries, timing
     # repairs and later candidate takes. 0 = counted but never capped, which is
     # exactly the behavior before the budget existed.
@@ -316,6 +331,9 @@ class TimingModel(_Section):
     snap_onsets: bool = False
     max_stretch: float = 1.3
     min_stretch: float = 1.0        # 1.0 = never slow speech down
+    # How a line is time-compressed: ffmpeg's atempo, or the Rubber Band
+    # phase vocoder, which stays smoother on voiced speech past ~1.15x.
+    stretcher: Literal["atempo", "rubberband"] = "atempo"
     handle_ms: float = 40           # margin kept each side of a phrase
     min_pause: float = 0.12         # floor for a redistributable gap
     protect_pause: float = 0.45     # a gap at least this long is performance
@@ -445,6 +463,9 @@ class AnalysisModel(_Section):
     knowledge: bool = False
     knowledge_model: str = ""
     knowledge_endpoint: str | None = None
+    # Let the extraction read a reference script found online (title research)
+    # next to the lines, aligned by their words. Off until it has proven itself.
+    use_reference_scripts: bool = False
     # How each line is said (doblarr.emotion): a still per line read by a
     # model that sees, plus the voice. Off unless asked; local by default.
     emotion: bool = False
@@ -498,6 +519,24 @@ class AdaptiveModel(_Section):
     lines: dict[str, dict] = {}       # per-cue manual selection {template, strength, locked}
 
 
+class ResearchModel(_Section):
+    """Title research from public sources (docs/title-research.md).
+
+    Off by default. A search sends only a title or a question out of this
+    machine, and only when a person asks; whatever it finds lands for review
+    and is never applied on its own.
+    """
+
+    enabled: bool = False
+    model: str = ""                   # a Prompture model; blank uses analysis.knowledge_model
+    depth: Literal["quick", "standard", "deep"] = "quick"
+    max_cost_usd: float = 1.0         # hard cap on model spend per research run
+    cache_days: int = 30              # how long a catalogue answer is reused
+    opensubtitles_api_key: str = ""   # optional; without it OpenSubtitles is skipped
+    tmdb_api_key: str = ""            # optional; without it TMDB is skipped
+    kitsunekko_mirror: str = ""       # a local clone of a Japanese subtitle mirror
+
+
 class ConfigModel(_Section):
     paths: PathsModel = PathsModel()
     general: GeneralModel = GeneralModel()
@@ -527,6 +566,7 @@ class ConfigModel(_Section):
     analysis: AnalysisModel = AnalysisModel()
     vision: VisionModel = VisionModel()
     adaptive: AdaptiveModel = AdaptiveModel()
+    research: ResearchModel = ResearchModel()
 
 
 def validate_config(data: dict) -> None:

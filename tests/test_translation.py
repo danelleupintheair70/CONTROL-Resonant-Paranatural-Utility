@@ -71,6 +71,20 @@ def test_all_providers_share_structured_translation(provider, setup_driver):
         assert init[0][0] == "claude/claude-sonnet-5"
 
 
+def test_glossary_register_is_labeled_for_the_model(setup_driver):
+    driver, _ = setup_driver([reply("Oye, pana")])
+    translator = PromptureTranslator("local/test")
+    translator.translate_batch(
+        [{"segment_id": 1, "text": "Hey buddy"}],
+        "en",
+        "es-VE",
+        glossary={"buddy": {"term": "pana", "register": "colloquial"}, "car": "carro"},
+    )
+    prompt = driver.calls[0][0]
+    assert '"buddy": "pana (colloquial)"' in prompt
+    assert '"car": "carro"' in prompt
+
+
 def test_reordered_ids_map_to_source_and_blank_lines_survive(setup_driver):
     raw = json.dumps({"translations": [
         {"segment_id": 2, "text": "dos"}, {"segment_id": 1, "text": "uno"}

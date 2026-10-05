@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ..artifacts import digest, matches, read_json, record, stamp
 from ..clients.speech import GenerationFailed, SpeechClient, SpeechError
+from ..clients.voicebox import SAMPLING_KEYS
 from ..cues import (
     RAW,
     Artifact,
@@ -220,6 +221,29 @@ def _voice_shift(cast: dict, speaker: str) -> tuple[float, float]:
         except (TypeError, ValueError):
             values.append(0.0)
     return values[0], values[1]
+
+
+def _sampling(client, engine, defaults: dict | None, cast: dict, speaker: str) -> dict:
+    """Chatterbox sampling for one speaker: config defaults, then the cast entry.
+
+    Empty when the engine can't take it, so every take made without
+    overrides keeps the request it was cached under.
+    """
+    supports = getattr(client, "supports_sampling", None)
+    if not engine or supports is None or not supports(engine):
+        return {}
+    entry = (cast or {}).get(speaker, {})
+    values = {}
+    for key in SAMPLING_KEYS:
+        raw = entry.get(key)
+        if raw is None or raw == "":
+            raw = (defaults or {}).get(key)
+        try:
+            if raw is not None and raw != "":
+                values[key] = float(raw)
+        except (TypeError, ValueError):
+            pass
+    return values
 
 
 def shift_pitch(path: Path, semitones: float, cancel=None, formant: float = 0.0) -> None:
@@ -506,7 +530,8 @@ def reused_selection(seg) -> bool:
 def candidates(job, vb, work_dir: Path, requests: dict, *, cast=None, engine=None,
                model_size=None, seed=None, budget=None, cancel=None, limit: int = 4,
                knowledge=None, pronunciations=None, locale_direction="",
-               character_notes=None, narrator_delivery="", narrator_speakers=None) -> int:
+               character_notes=None, narrator_delivery="", narrator_speakers=None,
+               sampling=None) -> int:
     """Generate extra takes for the cues a reviewer asked to hear alternatives for.
 
     Bounded three ways: `limit` per cue, the shared request budget, and only
@@ -567,6 +592,9 @@ def candidates(job, vb, work_dir: Path, requests: dict, *, cast=None, engine=Non
                 signature["pitch_semitones"] = pitch
             if formant:
                 signature["formant_semitones"] = formant
+            line_sampling = _sampling(vb, voice_engine, sampling, cast, seg.speaker)
+            if line_sampling:
+                signature["sampling"] = line_sampling
             dest = clips_dir / f"line_{seg.index:04d}.candidate{attempt}.wav"
             existing = seg.audio.take(take_id(generation_fingerprint(signature), attempt))
             if existing is not None and existing.raw is not None and existing.raw.exists():
@@ -583,6 +611,8 @@ def candidates(job, vb, work_dir: Path, requests: dict, *, cast=None, engine=Non
                 kwargs["seed"] = signature["seed"]
             if delivery:
                 kwargs["instruct"] = delivery
+            if line_sampling:
+                kwargs["sampling"] = line_sampling
             take = None
             try:
                 vb.synthesize_to_file(signature["profile"], text, job.target_lang, dest,
@@ -661,6 +691,7 @@ def run(
     character_notes=None,
     clone_cleanup=False,
     borrow_voice=True,
+    sampling=None,
 ) -> Plan | None:
     clips_dir = _clips_dir(job, work_dir)
     log.info("synthesize %d lines (voice_mode=%s)", len(job.segments), voice_mode)
@@ -806,6 +837,25 @@ def run(
             signature["pitch_semitones"] = pitch
         if formant:
             signature["formant_semitones"] = formant
+        line_sampling = _sampling(client, voice_engine, sampling, cast, seg.speaker)
+        if line_sampling:
+            signature["sampling"] = line_sampling
+        # A take already made for exactly this request and kept in a file of
+        # its own (an earlier attempt the quality stage preferred) is reused
+        # rather than replaced by whatever the line's usual file holds now.
+        known = seg.audio.take(take_id(generation_fingerprint(signature), 0))
+        if (not force and known is not None and known.raw is not None
+                and known.raw.exists() and Path(known.raw.path) != dest):
+            previous = seg.audio.selection.take_id if seg.audio.selection else None
+            if previous != known.take_id:
+                seg.audio.selection = Selection(take_id=known.take_id, reason="auto",
+                                                previous=previous, at=now())
+                seg.audio.invalidate_after(RAW)
+            seg.audio_clip = Path(known.raw.path)
+            count("tts_cache_hits")
+            log.info("  line %d/%d kept (earlier attempt %s)", position, total,
+                     known.take_id)
+            return
         receipt = dest.with_suffix(".json")
         try:
             saved = json.loads(receipt.read_text()) if receipt.exists() else {}
@@ -830,6 +880,8 @@ def run(
             kwargs["seed"] = seed + seg.revision
         if delivery:
             kwargs["instruct"] = delivery
+        if line_sampling:
+            kwargs["sampling"] = line_sampling
         try:
             client.synthesize_to_file(
                 seg.voice or spk.voicebox_profile_id,

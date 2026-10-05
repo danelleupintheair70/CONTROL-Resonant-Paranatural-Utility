@@ -8,6 +8,7 @@ import { voiceFor } from '../../lib/voices.js';
 import { MediaPlayer } from '../../components/MediaPlayer.jsx';
 import { catalogQuery, invalidateVoices, profileQuery, voiceQuery, voiceTemplatesQuery } from './queries.js';
 import { ColourField, HearPanel, UsedPanel, VoiceOrb, VoiceTags } from './VoiceParts.jsx';
+import { languageColumns, voicesIn } from '../../lib/research.js';
 
 // One character of a show: the single page for who they are and how they
 // sound. It carries the voice they speak with (hear it, change it, shape it),
@@ -382,6 +383,29 @@ function Rename({ character, characterId, say, refresh }) {
 const RenameOpen = ({ onOpen }) => (
   <button type="button" className="btn btn-ghost character-rename-open" data-rename-open onClick={onOpen}>Rename</button>);
 
+// Who voices the character in published versions, from the linked catalogues.
+// Reference for casting only: nothing here picks a voice.
+function PublishedVoices({ published }) {
+  const voices = published?.voice_actors || [];
+  if (!voices.length) return null;
+  const languages = languageColumns([{ voice_actors: voices }]);
+  return (
+    <div data-published-voices>
+      <h4 className="voice-subhead">Who voices them in published versions</h4>
+      {languages.map(lang => (
+        <p key={lang} className="character-published">
+          <span className="hint">{lang || 'Language not stated'}:</span>{' '}
+          {voicesIn({ voice_actors: voices }, lang).map((v, n) => (
+            <span key={v.name + n}>{n ? ', ' : ''}<strong>{v.name}</strong>
+              <span className="hint"> per {(v.sources || [published.source]).join(', ')}</span></span>
+          ))}
+        </p>
+      ))}
+      <p className="hint">For reference when casting. Doblarr never picks a voice from this.</p>
+    </div>
+  );
+}
+
 export function CharacterProfile() {
   const { id: characterId } = useLoaderData();
   const { data } = useQuery(profileQuery(characterId));
@@ -458,6 +482,7 @@ export function CharacterProfile() {
                   onClick={() => assign({ clear: true, locale: a.locale || '', variant: a.variant || '' })}>Remove</button></td></tr>
             ))}</tbody></table>
         ) : <p className="hint">{voice ? 'Not cast yet: the voice above is matched by its name only.' : 'No voice cast yet.'}</p>}
+        <PublishedVoices published={character.published} />
         <Assign character={character} catalog={catalog} onAssign={assign} say={setStatus} />
       </section>
       {voice && <UsedPanel used={voiceData?.used_in || []} />}

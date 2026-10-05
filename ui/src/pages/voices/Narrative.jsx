@@ -100,8 +100,14 @@ function Series({ series }) {
               <td><button type="button" className="btn btn-ghost" data-retire={c.id} onClick={() => activate(c.id)}>Retire</button></td></tr>
           ))}</tbody></table>
       ) : <p className="hint">Nothing is active yet.</p>}
-      {data.external.length > 0 && <><h4>From library metadata</h4>
-        {data.external.map((e, n) => <p key={n} className="hint">{e.statement} · {e.source} · {e.fetched_at} (not evidence from the episode)</p>)}</>}
+      {data.external.length > 0 && <><h4>From library metadata and title research</h4>
+        {data.external.map((e, n) => (
+          <div key={n} className="hint narrative-external">
+            <p>{String(e.source || '').startsWith('research:') && <span className="tag tag-outline">title research</span>}{' '}
+              {e.statement} · {e.source} · {e.fetched_at} (not evidence from the episode)</p>
+            {e.sources?.length > 0 && <p>Cited: {e.sources.map((u, i) => <span key={u}>{i ? ', ' : ''}<a href={u} target="_blank" rel="noreferrer">{(() => { try { return new URL(u).hostname; } catch { return u; } })()}</a></span>)}</p>}
+          </div>
+        ))}</>}
     </>
   );
 }

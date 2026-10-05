@@ -25,6 +25,7 @@ def _open(seg):
 
 @pytest.mark.parametrize("locale, expected", [
     ("es-419", True), ("es-MX", True), ("es-VE", True), ("es-AR", True),
+    ("es-CO", True), ("es-CL", True),
     ("es-ES", False), ("es", False), ("", False), (None, False), ("pt-BR", False),
 ])
 def test_only_latin_american_targets_are_checked(locale, expected):
@@ -115,6 +116,24 @@ def test_vosotros_endings_and_imperatives_are_caught_without_nouns():
     assert [h["word"] for h in dialect.markers("¿Lo visteis ayer?")] == ["visteis"]
     assert [h["word"] for h in dialect.markers("Lo hicisteis bien.")] == ["hicisteis"]
     assert dialect.markers("Es verdad, en la pared de la ciudad.") == []
+
+
+def test_rioplatense_voseo_is_not_flagged():
+    # es-AR voseo shares no form with the Spain markers: "vos" tokenizes apart
+    # from "os", present forms end in -ás/-és/-ís (never -áis/-éis), and the
+    # commands (hablá, vení) are not the closed -ad/-ed/-id list.
+    for text in ("¿Vos tenés idea de lo que hiciste?", "Hablá más despacio.",
+                 "Vení acá, che.", "Vos querés ir, yo no.",
+                 "Mirá, pibe, esto es un quilombo."):
+        assert dialect.markers(text) == [], text
+
+
+@pytest.mark.parametrize("locale", ["es-AR", "es-CO", "es-CL"])
+def test_vosotros_is_still_flagged_in_the_new_locales(locale):
+    job = _job(["¿Vosotros tenéis idea?"], target_locale=locale)
+    assert dialect.check(job) == 1
+    [finding] = _open(job.segments[0])
+    assert [m["word"] for m in finding.evidence["markers"]] == ["Vosotros", "tenéis"]
 
 
 def test_flagged_lines_are_rewritten_only_when_the_rewrite_is_clean(monkeypatch):

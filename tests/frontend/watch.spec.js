@@ -31,3 +31,25 @@ test('a dub has its own page: languages switch in place and notes are saved', as
   await page.getByRole('button', { name: 'Save note' }).click();
   await expect.poll(() => note).toMatchObject({ note: 'the laugh is gone', category: 'lost sound', track: 'ja' });
 });
+
+test('J and K step through the quieter spots and a reviewed run shows its lines', async ({ page }) => {
+  const info = { ...INFO, job: { ...INFO.job, has_review: true, version: 'names test' },
+    loudness: { ...INFO.loudness, spans: [...INFO.loudness.spans, { start: 120, end: 121.5, quieter_db: 27 }] } };
+  await page.route('**/api/watch/j1', route => route.fulfill({ json: info }));
+  await page.route('**/api/watch/j1/audio/*.mp4', route => route.fulfill({ status: 404, body: '' }));
+  await page.route('**/api/jobs/j1/review', route => route.fulfill({ json: { segments: [
+    { start: 1, end: 3, speaker: 'Mara', text_src: 'Where were you?', text_translated: '¿Dónde estabas?' }] } }));
+  await page.goto('/watch/j1');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('names test');
+  await page.locator('body').press('k');
+  await expect(page.locator('.watch-row-near')).toContainText('1:04');
+  await page.locator('body').press('k');
+  await expect(page.locator('.watch-row-near')).toContainText('2:00');
+  await page.locator('body').press('j');
+  await expect(page.locator('.watch-row-near')).toContainText('1:04');
+  await page.getByRole('button', { name: /≥ 25 dB/ }).click();
+  await expect(page.locator('.watch-quiet-list li')).toHaveCount(1);
+  await page.getByRole('tab', { name: 'Lines' }).click();
+  await expect(page.locator('.watch-lines')).toContainText('¿Dónde estabas?');
+  await expect(page.locator('.watch-now')).toContainText('Mara');
+});

@@ -258,20 +258,24 @@ class KnowledgeSelection:
         applied = [refs.get(term) or {"legacy": term} for term in dict.fromkeys(matched)]
         return spoken_text, applied
 
-    def glossary_terms(self, texts: list[str], source_lang: str | None = None) -> dict[str, str]:
+    def glossary_terms(
+        self, texts: list[str], source_lang: str | None = None
+    ) -> dict[str, str | dict[str, str]]:
         """Resolved terminology relevant to these segments: source_form -> phrase.
 
         Only entries whose source wording appears in the segments are offered;
         several active senses for one source form stay suggestions (skipped).
+        An entry with a declared register maps to {"term", "register"} so the
+        translator can label the intended tone.
         """
         winners = self._winners("term", None)
         haystack = "\n".join(texts)
-        by_source: dict[str, set[str]] = {}
+        by_source: dict[str, dict[str, Entry]] = {}
         for entry in winners.values():
             if entry.source_lang and entry.source_lang != source_lang:
                 continue
             if entry.source_form and entry.source_form in haystack:
-                by_source.setdefault(entry.source_form, set()).add(entry.phrase)
+                by_source.setdefault(entry.source_form, {})[entry.phrase] = entry
         terms = {}
         for source_form, phrases in by_source.items():
             if len(phrases) > 1:
@@ -281,5 +285,10 @@ class KnowledgeSelection:
                     "ambiguous senses remain suggestions",
                 )
                 continue
-            terms[source_form] = next(iter(phrases))
+            entry = next(iter(phrases.values()))
+            terms[source_form] = (
+                {"term": entry.phrase, "register": entry.register}
+                if entry.register
+                else entry.phrase
+            )
         return terms

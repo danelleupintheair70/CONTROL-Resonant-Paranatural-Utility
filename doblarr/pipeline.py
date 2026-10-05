@@ -353,6 +353,10 @@ def run_job(
         save_script(job, effective_work)
 
     def _translate():
+        nonlocal references
+        published = _published_dub(job, config, Path(shared_work), translator, dry_run)
+        if published is not None:
+            references = published
         translation_work = (
             (work / "audition-base" if edits else effective_work)
             if job.kind == "audition"
@@ -493,6 +497,9 @@ def run_job(
             "characters_identified": len(labels), "direction_layers": layered}
         return narrative_state
 
+    def _voicebox_sampling():
+        return {k: config["voicebox"].get(k) for k in synthesize.SAMPLING_KEYS}
+
     def _narrator_speakers():
         return {
             label
@@ -539,6 +546,7 @@ def run_job(
             character_notes=character_notes,
             clone_cleanup=config["dub"].get("clone_cleanup", False),
             borrow_voice=config["dub"].get("borrow_voice", True),
+            sampling=_voicebox_sampling(),
         )
         if db is not None and not dry_run and segments is None:
             save_characters(job, db, character_group, character_map)
@@ -769,9 +777,19 @@ def run_job(
 
         client = llm.Client(model, endpoint=analysis_options.get("knowledge_endpoint"),
                             budget=budget, budget_kind="knowledge", guard=holdout)
+        reference = None
+        if analysis_options.get("use_reference_scripts"):
+            import json as _json
+
+            from .research import scripts as reference_scripts
+
+            data = _json.loads(script_path(job, work).read_text(encoding="utf-8"))
+            reference = reference_scripts.reference_for(
+                db, ident, narrative.script_cues(data, {}))
         try:
             result = narrative.extract(db, ident, script_path(job, work), client,
-                                       cancel=cancel_event, progress=_report("knowledge"))
+                                       cancel=cancel_event, progress=_report("knowledge"),
+                                       reference=reference)
         except (llm.ModelUnavailable, ValueError) as exc:
             analysis.record(db, job, "knowledge", "failed", error=str(exc))
             return
@@ -877,6 +895,7 @@ def run_job(
             character_notes=character_notes,
             narrator_delivery=config["dub"].get("narrator_delivery", ""),
             narrator_speakers=_narrator_speakers(),
+            sampling=_voicebox_sampling(),
         )
         save_script(job, effective_work)
 
@@ -1237,7 +1256,7 @@ def run_job(
                 # review must show the policy that produced it, not today's.
                 "timing": {k: timing_options.get(k, default) for k, default in (
                     ("mode", "whole"), ("pacing", "speaker"),
-                    ("max_stretch", 1.3), ("min_stretch", 1.0),
+                    ("max_stretch", 1.3), ("min_stretch", 1.0), ("stretcher", "atempo"),
                     ("protect_pause", 0.45), ("anchor_tolerance", 0.12),
                     ("repair", True))},
                 "coverage": {k: coverage_options.get(k, default) for k, default in (
@@ -1308,6 +1327,66 @@ def _stage_outputs(job: DubJob, stage: str, work: Path) -> dict:
     if stage == "features":
         return {"features": str((job.metrics.get("features") or {}).get("path") or "")}
     return {}
+
+
+def _published_dub(job, config, shared_work: Path, translator, dry_run: bool) -> dict | None:
+    """Translate along the episode's own published dub, when it carries one.
+
+    The voice grouping already extracted every dub track and verified its
+    alignment (`<stem>.speakers.json`); a verified track in the target language
+    is transcribed once (doblarr.dub_reference) and becomes this job's aligned
+    reference. `translate.published_dub` picks how it is used: `follow` keeps
+    the dub's names and phrasing where the source's meaning allows, `suggest`
+    only borrows phrasing, `off` never reads it. An explicit
+    `translate.reference_file` always wins.
+    """
+    import json
+
+    from . import dub_reference
+    from .artifacts import read_json
+    from .stages.common import work_stem
+
+    settings = config["translate"]
+    policy = dub_reference.MODES.get(str(settings.get("published_dub", "follow") or "off"))
+    if (policy is None or dry_run or not job.segments or settings.get("reference_file")
+            or (job.script_is_target and not job.translation_options.get("adapt_region"))):
+        return None
+    stem = work_stem(job)
+    evidence = read_json(shared_work / f"{stem}.speakers.json").get("track_evidence") or []
+    track = dub_reference.published_track(evidence, job.target_lang)
+    if track is None:
+        return None
+    lines = [{"index": s.index, "start": s.start, "end": s.end} for s in job.segments]
+    try:
+        found = dub_reference.ensure(shared_work, stem, track, lines, job.target_lang)
+    except Exception as exc:  # noqa: BLE001 - a reference is help, never a requirement
+        log.warning("published dub: could not read track %s (%s); translating without it",
+                    track.get("stream"), exc)
+        return None
+    if found is None:
+        return None
+    ref, path = found
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not payload.get("groups"):
+        return None
+    options = translation_options({**settings, "reference_policy": policy,
+                                   "reference_file": str(path)})
+    options["target_locale"] = job.target_locale
+    if options != job.translation_options:
+        # Translations made without the reference are not what it would say.
+        for seg in job.segments:
+            seg.text_translated = None
+            seg.translation_provenance = {}
+        job.translation_options = options
+    translator.direction = {**getattr(translator, "direction", {}),
+                            "reference_policy": policy, "reference_file": str(path)}
+    heard = sum(1 for line in ref["lines"] if line["text"])
+    job.metrics["published_dub"] = {"stream": ref["stream"], "title": track.get("title"),
+                                    "policy": policy, "lines_heard": heard,
+                                    "lines": len(ref["lines"])}
+    log.info("published dub: following track %s (%s), %d/%d lines heard", ref["stream"],
+             track.get("title"), heard, len(ref["lines"]))
+    return payload
 
 
 def _load_references(translate: dict) -> dict | None:

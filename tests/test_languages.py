@@ -87,9 +87,11 @@ def test_display_and_media_mappings():
 
 def test_catalog_covers_targets_and_discovery_languages():
     ids = {e.id for e in catalog()}
-    assert {"en", "es", "es-MX", "es-VE", "es-419", "es-ES", "ja"} <= ids
+    assert {"en", "es", "es-MX", "es-VE", "es-AR", "es-CO", "es-CL", "es-419", "es-ES", "ja"} <= ids
     assert {"de", "fr", "it", "pt", "ko", "zh", "ru", "hi", "ar", "nl", "sv"} <= ids
-    assert [e.id for e in supported_locales("es")] == ["es", "es-MX", "es-VE", "es-419", "es-ES"]
+    assert [e.id for e in supported_locales("es")] == [
+        "es", "es-MX", "es-VE", "es-AR", "es-CO", "es-CL", "es-419", "es-ES"
+    ]
 
 
 def test_spanish_direction_texts_match_the_legacy_translator_wording():
@@ -99,11 +101,16 @@ def test_spanish_direction_texts_match_the_legacy_translator_wording():
         "Spanish from Spain with consistent regional vocabulary and forms of address."
     )
     assert "Venezuelan Spanish" in get("es-VE").direction
+    assert get("es-AR").direction.startswith(
+        "Rioplatense Spanish (Argentina) for studio dubbing."
+    )
+    assert "Colombian Spanish for studio dubbing." in get("es-CO").direction
+    assert "Chilean Spanish for studio dubbing." in get("es-CL").direction
     assert get("es").direction == ""
 
 
 def test_latin_american_locales_share_the_spain_contrast_rules():
-    for locale in ("es-419", "es-MX", "es-VE"):
+    for locale in ("es-419", "es-MX", "es-VE", "es-AR", "es-CO", "es-CL"):
         direction = get(locale).direction
         assert "never vosotros" in direction
         assert "simple past over the present perfect" in direction
@@ -121,6 +128,23 @@ def test_latin_american_locales_share_the_spain_contrast_rules():
     assert "diminutive" not in get("es-MX").direction
     assert "diminutive" not in get("es-VE").direction
     assert "vale" not in get("es-ES").direction
+
+
+def test_es_ar_direction_instructs_voseo_not_tuteo():
+    direction = get("es-AR").direction
+    assert "never tuteo" in direction
+    assert "vos tenés" in direction and "vos querés" in direction
+    assert "hablá" in direction and "vení" in direction
+    # ustedes over vosotros still holds; the -éis ending stays Spain's.
+    assert "never vosotros" in direction and "tenéis" in direction
+    assert "che" in direction and "boludo" in direction
+
+
+def test_new_locales_keep_their_register_notes_measured():
+    assert "usted broadly" in get("es-CO").direction
+    assert "parcero" in get("es-CO").direction and "tinto" in get("es-CO").direction
+    cl = get("es-CL").direction
+    assert "Default to tuteo" in cl and "cachai" in cl and "weón is vulgar" in cl
 
 
 def test_discovery_maps_delegate_to_the_catalog():
@@ -372,6 +396,9 @@ def test_translator_direction_uses_the_resolved_locale():
     assert "Venezuelan Spanish" in translation_direction({"locale": "es-VE"}, "es")
     assert "Venezuelan Spanish" not in translation_direction({"locale": "es-VE"}, "fr")
     assert "Mexican Spanish" in translation_direction({"locale": "es-MX"}, "es-MX")
+    assert "voseo" in translation_direction({"locale": "es-AR"}, "es-AR")
+    assert "Colombian Spanish" in translation_direction({"locale": "es-CO"}, "es-CO")
+    assert "Chilean Spanish" in translation_direction({"locale": "es-CL"}, "es-CL")
     assert translation_direction({"locale": "auto"}, "es") == translation_direction({}, "es")
 
 

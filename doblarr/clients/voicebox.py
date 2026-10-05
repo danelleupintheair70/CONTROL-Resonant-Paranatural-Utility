@@ -38,6 +38,10 @@ class VoiceboxError(SpeechError):
 DIRECTABLE_ENGINES = frozenset({"qwen", "qwen_custom_voice"})
 # Engines that clone from a reference sample.
 CLONE_ENGINES = frozenset({"chatterbox", "chatterbox_turbo", "qwen"})
+# Engines whose /generate takes exaggeration / cfg_weight / temperature. Only
+# the jhd3197/voicebox fork accepts them; upstream ignores unknown fields.
+SAMPLING_ENGINES = frozenset({"chatterbox"})
+SAMPLING_KEYS = ("exaggeration", "cfg_weight", "temperature")
 # Aliases the service accepts for the same engine.
 ENGINE_ALIASES = {"chatterbox-multilingual": "chatterbox", "qwen3-tts": "qwen"}
 
@@ -55,6 +59,10 @@ class VoiceboxClient(SpeechClient):
     def supports_direction(cls, engine: str) -> bool:
         """Whether `engine` can be given a delivery instruction at all."""
         return cls.canonical_engine(engine) in DIRECTABLE_ENGINES
+
+    @classmethod
+    def supports_sampling(cls, engine: str) -> bool:
+        return cls.canonical_engine(engine) in SAMPLING_ENGINES
 
     @classmethod
     def supports_cloning(cls, engine: str) -> bool:
@@ -151,6 +159,7 @@ class VoiceboxClient(SpeechClient):
         model_size: str | None = None,
         engine: str | None = None,
         instruct: str | None = None,
+        sampling: dict | None = None,
     ) -> str:
         payload: dict = {"profile_id": profile_id, "text": text, "language": language}
         if seed is not None:
@@ -163,6 +172,10 @@ class VoiceboxClient(SpeechClient):
             if not self.supports_direction(payload.get("engine") or ""):
                 raise VoiceboxError("delivery instructions require a Qwen engine")
             payload["instruct"] = instruct
+        if sampling:
+            if not self.supports_sampling(payload.get("engine") or ""):
+                raise VoiceboxError("sampling overrides require the chatterbox engine")
+            payload.update({k: sampling[k] for k in SAMPLING_KEYS if sampling.get(k) is not None})
         # Creation is not idempotent. A lost response must not silently submit twice.
         data = self._attempt("POST", "/generate", json=payload).json()
         gen_id = data.get("id") or data.get("generation_id")

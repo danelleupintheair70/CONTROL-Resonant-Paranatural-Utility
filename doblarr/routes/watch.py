@@ -86,11 +86,16 @@ def build_router(config, store) -> APIRouter:
             loudness = {k: data.get(k) for k in ("window", "offset_db", "spans", "curves")}
         notes = sorted(records.list_latest(db, "annotation", scope(job_id)),
                        key=lambda n: n.get("at") or 0)
+        review = allowed_path(config, str(job.review_file)) if job.review_file else None
         return {
             "job": {"id": job.id, "title": job.title, "status": job.status,
-                    "target": job.target_locale or job.target_lang,
+                    "source": job.source_lang, "target": job.target_locale or job.target_lang,
+                    "version": job.version_name, "kind": job.kind,
                     "input": Path(str(job.input_file)).name if job.input_file else "",
-                    "output": path.name},
+                    # The studio opens by file, as from the jobs list.
+                    "input_file": str(job.input_file) if job.input_file else "",
+                    "output": path.name,
+                    "has_review": bool(review and review.is_file())},
             "state": state,
             "tracks": [{**a, "ours": a is ours, "original": a is original}
                        for a in found["audio"]],

@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .artifacts import digest, read_json
+from .clients.voicebox import SAMPLING_KEYS
 from .cues import CUE_SCHEMA_VERSION, cue_payload, ensure_identity
 from .telemetry import write_json
 
@@ -71,8 +72,12 @@ def preserve_version(job, config, cast=None) -> dict:
                        "locale", "adaptation", "direction", "character_notes", "slang")},
         "dub": {k: v for k, v in config["dub"].items()
                 if k not in {"version_name", "preserve_versions", "dry_run"}},
-        "voicebox": {k: config["voicebox"].get(k) for k in
-                     ("default_engine", "model_size", "seed")},
+        # Chatterbox sampling is recorded only when set, so versions made
+        # before it existed keep their identity.
+        "voicebox": {**{k: config["voicebox"].get(k) for k in
+                        ("default_engine", "model_size", "seed")},
+                     **{k: config["voicebox"][k] for k in SAMPLING_KEYS
+                        if config["voicebox"].get(k) is not None}},
         "quality": dict(config["quality"]),
         # Boundary preparation and edge fades change the rendered audio, so a
         # saved version has to record which settings produced it.
@@ -105,8 +110,9 @@ def preserve_version(job, config, cast=None) -> dict:
                 "source_sha256": file_hash(job.input_file),
                 "settings": settings, "voices": voices, "kind": job.kind,
                 "cast": sorted(
-                    [{k: entry.get(k) for k in
-                      ("speaker_id", "voice", "engine", "delivery", "revision")}
+                    [{**{k: entry.get(k) for k in
+                         ("speaker_id", "voice", "engine", "delivery", "revision")},
+                      **{k: entry[k] for k in SAMPLING_KEYS if entry.get(k) is not None}}
                      for entry in (cast or [])], key=lambda entry: entry["speaker_id"])}
     version_id = digest(identity)
     root = (job.output_file.parent / "versions").resolve()

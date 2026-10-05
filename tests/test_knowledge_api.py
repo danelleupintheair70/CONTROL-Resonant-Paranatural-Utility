@@ -119,6 +119,29 @@ def test_realization_crud(client_factory):
     assert [r["replacement"] for r in detail["realizations"]] == ["Ghin-ko"]
 
 
+def test_register_round_trips_and_validates(client_factory):
+    client = client_factory()
+    entry = add(client, phrase="pana", kind="term", source_form="buddy",
+                locale="es-VE", register="colloquial")
+    assert entry["register"] == "colloquial"
+    detail = client.get(f"/api/knowledge/entries/{entry['id']}").json()
+    assert detail["entry"]["register"] == "colloquial"
+
+    cleared = client.put(
+        f"/api/knowledge/entries/{entry['id']}",
+        json={"phrase": "pana", "kind": "term", "locale": "es-VE"},
+    )
+    assert cleared.json()["entry"]["register"] is None
+
+    assert (
+        client.post(
+            "/api/knowledge/entries",
+            json={"phrase": "x", "kind": "term", "locale": "es", "register": "street"},
+        ).status_code
+        == 422
+    )
+
+
 def test_list_pagination_and_filters(client_factory):
     client = client_factory()
     for i in range(30):

@@ -25,6 +25,7 @@ DEFAULTS: dict[str, Any] = ConfigModel().model_dump()
 SECRET_KEYS = {
     "connect.radarr_api_key", "connect.sonarr_api_key", "connect.plex_token",
     "web.api_key", "notify.discord_webhook", "voicestudio.api_key",
+    "research.opensubtitles_api_key", "research.tmdb_api_key",
 }
 SECRET_SENTINEL = "••••••"
 

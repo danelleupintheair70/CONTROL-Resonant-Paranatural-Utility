@@ -1,39 +1,128 @@
-/* One finished dub, watched with every language one click away (web/js/watch.js). */
-.watch { padding:22px 26px 46px; display:flex; flex-direction:column; gap:16px; max-width:1280px; }
-.watch-head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:12px;
-  & h2 { margin:0 0 2px; font-size:20px; }
-  & .hint { margin:0; } }
-.watch-langs { display:flex; flex-wrap:wrap; gap:6px; }
-.watch-lang { padding:5px 11px; border-radius:7px; border:1px solid var(--line); background:transparent;
-  color:var(--color-text); font:inherit; font-size:12.5px; cursor:pointer;
-  &[aria-pressed="true"] { background:var(--color-text); color:var(--color-bg, #fff); border-color:var(--color-text); }
-  &.watch-lang-ours { border-color:var(--color-accent); }
+/* One finished dub, watched with every language one click away (ui/src/pages/dubs/Watch.jsx). */
+.watch { padding:20px 28px 48px; display:flex; flex-direction:column; gap:14px; max-width:1480px;
+  --q-huge: color-mix(in srgb, var(--color-accent) 70%, #000);
+  --q-big: var(--color-accent);
+  --q-small: color-mix(in srgb, var(--color-accent) 45%, transparent); }
+
+.watch-head { display:flex; flex-wrap:wrap; align-items:flex-end; gap:16px;
+  & .hint { margin:2px 0 0; } }
+.watch-titles { flex:1; min-width:280px; }
+.watch-crumbs { display:flex; flex-wrap:wrap; gap:6px; font-size:13px; color:var(--muted); margin-bottom:4px;
+  & a { color:var(--muted); text-decoration:none; }
+  & a:hover { color:var(--color-text); }
+  & strong { color:var(--color-text); } }
+.watch-head h1 { margin:0; font-size:24px; font-family:var(--font-heading); text-wrap:pretty; }
+.watch-version { font-weight:500; color:var(--muted); }
+
+.watch-langs { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.watch-langs-label { font-size:12px; color:var(--muted); }
+.watch-divider { width:1px; height:20px; background:var(--line-strong); margin:0 6px; }
+.watch-pill { border:1px solid var(--line-strong); background:transparent; color:var(--muted); border-radius:999px;
+  padding:6px 13px; font:500 12.5px var(--font-body); cursor:pointer; white-space:nowrap;
+  &:hover { color:var(--color-text); }
+  &[aria-pressed="true"] { background:var(--color-accent); border-color:var(--color-accent); color:#fff; font-weight:700; }
+  &.watch-pill-dark[aria-pressed="true"] { background:var(--color-text); border-color:var(--color-text); color:var(--color-bg); }
   &:focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; } }
-.watch-stage { display:flex; flex-direction:column; gap:6px; }
-.watch-video { width:100%; max-height:72vh; background:#000; border-radius:8px; }
-.watch-strip { position:relative; height:16px; border-radius:4px; background:color-mix(in srgb, var(--color-text) 6%, transparent); }
-.watch-mark { position:absolute; top:0; bottom:0; padding:0; border:0; cursor:pointer; min-width:3px; }
-.watch-quiet { background:color-mix(in srgb, #E8A33A 70%, transparent); }
-.watch-note-mark { top:-3px; bottom:-3px; width:3px !important; background:var(--color-accent); border-radius:2px; }
+.watch-pills { display:flex; flex-wrap:wrap; gap:4px; & .watch-pill { padding:6px 11px; font-size:12px; } }
+
+.watch-body { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-start; }
+.watch-main { display:flex; flex-direction:column; gap:10px; min-width:0; flex:999 1 560px; }
+
+.watch-stage { position:relative; aspect-ratio:16/9; background:#141312; border-radius:16px; overflow:hidden; color:#f2f0ef;
+  &:fullscreen { border-radius:0; aspect-ratio:auto; } }
+.watch-video { position:absolute; inset:0; width:100%; height:100%; background:#000; cursor:pointer; }
+.watch-video::cue { font:600 20px/1.35 var(--font-body); background:transparent; text-shadow:0 1px 3px #000; }
+.watch-hearing { position:absolute; top:14px; left:14px; font-size:12px; font-weight:700; padding:4px 11px; border-radius:999px;
+  background:rgba(255,255,255,.18); color:#fff; pointer-events:none;
+  &.watch-hearing-dub { background:var(--color-accent); } }
+.watch-controls { position:absolute; left:0; right:0; bottom:0; padding:22px 16px 12px; display:flex; align-items:center; gap:14px;
+  flex-wrap:wrap; background:linear-gradient(transparent, rgba(0,0,0,.75));
+  & button { font-family:var(--font-body); }
+  & button:focus-visible, & select:focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; } }
+.watch-play { width:40px; height:40px; border-radius:50%; border:0; background:#f2f0ef; color:#141312; font:800 14px var(--font-body); cursor:pointer; flex:none; }
+.watch-clock { font-size:13px; font-weight:600; }
+.watch-ab { display:inline-flex; gap:2px; padding:3px; border-radius:999px; background:rgba(255,255,255,.14);
+  & button { border:0; border-radius:999px; padding:5px 12px; font-weight:700; font-size:12px; cursor:pointer; background:transparent; color:#f2f0ef; }
+  & button[aria-pressed="true"] { background:#f2f0ef; color:#141312; } }
+.watch-subs { background:rgba(255,255,255,.14); color:#f2f0ef; border:0; border-radius:999px; padding:5px 10px; font:600 12px var(--font-body);
+  & option { color:#141312; } }
+.watch-keys { margin-left:auto; font-size:12px; color:rgba(242,240,239,.7); }
+.watch-full { border:0; background:transparent; color:#f2f0ef; font-size:16px; cursor:pointer; padding:4px; }
+
+.watch-timeline { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px 12px 8px; }
+.watch-lanes { position:relative; cursor:pointer; display:flex; flex-direction:column; gap:3px; }
+.watch-lane { position:relative; height:16px; border-radius:5px; background:var(--color-bg); }
+.watch-tick { position:absolute; top:3px; bottom:3px; min-width:2px; border-radius:1px; background:var(--color-neutral-600); opacity:.7;
+  &.watch-quiet { top:2px; bottom:2px; opacity:1; } }
+.watch-note-mark { position:absolute; top:1px; width:14px; height:14px; margin-left:-7px; border-radius:50%;
+  background:var(--color-text); color:var(--color-bg); font:700 9px/14px var(--font-body); text-align:center; }
 .watch-note-done { opacity:.35; }
-.watch-head-line { position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--color-text); pointer-events:none; }
-.watch-keys { margin:2px 0 0; font-size:12px;
-  & kbd { font:inherit; font-size:11px; padding:0 5px; border:1px solid var(--line); border-radius:4px; } }
-.watch-note { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 12px; border:1px solid var(--line); border-radius:8px;
-  & .input { width:auto; flex:0 0 auto; }
-  & input[name="note"] { flex:1 1 260px; min-width:0; }
-  & .m { min-width:40px; font-weight:600; } }
-.watch-columns { display:grid; grid-template-columns:1fr 1fr; gap:22px;
-  & h3 { margin:0 0 6px; font-size:14px; }
-  & .hint { margin:0 0 6px; } }
-.watch-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; font-size:13px;
-  & li { display:flex; gap:10px; align-items:baseline; }
-  & li > span { flex:1; }
-  & .hint { display:block; margin:0; }
-  & select { padding:2px 6px; font-size:12px; } }
-.watch-quiet-list { max-height:340px; overflow:auto; }
-.watch-done { opacity:.55; }
-.watch-time { all:unset; cursor:pointer; min-width:42px; color:var(--color-accent);
+.watch-head-line { position:absolute; top:-4px; bottom:-4px; width:2px; margin-left:-1px; background:var(--color-accent); pointer-events:none; }
+.watch-legend { display:flex; flex-wrap:wrap; gap:16px; font-size:11px; color:var(--muted); margin-top:6px;
+  & span { display:flex; gap:6px; align-items:center; }
+  & i { display:block; width:10px; height:6px; border-radius:2px; } }
+.watch-key-line { background:var(--color-neutral-600); }
+.watch-key-quiet { background:var(--color-accent); }
+.watch-key-note { width:8px !important; height:8px !important; border-radius:50% !important; background:var(--color-text); }
+.watch-legend-time { margin-left:auto; }
+
+.watch-note { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+  & .input { width:auto; min-height:36px; font-size:13px; }
+  & select.input { width:170px; }
+  & input[name="note"] { flex:1 1 200px; min-width:0; } }
+.watch-note-at { font-weight:800; font-size:14px; padding:0 6px; min-width:52px; }
+
+.watch-panel { flex:1 1 300px; max-width:100%; min-width:0; background:var(--panel); border:1px solid var(--line); border-radius:16px;
+  display:flex; flex-direction:column; max-height:calc(100vh - 140px); position:sticky; top:16px; overflow:hidden; }
+.watch-now { padding:14px 16px; border-bottom:1px solid var(--line); }
+.watch-now-who { font-size:11px; color:var(--muted); margin-bottom:4px; }
+.watch-now-dub { font-size:15px; font-weight:700; line-height:1.35; }
+.watch-now-src { font-size:12.5px; color:var(--muted); margin-top:4px; }
+.watch-tabs { display:flex; gap:4px; padding:10px 12px; border-bottom:1px solid var(--line);
+  & button { border:1px solid transparent; background:transparent; border-radius:999px; padding:6px 12px; font:500 12.5px var(--font-body);
+    color:var(--muted); cursor:pointer; display:flex; gap:5px; white-space:nowrap; }
+  & button[aria-selected="true"] { border-color:var(--line-strong); background:var(--color-bg); color:var(--color-text); font-weight:700; }
+  & button:focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; } }
+.watch-count { color:var(--color-accent-700); font-weight:700; }
+.watch-panel-hint { padding:10px 16px 6px; margin:0; font-size:12px; color:var(--muted); text-wrap:pretty; }
+.watch-filters { padding:4px 12px 8px; & .watch-pill { padding:4px 10px; font-size:11.5px; } }
+.watch-more { margin:6px 12px 10px; align-self:flex-start; font-size:12.5px; }
+
+.watch-list { list-style:none; margin:0; padding:0 8px 8px; overflow-y:auto; flex:1; font-size:13px; }
+.watch-row { width:100%; display:grid; grid-template-columns:48px minmax(0,1fr) 60px; gap:10px; align-items:center; text-align:left;
+  border:0; border-radius:9px; padding:7px 8px; background:transparent; font:inherit; color:inherit; cursor:pointer;
+  &:hover { background:color-mix(in srgb, var(--color-text) 6%, transparent); }
+  &.watch-row-near { background:color-mix(in srgb, var(--color-accent) 14%, transparent); }
+  &:focus-visible { outline:2px solid var(--color-accent); outline-offset:-2px; } }
+.watch-time { font-weight:700; color:var(--color-accent-700); }
+.watch-meter { height:5px; border-radius:99px; background:var(--color-neutral-300); display:block;
+  & span { display:block; height:5px; border-radius:99px; } }
+
+/* After .watch-tick and .watch-meter so the band colour wins. */
+.watch .q-huge { background:var(--q-huge); }
+.watch .q-big { background:var(--q-big); }
+.watch .q-small { background:var(--q-small); }
+
+.watch-notes { padding-top:8px;
+  & li { display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:10px; padding:9px 8px; border-bottom:1px solid var(--line); align-items:start; }
+  & select { width:auto; padding:3px 6px; font-size:12px; } }
+.watch-num { width:20px; height:20px; border-radius:50%; background:var(--color-text); color:var(--color-bg); font:700 10px/20px var(--font-body); text-align:center; }
+.watch-note-body { all:unset; cursor:pointer; display:flex; flex-direction:column; gap:2px; min-width:0;
   &:focus-visible { outline:2px solid var(--color-accent); outline-offset:2px; } }
+.watch-note-text { font-size:12.5px; color:var(--muted); }
+.watch-note-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; & .tag { font-size:11px; padding:2px 8px; } }
+.watch-done { opacity:.55; }
+
+.watch-lines { padding-top:8px; }
+.watch-line { grid-template-columns:44px minmax(0,1fr); align-items:start; padding:8px;
+  & .watch-time { font-size:12px; color:var(--muted); } }
+.watch-line-who { display:block; font-size:11px; color:var(--muted); }
+.watch-line-dub { display:block; font-weight:600; }
+.watch-line-src { display:block; font-size:12px; color:var(--muted); }
+
 .watch-wait { padding:30px 0; & h2 { margin:0 0 6px; } }
-@media (max-width: 760px) { .watch { padding:16px; } .watch-columns { grid-template-columns:1fr; } }
+@media (max-width: 760px) {
+  .watch { padding:16px; }
+  .watch-keys { display:none; }
+  .watch-panel { position:static; max-height:none; }
+}

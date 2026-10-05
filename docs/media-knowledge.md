@@ -41,6 +41,12 @@ The title is the only thing sent, and only when you search. A link is your choic
 
 **Import** never renames or overwrites a character. A character you already have matches a cast member by name, alias or a unique part of the name, with romanization folded (`Hyūga`, `Hyuuga` and `Hyuga` are one name). It gains the published facts and the published name as an alias. A name part shared by several cast members creates nothing and is reported for you to settle. Only characters that existed before the import can match.
 
+Other catalogues (Anime News Network, MyAnimeList through Jikan, Bangumi) can be linked next to AniList, so a character's dub voices in other languages come with their sources. See [title research](title-research.md).
+
+## Title research (optional)
+
+With `research.enabled` on, a title's Research tab (or `doblarr research`, `doblarr scripts`, `doblarr titles`) asks the web cited questions, looks for transcripts and screenplays, and gathers the title's ids in other catalogues. Only the title or your question is sent. Everything it finds waits for review: answers become external notes, terms become proposed show-scoped entries, dub voices become cast leads, and scripts are read by an analysis only when `analysis.use_reference_scripts` is on. Details: [title-research.md](title-research.md).
+
 ## Who speaks
 
 Every line keeps how its voice was decided:

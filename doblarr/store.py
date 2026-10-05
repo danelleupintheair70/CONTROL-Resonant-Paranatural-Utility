@@ -200,6 +200,12 @@ def _v9_studio(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _v10_knowledge_register(conn: sqlite3.Connection) -> None:
+    conn.executescript("""
+        ALTER TABLE knowledge_entries ADD COLUMN register TEXT;
+    """)
+
+
 # Ordered migrations; MIGRATIONS[i] brings a db from version i to i+1.
 MIGRATIONS = [
     _v1_initial,
@@ -211,6 +217,7 @@ MIGRATIONS = [
     _v7_memory,
     _v8_title_drafts,
     _v9_studio,
+    _v10_knowledge_register,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

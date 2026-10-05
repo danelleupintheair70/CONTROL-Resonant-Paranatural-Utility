@@ -74,6 +74,9 @@ voicestudio:
 
 # Translation
 translate:
+  # The episode's own dub in the target language, when the file has one:
+  # follow its names and phrasing (follow), borrow phrasing only (suggest), or off.
+  published_dub: follow
   provider: claude              # claude | prompture | voicebox | passthrough (stub)
   batch_size: 12
   chars_per_second: 14
@@ -177,6 +180,10 @@ quality:
   # `suspicious`. Deterministic per line, so a rerun checks the same ones.
   asr_sample: 0.0
   max_retries: 1
+  # Compare each take with its speaker's reference clip; a take that no longer
+  # sounds like that voice is retried, and the best attempt is kept.
+  voice_check: false
+  voice_min_similarity: 0.25     # cosine similarity; cross-language clones sit ~0.5
   # Extra speech requests one job may spend in total across quality retries and
   # timing repairs. 0 = no cap (counted only), which matches earlier releases.
   request_budget: 0
@@ -233,6 +240,7 @@ timing:
   mode: whole                    # whole | phrase
   max_stretch: 1.3               # most a phrase is ever compressed
   min_stretch: 1.0               # 1.0 = never slow speech down; only a hard anchor can
+  stretcher: atempo              # atempo | rubberband (smoother speech; needs ffmpeg with librubberband)
   handle_ms: 40                  # margin kept each side of a phrase, so joins keep consonants
   min_pause: 0.12                # a redistributable gap never shrinks below this
   protect_pause: 0.45            # a gap at least this long is performance, and is kept
@@ -368,6 +376,7 @@ analysis:
   max_track_offset: 2.0         # seconds
   knowledge: false              # read the lines with a language model for title knowledge
   knowledge_model: ""           # a Prompture model, e.g. ollama/gemma3:12b (local)
+  use_reference_scripts: false  # extraction also reads a transcript found by title research
   emotion: false                # read how each line is said (a still per line + the voice)
   emotion_model: ollama/qwen3-vl:8b   # a model that sees; local
   reader_model: ""              # who speaks each line, read by a strong model; a cloud one
@@ -380,6 +389,19 @@ vision:                         # needs: pip install "doblarr[vision]" and the m
   max_frames: 4000              # bound on frames sampled from one title
   asd_fps: 8                    # frames per second read inside a line for mouth movement
   match_threshold: 0.55         # face-to-reference similarity to propose a name
+
+# ---- Title research from public sources (docs/title-research.md) ---------
+# Off by default. Only a title or a question leaves this machine, and only
+# when you ask; everything found lands for review, never applied on its own.
+research:
+  enabled: false
+  model: ""                     # a Prompture model; blank uses analysis.knowledge_model
+  depth: quick                  # quick | standard | deep
+  max_cost_usd: 1.0             # cap on model spend per research run
+  cache_days: 30                # reuse a catalogue answer this long
+  opensubtitles_api_key: ""     # optional (free key); without it OpenSubtitles is skipped
+  tmdb_api_key: ""              # optional (free key); without it TMDB is skipped
+  kitsunekko_mirror: ""         # path to a local clone of a Japanese subtitle mirror
 
 # ---- Voice envelopes and background policies (docs/adaptive-audio.md) ------
 adaptive:

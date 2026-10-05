@@ -25,7 +25,10 @@ KINDS = ("session", "reference", "alignment", "experiment", "variant", "audition
          "association", "claim", "narrative", "snapshot", "visual", "template",
          "decision", "feedback", "example", "migration",
          # A series' cast from a public catalogue (doblarr.published_cast).
-         "published_cast")
+         "published_cast",
+         # Title research (docs/title-research.md): a cited answer to a person's
+         # question, a reference script found online, a title's other names and ids.
+         "research_run", "title_script", "title_info")
 # A document larger than this is a sign that media or a whole transcript is
 # being stored as state. Structured state stays small; artifacts go to disk.
 MAX_DOCUMENT_BYTES = 4 * 1024 * 1024

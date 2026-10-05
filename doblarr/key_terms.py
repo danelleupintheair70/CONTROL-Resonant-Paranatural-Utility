@@ -430,7 +430,11 @@ def to_hold(texts: list[str], renders: list[str], glossary: dict[str, str] | Non
     # A glossary source written capitalised ("Will") binds capitalised uses
     # only, so the common word ("I will") is left alone; a lowercase one
     # ("harbor") binds every use.
-    hold: list[dict] = [{"source": k, "rendering": v, "proper": k[:1].isupper()}
+    # A glossary value may carry a register label ({"term", "register"});
+    # enforcement matches the plain rendering.
+    hold: list[dict] = [{"source": k,
+                         "rendering": v["term"] if isinstance(v, dict) else v,
+                         "proper": k[:1].isupper()}
             for k, v in (glossary or {}).items()
             if v and any(_source_says(t, k, k[:1].isupper()) for t in texts)]
     held = {fold(row["source"]) for row in hold}

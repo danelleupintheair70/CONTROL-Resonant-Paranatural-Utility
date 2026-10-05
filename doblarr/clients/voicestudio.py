@@ -133,7 +133,8 @@ class VoiceStudioClient(SpeechClient):
 
     def generate(self, profile_id: str, text: str, language: str, seed: int | None = None,
                  model_size: str | None = None, engine: str | None = None,
-                 instruct: str | None = None) -> str:
+                 instruct: str | None = None, sampling: dict | None = None) -> str:
+        # VoiceStudio takes no Chatterbox sampling (supports_sampling is off).
         self._check_direction(engine, instruct)
         with self._pool_lock:
             if self._pool is None or self._worker is None:

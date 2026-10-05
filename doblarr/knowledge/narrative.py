@@ -219,15 +219,24 @@ def merge(db, series_id: str, extracted: list[tuple[str, ExtractedClaim, set[int
 
 
 def extract(db, ident: dict, script: Path, client, *, cancel=None, progress=None,
-            window_chars: int = WINDOW_CHARS) -> dict:
-    """Run (or resume) a bounded extraction and save it as a draft revision."""
+            window_chars: int = WINDOW_CHARS, reference: dict[int, dict] | None = None) -> dict:
+    """Run (or resume) a bounded extraction and save it as a draft revision.
+
+    `reference` maps line ordinals to lines of a reference script aligned to
+    them (doblarr.research.scripts.align). The model sees them beside the
+    window as somebody else's transcript, never as the episode's own lines.
+    """
     data = json.loads(Path(script).read_text(encoding="utf-8"))
     series_id = ident.get("series_id") or ""
     names = {label: c["name"] for label, c in
              identity.cluster_characters(db, ident["revision_id"]).items()}
     cues = script_cues(data, names)
     source = source_identity(ident, data, cues)
-    analysis = analysis_identity(client.model, {"window_chars": window_chars})
+    settings: dict = {"window_chars": window_chars}
+    if reference:
+        settings["reference"] = _sha(sorted((k, v.get("speaker"), v.get("text"))
+                                            for k, v in reference.items()))
+    analysis = analysis_identity(client.model, settings)
     draft_id = source.digest
     try:
         current_revision, current = drafts.load_draft(db, draft_id)
@@ -250,14 +259,21 @@ def extract(db, ident: dict, script: Path, client, *, cancel=None, progress=None
             from ..errors import JobCancelled
 
             raise JobCancelled("cancelled during knowledge extraction")
+        aligned = [{"id": c["id"], "speaker": reference[c["ordinal"]].get("speaker"),
+                    "text": reference[c["ordinal"]]["text"]}
+                   for c in window if reference and c["ordinal"] in reference]
         checkpoint = "w-" + digest([analysis.digest, [c["ordinal"] for c in window],
-                                    [c["text"] for c in window]])[:16]
+                                    [c["text"] for c in window], aligned])[:16]
         by_id = {c["id"]: c["ordinal"] for c in window}
         result = cache.get(checkpoint)
         reused += result is not None
         if result is None:
             payload = {"lines": [{k: c[k] for k in ("id", "speaker", "text")} for c in window],
                        "speakers_known": sorted(set(names.values()))}
+            if aligned:
+                # A transcript found online, matched to these lines by their words.
+                # It may name who speaks; it is not the episode itself.
+                payload["reference_transcript"] = aligned
             try:
                 reply = client.ask(Extraction, INSTRUCTIONS, payload, max_tokens=4096)
                 result = reply.model_dump()
@@ -556,10 +572,14 @@ def coverage(db, series_id: str) -> list[dict]:
 
 
 def add_external(db, series_id: str, media_id: str, text: str, *, source: str,
-                 fetched_at: str) -> dict:
-    """A provider's metadata, kept apart from evidence in the episode."""
+                 fetched_at: str, sources: list[str] | None = None) -> dict:
+    """A provider's metadata, kept apart from evidence in the episode.
+
+    `sources` are the pages a cited answer drew on (a research run's citations).
+    """
     claim_id = "ext-" + digest([series_id, media_id, source, text])[:16]
     return records.put(db, "claim", claim_id, {
         "series_id": series_id, "media_id": media_id, "kind": "summary",
         "statement": str(text)[:2000], "origin": "external", "source": source,
+        "sources": [str(u)[:500] for u in sources or []][:20],
         "fetched_at": fetched_at, "evidence": [], "state": "proposed"}, scope=series_id)

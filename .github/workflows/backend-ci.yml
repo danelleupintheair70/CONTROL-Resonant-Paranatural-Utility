@@ -1,0 +1,98 @@
+name: Backend CI
+
+# Lint, types and the pytest suite for doblarr/. release.yml gates every push
+# to dev, main and master on this workflow (`workflow_call`), so a pull request
+# from dev into main/master would only run the same commit a second time: its
+# jobs are skipped (see `if:` on each job). Other pull requests run it when they
+# touch the backend.
+on:
+  pull_request:
+    paths:
+      - 'doblarr/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - 'setup.py'
+      - '.github/workflows/backend-ci.yml'
+  workflow_call:
+
+# A newer push to the same pull request supersedes the run in progress. Runs
+# called from release.yml get their own group and are never cancelled.
+concurrency:
+  group: backend-ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: ruff + mypy
+    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements.txt
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: mypy doblarr/
+
+  # The suite in two tiers, as parallel jobs instead of one long one. Tests
+  # that render real audio end to end through FFmpeg are marked `slow`
+  # (SLOW_FILES in tests/conftest.py): ~100 tests at 8-25 s each, which were
+  # most of the 15-38 minutes a single full run took. Every OS/Python leg runs
+  # the fast tier; the slow tier runs once per OS on the newest Python.
+  #
+  # Coverage is measured on one leg only, over the fast tier (81% on its own,
+  # gate 70%). COVERAGE_CORE=sysmon uses Python 3.12's sys.monitoring instead
+  # of a trace function: the old tracer doubled this suite's time on Linux.
+  pytest:
+    name: pytest ${{ matrix.tier }} (${{ matrix.os }}, ${{ matrix.python }})
+    if: github.event_name != 'pull_request' || github.head_ref != 'dev'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Report every failing leg in one pass instead of hiding the rest.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+        tier: [fast]
+        include:
+          - { os: ubuntu-latest, python: "3.12", tier: slow }
+          - { os: windows-latest, python: "3.12", tier: slow }
+          - { os: ubuntu-latest, python: "3.12", tier: fast, coverage: true }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements.txt
+      - name: Install FFmpeg on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Install FFmpeg on Windows
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --yes --no-progress
+      - run: pip install -e ".[dev]"
+      - name: pytest (${{ matrix.tier }} tier)
+        shell: bash
+        env:
+          MARK: ${{ matrix.tier == 'slow' && 'slow' || 'not slow' }}
+          COV: ${{ matrix.coverage && '--cov=doblarr --cov-report=term-missing:skip-covered --cov-fail-under=70' || '' }}
+          COVERAGE_CORE: sysmon
+        # Copy this line to reproduce a red leg locally (`.\dev.ps1 test` runs both tiers).
+        run: |
+          # shellcheck disable=SC2086  # $COV is several arguments, or none
+          python -m pytest -q -n auto -m "$MARK" $COV

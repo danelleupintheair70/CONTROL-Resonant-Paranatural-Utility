@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLoaderData, useNavigate } from 'react-router';
+import { Link, useLoaderData, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { ensure, libraryQuery, queryClient } from '../../lib/queries.js';
@@ -131,6 +131,7 @@ export function Library() {
         <Pills id="librarySort" options={SORTS} value={sort} onChange={setSort} />
         {labels.button}
         <button type="button" className="btn btn-secondary" id="rescanBtn" onClick={rescan}>Rescan sources</button>
+        <Link to="/library/audio" className="btn btn-ghost">Audio languages</Link>
       </div>
       {labels.status}
       <div id="libraryGrid" className="poster-grid">{grid}</div>

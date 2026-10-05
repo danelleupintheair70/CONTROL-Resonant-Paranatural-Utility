@@ -32,6 +32,7 @@ SETTING_KEYS = (
     "translate.adapt_region",
     "translate.slang",
     "translate.direction",
+    "translate.published_dub",
     "translate.character_notes",
     "translate.chars_per_second",
     "voicebox.seed",
@@ -40,6 +41,8 @@ SETTING_KEYS = (
     "quality.dialogue_lufs",
     "quality.asr",
     "quality.max_retries",
+    "quality.voice_check",
+    "quality.voice_min_similarity",
     "quality.asr_sample",
     "quality.request_budget",
     # Level policy travels; the measured numbers and the per-cue manual gains
@@ -85,6 +88,7 @@ SETTING_KEYS = (
     "timing.mode",
     "timing.max_stretch",
     "timing.min_stretch",
+    "timing.stretcher",
     "timing.handle_ms",
     "timing.min_pause",
     "timing.protect_pause",
@@ -221,6 +225,7 @@ class RecipeEntry(StrictModel):
     phrase: str = Field(min_length=1, max_length=300)
     sense: str = Field(default="", max_length=300)
     usage: str = Field(default="", max_length=2000)
+    register: Literal["formal", "neutral", "colloquial", "vulgar"] | None = None
     examples: list[str] = Field(default_factory=list, max_length=20)
     pronunciation: str = Field(default="", max_length=2000)
     ipa: str | None = None
@@ -293,6 +298,7 @@ class DubRecipe(StrictModel):
         ranges = {
             "dub.max_fit_attempts": (0, 10),
             "quality.max_retries": (0, 10),
+            "quality.voice_min_similarity": (0, 1),
             "quality.request_budget": (0, 10000),
             "boundaries.handle_ms": (0, 1000),
             "boundaries.max_trim_seconds": (0, 30),
