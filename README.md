@@ -236,8 +236,10 @@ edit it from a Library card's "Cast" button (`GET`/`PUT /api/cast`, voices from
 then jobs fall back to a single narrator voice.
 
 Open the UI, go to **Library** to see your real collection, and **Queue dub** on a
-needs-dub title to watch it flow through the queue. The CLI still works too:
-`python -m doblarr dub "<file>" --from ko --to es --subs film.srt --dry-run`.
+needs-dub title to watch it flow through the queue. Or do it all from a terminal:
+`doblarr make "<file or season folder>" --to es-419` checks the machine, analyses,
+looks the title up, dubs, re-voices flagged lines and reports. Every step is also a
+command of its own; see [docs/cli.md](docs/cli.md).
 
 ### Docker
 
