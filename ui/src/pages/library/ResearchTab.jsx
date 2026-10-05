@@ -349,23 +349,25 @@ function Scripts({ series, enabled, show }) {
       )}
       <Status>{status}{job && job.status !== 'queued' ? ` ${job.status}: ${job.message || ''}` : ''}</Status>
       {scripts.length ? (
-        <table className="table research-table" id="researchScripts">
-          <thead><tr><th>{show ? 'Episode' : 'Part'}</th><th>Source</th><th>Kind</th><th>Lines</th><th>Page</th></tr></thead>
-          <tbody>
-            {scripts.map(s => (
-              <tr key={s.id}>
-                <td>{show ? (
-                  <input className="input research-episode" type="number" min="0" defaultValue={s.episode ?? ''}
-                    aria-label="Episode number" onBlur={e => { if (String(s.episode ?? '') !== e.target.value) place(s, e.target.value); }} />
-                ) : '—'}</td>
-                <td><SourceBadge name={s.source.split(':')[0]} /> <span className="title-muted">{s.source.split(':')[1] || ''}</span></td>
-                <td>{s.kind}{s.language ? ` · ${s.language}` : ''}</td>
-                <td>{s.lines}{s.speakers ? ` · ${s.speakers} speakers` : ''}</td>
-                <td>{/^https?:/.test(s.url) ? <a href={s.url} target="_blank" rel="noreferrer">{s.title || s.url}</a> : (s.title || s.url)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="research-table-wrap">
+          <table className="table research-table" id="researchScripts">
+            <thead><tr><th>{show ? 'Episode' : 'Part'}</th><th>Source</th><th>Kind</th><th>Lines</th><th>Page</th></tr></thead>
+            <tbody>
+              {scripts.map(s => (
+                <tr key={s.id}>
+                  <td>{show ? (
+                    <input className="input research-episode" type="number" min="0" defaultValue={s.episode ?? ''}
+                      aria-label="Episode number" onBlur={e => { if (String(s.episode ?? '') !== e.target.value) place(s, e.target.value); }} />
+                  ) : '—'}</td>
+                  <td><SourceBadge name={s.source.split(':')[0]} /> <span className="title-muted">{s.source.split(':')[1] || ''}</span></td>
+                  <td>{s.kind}{s.language ? ` · ${s.language}` : ''}</td>
+                  <td>{s.lines}{s.speakers ? ` · ${s.speakers} speakers` : ''}</td>
+                  <td>{/^https?:/.test(s.url) ? <a href={s.url} target="_blank" rel="noreferrer">{s.title || s.url}</a> : (s.title || s.url)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : <p className="title-muted">No reference scripts found yet. Most titles have none; that is normal.</p>}
     </div>
   );

@@ -23,7 +23,8 @@ FAKES = {
         "movieFile": {"path": str(_root / "film.mkv"),
                       "mediaInfo": {"audioLanguages": "kor"}},
     }]),
-    "speech": SimpleNamespace(list_voices=lambda: [], voice_profiles=lambda: []),
+    "speech": SimpleNamespace(list_voices=lambda: [], voice_profiles=lambda: [],
+                              preset_engines=(), preset_voices=lambda engine: []),
 }
 
 
