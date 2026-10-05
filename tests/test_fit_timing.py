@@ -181,6 +181,20 @@ def test_neighbouring_lines_keep_one_pace_and_the_long_one_is_repaired(tmp_path,
     assert calls  # the long line is still compressed, just not alone
 
 
+def test_a_line_written_in_review_is_compressed_but_never_reworded(tmp_path, monkeypatch):
+    job = _job(tmp_path, [(0.0, 2.0)])
+    seg = job.segments[0]
+    seg.text_translated = "Pero eso no es razón para destruir el puerto."
+    seg.translation_provenance = {"method": "manual", "reason": "review-edit"}
+    calls = _spy(monkeypatch, {"line_0000": 3.0})
+    translator = _Shortener()
+    fit_timing.run(job, tmp_path / "work", translator=translator,
+                   regenerate=lambda s: None, options={"pacing": "off"})
+    assert translator.asked == []                 # nobody rewrote the person's words
+    assert seg.text_translated == "Pero eso no es razón para destruir el puerto."
+    assert "atempo=1.3000" in calls[0]            # still fitted as far as it can be
+
+
 def test_a_line_that_fits_takes_the_group_pace_instead_of_snapping_to_one(tmp_path, monkeypatch):
     job = _job(tmp_path, [(0.0, 2.0), (2.5, 4.5), (5.0, 7.0)])
     _spy(monkeypatch, {"line_0000": 2.4, "line_0001": 2.4, "line_0002": 1.9})
