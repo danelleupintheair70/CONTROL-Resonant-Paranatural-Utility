@@ -14,7 +14,11 @@ Checking only the files you touched is not enough: CI runs `ruff check .` and
 `mypy doblarr/` over the whole package, and mypy catches what ruff does not.
 
 `.\dev.ps1 check` runs everything CI runs except the docker build, including
-the Playwright browser tests. Use it before opening a pull request.
+the Playwright browser tests that `validate once` skips. Run it before pushing
+anything meant for a pull request: the gates to `master` run the browser
+tests on Linux, whose fallback font is wider than Windows', so a page that
+fits 390 px here can overflow there. Put every wide table in a
+`overflow-x: auto` wrapper.
 
 ## Conventions
 
